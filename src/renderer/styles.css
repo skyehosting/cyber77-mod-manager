@@ -1461,3 +1461,73 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .sort-pick select { height: var(--control-h); width: auto; font-size: var(--fs-sm); }
 .toolbar.selecting > .sort-pick { display: none; }
 @container (max-width: 62rem) { .sort-label { display: none; } .sort-pick select { max-width: 7rem; } #mods-toolbar .search { width: 9rem; } }
+
+.card-subtitle { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
+
+/* ================================================================== AI assistant */
+#page-ai { overflow: hidden; padding-bottom: var(--sp-3); }
+#page-ai > .ai-main { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.ai-main[hidden] { display: none; }
+.ai-sub-sep:empty, #ai-model:empty + .ai-sub-sep { display: none; }
+.ai-setup { position: static; margin-top: var(--sp-6); }
+.ai-chat { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) var(--sp-1) var(--sp-4); scrollbar-gutter: stable; }
+.ai-msg { display: flex; }
+.ai-user { justify-content: flex-end; }
+.ai-bubble { max-width: min(48rem, 85%); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-lg); line-height: 1.55; font-size: var(--fs-md); overflow-wrap: anywhere; }
+.ai-user .ai-bubble { background: var(--select-soft); border: 1px solid var(--select-strong); white-space: pre-wrap; }
+.ai-bot .ai-bubble { background: var(--surface); border: 1px solid var(--line); }
+.ai-bubble p { margin: 0 0 var(--sp-2); white-space: pre-wrap; }
+.ai-bubble > :last-child { margin-bottom: 0; }
+.ai-bubble ul, .ai-bubble ol { margin: 0 0 var(--sp-2); padding-left: 1.3rem; }
+.ai-bubble li { margin: 0.15rem 0; }
+.ai-bubble code { font: 0.9em var(--mono); background: var(--surface-3); padding: 0.05rem 0.3rem; border-radius: var(--r-sm); }
+.ai-code { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); background: var(--console-bg); border-radius: var(--r); overflow: auto; font: var(--fs-sm)/1.45 var(--mono); }
+.ai-code code { background: none; padding: 0; }
+.ai-activity { display: flex; align-items: center; gap: var(--sp-2); color: var(--muted); font-size: var(--fs-xs); padding-left: var(--sp-2); }
+.ai-activity .i { width: 0.85rem; color: var(--ok); flex: none; }
+.ai-activity.running .i { color: var(--select); }
+.ai-activity.failed .i { color: var(--warn); }
+.ai-note { display: flex; align-items: center; gap: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); padding-left: var(--sp-2); }
+.ai-note.bad { color: var(--err-text); }
+.ai-note.bad .i { color: var(--err); flex: none; }
+.ai-card { max-width: min(48rem, 92%); border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+.ai-card-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.ai-card-head .i { color: var(--accent); flex: none; }
+.ai-card-title { flex: 1; min-width: 0; font-weight: var(--fw-bold); }
+.ai-proposal.pending { border-color: var(--accent); box-shadow: 0 0 0 1px var(--focus-ring); }
+.ai-actions { list-style: none; margin: 0; padding: var(--sp-2) var(--sp-4); }
+.ai-actions li { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+.ai-actions li:last-child { border-bottom: 0; }
+.ai-action-title { font-weight: var(--fw-medium); }
+.ai-action-why { color: var(--text-2); font-size: var(--fs-sm); margin-top: 0.1rem; }
+.ai-action-items { color: var(--muted); font-size: var(--fs-xs); margin-top: 0.2rem; overflow-wrap: anywhere; }
+.ai-action-result { font-size: var(--fs-sm); margin-top: 0.25rem; }
+.ai-action-result.ok { color: var(--ok); }
+.ai-action-result.bad { color: var(--err-text); }
+.ai-card-foot { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line); }
+.ai-card-foot .hint { margin: 0 auto 0 0; }
+.ai-modcard { display: flex; min-height: 7rem; }
+.ai-modcard > .hint { padding: var(--sp-3) var(--sp-4); }
+.ai-mod-thumb { flex: none; width: 12rem; height: auto; aspect-ratio: 16 / 9; align-self: flex-start; display: grid; place-items: center; background: var(--console-bg); color: var(--line-strong); overflow: hidden; }
+.ai-mod-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ai-mod-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; padding: var(--sp-3) var(--sp-4); }
+.ai-mod-note { color: var(--text-2); font-size: var(--fs-sm); margin: 0.2rem 0 0; }
+.ai-modcard .mod-foot { padding-top: var(--sp-2); }
+.ai-modcard .mod-foot .btn-ghost { margin-left: auto; }
+@container (max-width: 64rem) { .ai-mod-thumb { display: none; } }
+.ai-thinking { display: flex; gap: 0.3rem; padding: var(--sp-2) var(--sp-3); }
+.ai-thinking span { width: 0.45rem; height: auto; aspect-ratio: 1; border-radius: 50%; background: var(--muted); animation: ai-dot 1.2s infinite ease-in-out; }
+.ai-thinking span:nth-child(2) { animation-delay: .15s; }
+.ai-thinking span:nth-child(3) { animation-delay: .3s; }
+@keyframes ai-dot { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+.ai-empty { margin: auto; max-width: 36rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6) 0; }
+.ai-empty-title { font-size: var(--fs-lg); font-weight: var(--fw-bold); }
+.ai-suggest { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.ai-suggest .chip { height: auto; min-height: 2rem; padding: 0.3rem 0.8rem; color: var(--text-2); }
+.ai-suggest .chip:hover { border-color: var(--select); color: var(--text); }
+.ai-compose { display: flex; align-items: flex-end; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.ai-compose textarea { flex: 1; min-height: var(--control-h); max-height: 200px; resize: none; line-height: 1.4; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.ai-compose .btn { flex: none; height: var(--control-h); }
+.grid col.w-ask { width: 6.5rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ai-chat > * { flex: none; } /* items keep their height; the chat scrolls instead of squeezing them */

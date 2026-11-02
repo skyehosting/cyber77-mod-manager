@@ -751,6 +751,7 @@ async function openDrawer(id, focusSection = '') {
       m.enabled ? act('Disable', 'ban', 'disable') : act('Enable', 'check', 'enable', 'btn-primary'),
       hasConflicts && !(conflicts || []).length ? act('Win conflicts', 'arrow-up', 'prioritize') : null,
       act('Reinstall', 'rotate', 'reinstall'),
+      h('button', { class: 'btn btn-sm btn-ghost', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
       act('Uninstall', 'minus-circle', 'uninstall'),
     ].filter(Boolean));
     body.replaceChildren(...[
@@ -804,6 +805,7 @@ function openVortexDrawer(m) {
         : h('button', { class: 'btn btn-sm btn-primary', dataset: { key: 'act:enable' }, onclick: () => modAction('enable', [m.id]) }, icon('check'), h('span', {}, 'Enable in Vortex')),
       h('button', { class: 'btn btn-sm', title: 'This app manages it from now on; Vortex keeps it, switched off', onclick: () => moveFromVortex([m.id]) }, icon('download'), h('span', {}, 'Move to this app')),
       h('button', { class: 'btn btn-sm btn-ghost', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
+      h('button', { class: 'btn btn-sm btn-ghost', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the Vortex mod "${m.name}": is anything wrong with it? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
     ]);
     $('#drawer-body').replaceChildren(...[
       h('dl', { class: 'kv' },
@@ -1083,7 +1085,8 @@ $$('#dl-bulk [data-act]').forEach(b => b.addEventListener('click', async () => {
 const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
-  updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit', launchMode: '#s-launch',
+  updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', launchMode: '#s-launch',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1196,6 +1199,27 @@ $('#s-nxm').addEventListener('change', async ev => {
 
 const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock' };
 
+const AI_EXAMPLES = {
+  openai: { endpoint: 'https://api.openai.com/v1 (or http://localhost:11434/v1 for Ollama)', model: 'e.g. gpt-5.1, or the model your endpoint serves' },
+  anthropic: { endpoint: 'https://api.anthropic.com', model: 'e.g. claude-sonnet-5-5' },
+};
+function aiPlaceholders() {
+  const ex = AI_EXAMPLES[$('#s-ai-provider').value] || AI_EXAMPLES.openai;
+  $('#s-ai-endpoint').placeholder = ex.endpoint;
+  $('#s-ai-model').placeholder = ex.model;
+}
+$('#s-ai-provider').addEventListener('change', aiPlaceholders);
+$('#s-ai-test').addEventListener('click', async () => {
+  const st = $('#s-ai-status');
+  if (isDirty()) await run(api.setSettings(readForm()));
+  st.className = 'hint';
+  st.textContent = 'Asking the model to reply…';
+  const r = await api.aiTest();
+  st.className = r.error ? 'hint bad' : 'hint ok';
+  st.textContent = r.error ? r.error : `Connected: ${r.ok}`;
+  await loadSettings();
+});
+
 function readForm() {
   const patch = {};
   for (const [k, sel] of Object.entries(form)) patch[k] = $(sel).value;
@@ -1203,6 +1227,8 @@ function readForm() {
   patch.categories = $$('#s-cats input').filter(i => i.checked).map(i => i.value);
   const key = $('#s-apikey').value.trim();
   if (key) patch.apiKey = key;
+  const aiKey = $('#s-ai-key').value.trim();
+  if (aiKey) patch.aiKey = aiKey;
   return patch;
 }
 
@@ -1210,7 +1236,7 @@ function isDirty() {
   const s = state.settings;
   if (!s) return false;
   const p = readForm();
-  if (p.apiKey) return true;
+  if (p.apiKey || p.aiKey) return true;
   for (const k of Object.keys(form)) if (String(p[k]) !== String(s[k] ?? '')) return true;
   for (const k of Object.keys(checks)) if (p[k] !== !!s[k]) return true;
   return [...p.categories].sort().join() !== [...s.categories].sort().join();
@@ -1231,6 +1257,9 @@ async function loadSettings() {
   state.settings = s;
   $('#s-apikey').value = '';
   $('#s-apikey').placeholder = s.hasApiKey ? `Saved key ${s.apiKeyHint} — paste a new one to replace it` : 'Paste your personal API key';
+  $('#s-ai-key').value = '';
+  $('#s-ai-key').placeholder = s.hasAiKey ? `Saved key ${s.aiKeyHint} — paste a new one to replace it` : 'Paste your provider\'s API key (not needed for local models)';
+  aiPlaceholders();
   for (const [k, sel] of Object.entries(form)) { $(sel).value = s[k] ?? ''; $(sel).title = String(s[k] ?? ''); }
   for (const [k, sel] of Object.entries(checks)) $(sel).checked = !!s[k];
   refreshNxm();

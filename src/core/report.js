@@ -96,4 +96,4 @@ function buildReport({ snap, vortex, gameLog, gameStatus, sources, app }) {
   };
 }
 
-module.exports = { buildReport, problemKey };
+module.exports = { buildReport, problemKey, group };

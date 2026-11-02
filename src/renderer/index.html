@@ -16,6 +16,9 @@
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
       <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+      <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7Z"/></symbol>
       <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/></symbol>
       <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
       <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
@@ -90,6 +93,9 @@
         </button>
         <button class="nav-item" data-page="gamelog" title="Game log">
           <svg class="i"><use href="#i-activity"/></svg><span class="nav-label">Game log</span><span class="count" id="nav-log-count">0</span>
+        </button>
+        <button class="nav-item" data-page="ai" title="AI Assistant">
+          <svg class="i"><use href="#i-sparkle"/></svg><span class="nav-label">AI Assistant</span>
         </button>
         <button class="nav-item" data-page="profiles" title="Profiles">
           <svg class="i"><use href="#i-users"/></svg><span class="nav-label">Profiles</span><span class="count" id="nav-prof-count"></span>
@@ -351,6 +357,33 @@
         </div>
       </section>
 
+      <!-- AI ASSISTANT -->
+      <section class="page" id="page-ai" aria-labelledby="h-ai">
+        <header class="page-head">
+          <div class="page-title">
+            <h1 id="h-ai">AI Assistant</h1>
+            <p class="page-sub"><span id="ai-model"></span><span class="ai-sub-sep"> · </span>Reads your mods and logs, searches the web; changes only what you approve</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost collapsible" id="ai-clear" title="Start a new conversation" aria-label="Clear chat"><svg class="i"><use href="#i-trash"/></svg><span>Clear chat</span></button>
+          </div>
+        </header>
+        <div class="empty ai-setup" id="ai-setup" hidden>
+          <span class="empty-icon"><svg class="i"><use href="#i-sparkle"/></svg></span>
+          <p class="empty-title">Set up your AI provider</p>
+          <p class="empty-text">Add your provider's endpoint, model and API key in Settings: OpenAI-compatible (OpenAI, OpenRouter, Groq, Ollama, LM Studio…) or Anthropic.</p>
+          <div class="empty-actions"><button class="btn btn-primary" data-goto="settings">Open Settings</button></div>
+        </div>
+        <div class="ai-main" id="ai-main" hidden>
+          <div class="ai-chat" id="ai-chat" role="log" aria-live="polite" aria-label="Conversation"></div>
+          <div class="ai-compose">
+            <textarea id="ai-input" rows="1" placeholder="Ask about an error, a mod, your load order… (Enter sends, Shift+Enter for a new line)" aria-label="Message to the assistant"></textarea>
+            <button class="btn btn-primary" id="ai-send" title="Send"><svg class="i"><use href="#i-send"/></svg><span>Send</span></button>
+            <button class="btn" id="ai-stop" hidden title="Stop the answer"><svg class="i"><use href="#i-x"/></svg><span>Stop</span></button>
+          </div>
+        </div>
+      </section>
+
       <!-- LOAD ORDER -->
       <section class="page" id="page-loadorder" aria-labelledby="h-lo">
         <header class="page-head">
@@ -434,8 +467,8 @@
 
         <div class="table-card gl-view" id="gl-problems" role="tabpanel" aria-labelledby="tab-problems" hidden>
           <table class="grid">
-            <colgroup><col class="w-count"><col class="w-level"><col class="w-source"><col class="w-mod col-cat"><col><col class="w-when"></colgroup>
-            <thead><tr><th class="num">Count</th><th>Level</th><th>Log</th><th class="col-cat">Mod</th><th>Message</th><th>Last seen</th></tr></thead>
+            <colgroup><col class="w-count"><col class="w-level"><col class="w-source"><col class="w-mod col-cat"><col><col class="w-when"><col class="w-ask"></colgroup>
+            <thead><tr><th class="num">Count</th><th>Level</th><th>Log</th><th class="col-cat">Mod</th><th>Message</th><th>Last seen</th><th><span class="sr-only">Ask AI</span></th></tr></thead>
             <tbody></tbody>
           </table>
           <div class="empty" id="gl-prob-empty" hidden>
@@ -507,6 +540,29 @@
               </div>
               <p class="hint" id="s-key-status"></p>
               <p class="hint">Get it from <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">nexusmods.com → API keys</a>. It is stored encrypted and never shown again.</p>
+
+              <h2 class="card-title card-subtitle"><svg class="i"><use href="#i-sparkle"/></svg>AI assistant</h2>
+              <div class="field-grid">
+                <div>
+                  <label class="label" for="s-ai-provider">Format</label>
+                  <select id="s-ai-provider">
+                    <option value="openai">OpenAI-compatible (OpenAI, OpenRouter, Groq, Ollama, LM Studio…)</option>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" for="s-ai-model">Model</label>
+                  <input id="s-ai-model" type="text" spellcheck="false">
+                </div>
+              </div>
+              <label class="label" for="s-ai-endpoint">API endpoint</label>
+              <input id="s-ai-endpoint" type="text" spellcheck="false">
+              <label class="label" for="s-ai-key">API key</label>
+              <div class="field-row">
+                <input id="s-ai-key" type="password" spellcheck="false">
+                <button type="button" class="btn" id="s-ai-test">Test</button>
+              </div>
+              <p class="hint" id="s-ai-status">Your own provider and key: the assistant reads your mods and logs, searches the web, and can only change things you approve. The key is stored encrypted.</p>
             </section>
 
             <section class="card">
@@ -681,5 +737,6 @@
   <script src="features.js"></script>
   <script src="browse.js"></script>
   <script src="loadorder.js"></script>
+  <script src="assistant.js"></script>
 </body>
 </html>

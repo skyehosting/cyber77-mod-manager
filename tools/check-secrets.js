@@ -17,7 +17,8 @@ const PATTERNS = [
   ['Nexus API key', /[A-Za-z0-9+/]{40,}={0,2}--[A-Za-z0-9+/]{8,}={0,2}--[A-Za-z0-9+/]{8,}={0,2}/],
   ['GitHub token', /\b(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/],
   ['private key', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
-  ['stored API key setting', /"apiKey(Enc|Plain)"\s*:\s*"[^"]{8,}"/],
+  ['stored API key setting', /"(apiKey|aiKey)(Enc|Plain)"\s*:\s*"[^"]{8,}"/],
+  ['AI provider key', /\b(sk-(proj-|ant-)?[A-Za-z0-9_-]{24,})\b/],
   ['apikey header value', /apikey['"]?\s*[:=]\s*['"][A-Za-z0-9+/=-]{30,}['"]/i],
 ];
 const SKIP = /\.(png|jpe?g|gif|webp|ico|exe|dll|node|asar|pak|bin|dat|wasm|7z|zip|rar)$/i;

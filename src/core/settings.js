@@ -28,6 +28,12 @@ class Settings {
       launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'store'
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
+      // The AI assistant: the user's own provider. Its key is stored like the Nexus key.
+      aiProvider: 'openai', // 'openai' (any OpenAI-compatible endpoint) | 'anthropic'
+      aiEndpoint: '',
+      aiModel: '',
+      aiKeyEnc: '',
+      aiKeyPlain: '',
     });
   }
 
@@ -53,16 +59,41 @@ class Settings {
     }
   }
 
-  /** Settings as shown to the UI: the key itself never leaves the main process. */
+  /** The AI provider's key, encrypted like the Nexus key. */
+  get aiKey() {
+    const d = this.store.data;
+    if (d.aiKeyEnc && this.cipher?.available()) {
+      try { return this.cipher.decrypt(d.aiKeyEnc); } catch { return ''; }
+    }
+    return d.aiKeyPlain || '';
+  }
+
+  set aiKey(value) {
+    const d = this.store.data;
+    value = (value || '').trim();
+    if (this.cipher?.available()) {
+      d.aiKeyEnc = value ? this.cipher.encrypt(value) : '';
+      d.aiKeyPlain = '';
+    } else {
+      d.aiKeyPlain = value;
+      d.aiKeyEnc = '';
+    }
+  }
+
+  /** Settings as shown to the UI: the keys themselves never leave the main process. */
   publicView() {
-    const { apiKeyEnc, apiKeyPlain, ...rest } = this.store.data;
+    const { apiKeyEnc, apiKeyPlain, aiKeyEnc, aiKeyPlain, ...rest } = this.store.data;
     const key = this.apiKey;
-    return { ...rest, hasApiKey: !!key, apiKeyHint: key ? `••••••••${key.slice(-4)}` : '' };
+    const ai = this.aiKey;
+    return { ...rest, hasApiKey: !!key, apiKeyHint: key ? `••••••••${key.slice(-4)}` : '', hasAiKey: !!ai, aiKeyHint: ai ? `••••••••${ai.slice(-4)}` : '' };
   }
 
   update(patch) {
     const d = this.store.data;
     if ('apiKey' in patch) this.apiKey = patch.apiKey;
+    if ('aiKey' in patch) this.aiKey = patch.aiKey;
+    if ('aiProvider' in patch && ['openai', 'anthropic'].includes(patch.aiProvider)) d.aiProvider = patch.aiProvider;
+    for (const k of ['aiEndpoint', 'aiModel']) if (typeof patch[k] === 'string') d[k] = patch[k].trim().slice(0, 300);
     for (const k of ['gamePath', 'dataDir', 'sevenZipPath', 'autoInstall', 'deployMethod']) {
       if (typeof patch[k] === 'string') d[k] = patch[k].trim();
     }

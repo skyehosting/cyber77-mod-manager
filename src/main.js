@@ -11,12 +11,16 @@ const { GameLogMonitor } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
 const { AppUpdater } = require('./core/updater');
+const { Assistant } = require('./core/ai');
+const { makeTools } = require('./core/aiTools');
+const { WebReader } = require('./core/web');
 
 let win = null;
 let settings = null;
 let manager = null;
 let gameLogs = null;
 let updater = null;
+let assistant = null;
 let lastExport = '';
 
 const cipher = {
@@ -164,6 +168,17 @@ async function boot() {
   });
   updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
   updater.start();
+  // The AI assistant: read tools see everything; changes only through approved proposals.
+  const tools = makeTools({
+    manager, gameLogs, logger, web: new WebReader(),
+    allMods: () => {
+      const snap = manager.snapshot();
+      return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
+    },
+    deployRedmods: () => runRedmodDeploy(settings.get('gamePath'), true),
+  });
+  assistant = new Assistant({ settings, tools, file: path.join(app.getPath('userData'), 'ai-chat.json') });
+  assistant.on('event', e => send('ai', e));
   if (settings.apiKey) {
     manager.validateKey().then(u => send('key-user', u)).catch(err => logger.warn('Could not check the Nexus API key', err.message));
   }
@@ -246,6 +261,14 @@ async function boot() {
     return r;
   });
   handle('redmod:deploy', () => runRedmodDeploy(settings.get('gamePath'), true));
+  handle('ai:view', () => assistant.view());
+  handle('ai:send', text => { assistant.send(text).catch(err => send('ai', { type: 'item', item: { id: String(Date.now()), type: 'error', text: err.message } })); return true; });
+  handle('ai:stop', () => assistant.stop());
+  handle('ai:decide', (id, approve) => assistant.decide(String(id), !!approve));
+  handle('ai:clear', () => assistant.clear());
+  handle('ai:test', () => assistant.test());
+  // Links in the assistant's answers open in the user's browser (web pages only).
+  handle('open:link', url => { if (/^https?:\/\//i.test(String(url))) shell.openExternal(String(url)); });
   handle('loadorder:get', () => manager.loadOrderView());
   handle('loadorder:save', order => manager.saveLoadOrder(order));
   handle('loadorder:auto', () => manager.autoSortLoadOrder());

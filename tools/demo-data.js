@@ -194,6 +194,26 @@
     renderResults();
   };
 
+  // The AI assistant: a short troubleshooting conversation with a pending request and a mod card.
+  window.demoAi = async () => {
+    goTo('ai');
+    await new Promise(r => setTimeout(r, 300)); // after the page loaded its real (empty) state
+    const t = now - 5 * 60000;
+    ai.view = { configured: true, busy: false, model: 'claude-sonnet-5-5', transcript: [] };
+    ai.busy = false;
+    ai.cards.set(4885, { modId: 4885, name: 'Mod Settings', author: 'jackhumbert', category: 'Modders Resources', version: '0.2.21', summary: 'A settings menu for mods.', endorsements: 61000, downloads: 3100000, thumbnail: '' });
+    ai.items = [
+      { id: 'u1', type: 'user', text: 'My game crashes right after the intro since yesterday. What changed?', time: t },
+      { id: 'a1', type: 'activity', text: 'Listed mods, recently installed', status: 'done' },
+      { id: 'a2', type: 'activity', text: 'Read the problems in the game logs', status: 'done' },
+      { id: 'a3', type: 'activity', text: 'Searched the web: "Night City Interactions crash Mod Settings"', status: 'done' },
+      { id: 'b1', type: 'assistant', text: 'Two things changed yesterday:\n\n- **Night City Interactions - Core** was installed (0.9.8).\n- Its log shows `Mod Settings not found` 14 times, and the mod page lists **Mod Settings** as a requirement. Its download failed (Premium only).\n\nFix: install Mod Settings, then start the game again. If it still crashes, disable Night City Interactions to confirm it is the cause.' },
+      { id: 'm1', type: 'modcard', modId: 4885, note: 'Required by Night City Interactions; its download failed earlier.' },
+      { id: 'p1', type: 'proposal', status: 'pending', title: 'Disable Night City Interactions - Core (FOMOD)', actions: [{ title: 'Disable Night City Interactions - Core (FOMOD)', reason: 'Until Mod Settings is installed, it crashes the game on load.', items: ['Night City Interactions - Core (FOMOD) v0.9.8'] }] },
+    ];
+    renderChat();
+  };
+
   window.resetDemo = () => {
     // Dialogs left open by the previous shot never resolve: drop them from the dialog queue.
     modalChain = Promise.resolve();

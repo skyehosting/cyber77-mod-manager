@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
+/* global api, $, h, askAi, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
 
 // ---------------------------------------------------------------- game log page
 
@@ -152,7 +152,8 @@ function renderProblems() {
   h('td', { class: 'dim', title: p.last.file || p.last.source }, p.last.source),
   h('td', { class: 'col-cat' }, modCell(p.last)),
   h('td', { class: 'wrap mono-msg', title: p.last.text }, h('span', {}, p.last.text.split('\n')[0])),
-  h('td', { class: 'dim', title: new Date(p.last.time).toLocaleString() }, relTime(p.last.time))))), null);
+  h('td', { class: 'dim', title: new Date(p.last.time).toLocaleString() }, relTime(p.last.time)),
+  h('td', { class: 'actions' }, h('button', { class: 'btn btn-sm btn-ghost', title: 'Ask the AI assistant about this problem', 'aria-label': 'Ask AI about this problem', onclick: ev => { ev.stopPropagation(); askAi(`Help me with this ${p.last.level === 'error' ? 'error' : 'warning'} from ${p.last.source} (seen ${p.count} time${p.count === 1 ? '' : 's'}):\n${p.last.text.split('\n')[0]}\nWhat causes it and how do I fix it?`); } }, icon('sparkle'), h('span', {}, 'Ask AI')))))), null);
   setEmpty('#gl-problems', '#gl-prob-empty', list.length === 0);
 }
 const renderProblemsSoon = (() => {
