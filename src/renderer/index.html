@@ -118,6 +118,7 @@
               <button class="btn btn-icon" id="mods-more" aria-haspopup="menu" aria-expanded="false" aria-controls="mods-more-menu" title="More actions" aria-label="More actions"><svg class="i"><use href="#i-more"/></svg></button>
               <div class="menu" id="mods-more-menu" role="menu" hidden>
                 <button class="menu-item" role="menuitem" id="mods-redeploy"><svg class="i"><use href="#i-deploy"/></svg><span><span class="menu-label">Redeploy</span><span class="menu-sub">Re-check every enabled mod's files</span></span></button>
+                <button class="menu-item" role="menuitem" id="mods-redmod"><svg class="i"><use href="#i-wrench"/></svg><span><span class="menu-label">Deploy REDmods</span><span class="menu-sub">Play does this by itself when REDmods change</span></span></button>
                 <button class="menu-item" role="menuitem" data-open="game"><svg class="i"><use href="#i-folder"/></svg><span><span class="menu-label">Open game folder</span></span></button>
                 <button class="menu-item" role="menuitem" id="mods-open-vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span><span class="menu-label">Open Vortex</span></span></button>
                 <div class="menu-sep" role="separator"></div>
@@ -492,6 +493,12 @@
                 <option value="copy">Copy files</option>
               </select>
               <p class="hint">Hardlinks need the data folder on the same drive as the game.</p>
+              <label class="label" for="s-launch">When you press Play</label>
+              <select id="s-launch">
+                <option value="direct">Start the game directly: no Steam prompt, no launcher</option>
+                <option value="store">Start it through Steam (Steam asks to confirm -modded)</option>
+              </select>
+              <p class="hint">REDmods are deployed first whenever they changed. Epic Games copies always start through the Epic launcher.</p>
             </section>
 
             <section class="card">

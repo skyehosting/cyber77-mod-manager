@@ -217,3 +217,28 @@ test('Browse "Adult (18+)" asks Nexus for adult mods only', async () => {
     global.fetch = realFetch;
   }
 });
+
+test('Play starts the game directly, with -modded when there are REDmods; REDmod changes are noticed', async () => {
+  const { launchGame, redmodFingerprint } = require('../src/core/launcher');
+  const { game } = fakeGame();
+  const calls = [];
+  const fakeRun = (exe, args) => { calls.push([path.basename(exe), args]); return { on() {}, unref() {} }; };
+  const opened = [];
+  const r1 = await launchGame({ gameDir: game, store: 'steam' }, async u => opened.push(u), fakeRun);
+  assert.deepStrictEqual([r1.via, calls[0]], ['the game directly', ['Cyberpunk2077.exe', []]]);
+  assert.deepStrictEqual(opened, [], 'no steam:// link (and so no Steam prompt)');
+
+  const before = redmodFingerprint(game);
+  fs.mkdirSync(path.join(game, 'mods', 'My REDmod', 'archives'), { recursive: true });
+  fs.writeFileSync(path.join(game, 'mods', 'My REDmod', 'info.json'), '{"name":"My REDmod"}');
+  const added = redmodFingerprint(game);
+  assert.notStrictEqual(added, before, 'adding a REDmod needs a deploy');
+  assert.strictEqual(redmodFingerprint(game), added, 'nothing changed: no deploy');
+  fs.writeFileSync(path.join(game, 'mods', 'My REDmod', 'archives', 'x.archive'), 'x');
+  assert.notStrictEqual(redmodFingerprint(game), added, 'a changed REDmod needs a deploy');
+
+  await launchGame({ gameDir: game, store: 'steam' }, async u => opened.push(u), fakeRun);
+  assert.deepStrictEqual(calls[1][1], ['-modded']);
+  await launchGame({ gameDir: game, store: 'steam', mode: 'store' }, async u => opened.push(u), fakeRun);
+  assert.deepStrictEqual(opened, ['steam://run/1091500//-modded/'], 'through Steam only when chosen');
+});

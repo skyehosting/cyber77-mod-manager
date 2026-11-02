@@ -25,6 +25,8 @@ class Settings {
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
       updateEvery: 2, // how often the app looks for a new version of itself…
       updateUnit: 'minutes', // …in 'minutes' | 'hours' | 'days'
+      launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'store'
+      redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
     });
   }
@@ -70,6 +72,8 @@ class Settings {
     if ('blockAds' in patch) d.blockAds = !!patch.blockAds;
     if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 2));
     if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
+    if ('launchMode' in patch && ['direct', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode;
+    if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }

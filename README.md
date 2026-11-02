@@ -18,7 +18,7 @@ The app keeps itself up to date: while it is open it checks for a new version ev
 
 1. **Settings** → paste your Nexus API key → **Validate** → **Save**. The game folder is found automatically (Steam, GOG, Epic Games, the Xbox app); every install found is listed there to pick from.
 2. **Browse** → search Nexus by name or mod ID → **Download** on a mod (or open it to read its pages first). Or, in **Downloads**, paste one or more mod links (any form: with or without `?tab=…`, `/games/…`, or a `file_id`) → **Choose files** → tick the files you want → **Download**.
-3. **Play** (top of the sidebar) starts the game through its store (Steam, Epic) or directly (GOG, Xbox, other), with `-modded` when REDmods are installed.
+3. **Play** (top of the sidebar) starts the game directly (no Steam "custom arguments" prompt, no CD Projekt launcher), with `-modded` when REDmods are installed. When your REDmods changed since the last time, it runs REDmod deploy first (as the launcher and Vortex do); if that fails you see why and can launch anyway. Epic Games copies start through the Epic launcher. Settings → Game → **When you press Play** switches Steam copies back to starting through Steam. **Deploy REDmods** in the Mods ⋯ menu runs it by hand. Only REDmods need deploying: archive, CET, redscript, RED4ext and TweakXL mods work as soon as their files are in place.
 4. **Mods** → select (click, Ctrl-click, Shift-click, Ctrl+A) → Enable / Disable / Prioritize / Reinstall / Uninstall / Delete.
 
 ## What it does

@@ -6,7 +6,7 @@ const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, storeOf, isGameDir } = require('./core/gameFinder');
-const { launchGame } = require('./core/launcher');
+const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods } = require('./core/launcher');
 const { GameLogMonitor } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
@@ -232,14 +232,20 @@ async function boot() {
   handle('links:plan', text => manager.planLinks(text));
   handle('links:queue', (token, deps, files) => manager.queuePlan(token, deps, files));
   handle('game:installs', () => findInstalls());
-  handle('game:launch', async () => {
+  // Play: REDmod deploy first when the REDmods changed since the last one, then the game.
+  handle('game:launch', async ({ skipDeploy = false } = {}) => {
     const dir = settings.get('gamePath');
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    if (!skipDeploy) {
+      const r = await runRedmodDeploy(dir, false);
+      if (r && !r.ok) return { deployFailed: true, reason: r.reason };
+    }
     const store = await storeOf(dir);
-    const r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp }, url => shell.openExternal(url));
+    const r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp, mode: settings.get('launchMode') }, url => shell.openExternal(url));
     logger.success(`Launching Cyberpunk 2077 through ${r.via}${r.args.length ? ` (${r.args.join(' ')}, for REDmod)` : ''}`);
     return r;
   });
+  handle('redmod:deploy', () => runRedmodDeploy(settings.get('gamePath'), true));
   // One report for both export buttons: every error and warning, and every mod with its state.
   handle('logs:history', () => logger.history);
   handle('nxm:status', () => nxmStatus());
@@ -426,6 +432,36 @@ async function applyNxmSetting() {
     logger.success(`Nexus "Mod Manager Download" links are no longer handled by this app${back ? `; they open ${back} again` : saved ? '' : '; no other program was set before'}`);
   }
   return nxmStatus();
+}
+
+/**
+ * REDmod deploy, when the REDmods changed since the last successful one (or always, when forced).
+ * Returns null when there was nothing to do, else { ok, reason }. Progress goes to the window.
+ */
+let redmodRunning = null;
+async function runRedmodDeploy(dir, force) {
+  if (!isGameDir(dir) || !hasRedmods(dir)) return null;
+  const fp = redmodFingerprint(dir);
+  if (!force && fp === settings.get('redmodDeployed')) return null;
+  if (redmodRunning) return redmodRunning;
+  redmodRunning = (async () => {
+    logger.info(`Deploying ${redmodFolders(dir).length} REDmods (REDmod deploy)…`);
+    send('redmod', { stage: 'deploying' });
+    const res = await deployRedmods(dir, { onLine: line => { if (/stage|deploy|error/i.test(line)) send('redmod', { stage: 'deploying', line }); } });
+    if (res.ok) {
+      settings.update({ redmodDeployed: fp });
+      logger.success('REDmods deployed');
+      send('redmod', { stage: 'done' });
+      return { ok: true };
+    }
+    // The tool's own error lines say why (a script that does not compile, a missing file, …).
+    const why = res.lines.filter(l => /error|failed|missing|not found/i.test(l)).slice(-6);
+    const reason = why.join('\n') || res.lines.slice(-3).join('\n') || 'REDmod deploy failed';
+    logger.error('REDmod deploy failed: your REDmods may not load in the game', res.lines.slice(-25).join('\n'));
+    send('redmod', { stage: 'failed', reason });
+    return { ok: false, reason };
+  })().finally(() => { redmodRunning = null; });
+  return redmodRunning;
 }
 
 /*

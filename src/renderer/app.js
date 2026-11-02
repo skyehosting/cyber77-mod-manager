@@ -1049,7 +1049,7 @@ $$('#dl-bulk [data-act]').forEach(b => b.addEventListener('click', async () => {
 const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
-  updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
+  updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit', launchMode: '#s-launch',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1341,9 +1341,31 @@ $('#play-btn').addEventListener('click', async () => {
   const btn = $('#play-btn');
   btn.disabled = true;
   $('#play-label').textContent = 'Starting…';
-  const r = await run(api.launchGame());
-  if (r) toast(`Starting Cyberpunk 2077 through ${r.via}`, 'success');
+  let r = await run(api.launchGame());
+  // REDmod deploy failed: say why, and let the player decide.
+  if (r?.deployFailed) {
+    const go = await confirmBox('REDmod deploy failed', `Your REDmods may not load (the game uses what was last deployed successfully).\n\n${r.reason}\n\nThe full output is in Game log → Manager.`, 'Launch anyway');
+    r = go ? await run(api.launchGame({ skipDeploy: true })) : null;
+  }
+  if (r && !r.deployFailed) toast(`Starting Cyberpunk 2077 through ${r.via}`, 'success');
   setTimeout(renderPlay, 4000);
+});
+// REDmod deploy runs before the game when REDmods changed: the Play button shows it.
+api.onRedmod(e => {
+  if (e.stage === 'deploying') {
+    $('#play-label').textContent = 'Deploying REDmods…';
+    if (e.line) $('#play-sub').textContent = e.line.slice(0, 60);
+  } else if (e.stage === 'done') {
+    toast('REDmods deployed', 'success');
+    renderPlay();
+  } else if (e.stage === 'failed') {
+    renderPlay();
+  }
+});
+$('#mods-redmod').addEventListener('click', async () => {
+  const r = await run(api.deployRedmods());
+  if (r === null) toast('There are no REDmods in the game folder');
+  else if (r && !r.ok) modal({ title: 'REDmod deploy failed', body: h('p', { class: 'pre-wrap' }, `${r.reason}\n\nThe full output is in Game log → Manager.`), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
 });
 
 /** Settings: every install found, with its store; one click to use another. */
