@@ -48,6 +48,7 @@ function systemPrompt() {
 - An error that names no mod (e.g. ArchiveXL "Line #2: Patch config must be a map or list"): find the candidate files (find_mod_files "xl" under archive/pc/mod, or the mod's folder), read_mod_file the suspects and check the line the error names. Recently installed or updated mods first.
 - A CET, RED4ext or redscript error: the mod's own folder usually has a log; read it.
 - Then get_mod for the mod you found (version, update, requirements, when installed), and check_for_updates or the web if a newer version or a known issue might explain it.
+- Settings files (.json, .ini, .toml, .cfg, .xml…) may hold the user's keys, so read_config_files asks the user first; keys come back as [hidden: set …] or [hidden: empty]. Never ask the user to paste a key or password into the chat: when one is missing or a setting must change, use ask_user_to_fill (a form; the app writes the file and you learn only that it was set), or show_file so they edit it in the app's editor.
 End with the exact mod and the exact fix (and propose the change for approval when it is one you can make). Ask the user only what no tool can tell you, such as what they saw on screen.`,
     'Facts: archive mods load in the order of the load order, and when two change the same thing the FIRST loaded wins. REDmods load after all archives and need REDmod deploy after changes. CET, redscript, RED4ext and TweakXL mods work once their files are in place. Some mods are managed by Vortex next to this app.',
     'Changing anything (enable, disable, update, load order, REDmod deploy) is only possible by calling an action tool. That does NOT change anything: it shows the user a card to approve or decline. Never say a change was made until a message starts with "[request approved]" and its results. If it starts with "[request declined]", the user said no: do not propose the same thing again unless asked.',
@@ -179,6 +180,9 @@ class Assistant extends EventEmitter {
     this.abort = null;
     this.state = { history: [], transcript: [], note: '' };
     try { this.state = { ...this.state, ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { /* a new chat */ }
+    this.waiting = null;
+    // A question left open when the app closed can no longer be answered.
+    for (const q of this.state.transcript) if ((q.type === 'access' || q.type === 'form') && q.status === 'pending') q.status = 'expired';
   }
 
   configured() {
@@ -187,7 +191,7 @@ class Assistant extends EventEmitter {
   }
 
   view() {
-    return { configured: this.configured(), busy: this.busy, model: this.settings.get('aiModel') || '', transcript: this.state.transcript };
+    return { configured: this.configured(), busy: this.busy, waiting: !!this.waiting, model: this.settings.get('aiModel') || '', transcript: this.state.transcript };
   }
 
   save() {
@@ -265,10 +269,24 @@ class Assistant extends EventEmitter {
             if (kind === 'read') {
               const step = this.show({ type: 'activity', text: (ACTIVITY[c.name] || (() => c.name))(c.args || {}), status: 'running' });
               try { content = await this.tools.read(c.name, c.args || {}); this.update(step, { status: 'done' }); } catch (err) { this.update(step, { status: 'failed' }); throw err; }
+            } else if (kind === 'card' && c.name === 'show_file') {
+              this.show({ type: 'filecard', path: String(c.args?.path || '').replace(/\\/g, '/'), note: String(c.args?.note || '').slice(0, 300) });
+              content = JSON.stringify({ shown: true, note: 'The user sees the file with an Edit button and makes the change themselves.' });
             } else if (kind === 'card') {
               const id = Number(c.args?.mod_id);
               this.show({ type: 'modcard', modId: id, note: String(c.args?.note || '').slice(0, 300) });
               content = JSON.stringify({ shown: true, note: 'The user sees the card with a Download button. They download it themselves.' });
+            } else if (kind === 'ask') {
+              // A question to the user (read these settings? fill these in?): the turn waits for the answer.
+              const q = this.tools.ask(c.name, c.args || {});
+              if (!q.ok) content = JSON.stringify({ error: q.error });
+              else {
+                const item = this.show({ ...q.card, status: 'pending' });
+                const reply = await this.waitFor(item);
+                const result = await this.tools.answer(q.card, reply);
+                this.update(item, { status: reply.approve ? (q.card.type === 'form' ? 'saved' : 'approved') : 'declined' });
+                content = result;
+              }
             } else if (kind === 'action') {
               const p = this.tools.prepare(c.name, c.args || {});
               if (!p.ok) content = JSON.stringify({ error: p.error });
@@ -305,8 +323,38 @@ class Assistant extends EventEmitter {
     }
   }
 
-  /** Approve or decline a proposal card. Approved actions run in order; the outcome goes to the model next time. */
-  async decide(id, approve) {
+  /** Wait for the user's answer to a question card (Stop ends the wait). */
+  waitFor(item) {
+    return new Promise((resolve, reject) => {
+      const signal = this.abort?.signal;
+      const onAbort = () => { this.waiting = null; this.update(item, { status: 'expired' }); reject(Object.assign(new Error('Stopped.'), { stopped: true })); };
+      if (signal?.aborted) return onAbort();
+      signal?.addEventListener('abort', onAbort, { once: true });
+      this.waiting = {
+        id: item.id,
+        resolve: reply => {
+          signal?.removeEventListener('abort', onAbort);
+          this.waiting = null;
+          this.emit('event', { type: 'status', busy: true, waiting: false });
+          resolve(reply);
+        },
+      };
+      this.emit('event', { type: 'status', busy: true, waiting: true });
+    });
+  }
+
+  /**
+   * Approve or decline a card. A question the turn waits on (read settings, a form) gets its answer
+   * (`values`: what the user typed into a form; never stored or shown to the model as such).
+   * Approved proposals run in order; their outcome goes to the model with the next message.
+   */
+  async decide(id, approve, values = {}) {
+    if (this.waiting?.id === id) {
+      this.waiting.resolve({ approve: !!approve, values: values && typeof values === 'object' ? values : {} });
+      return;
+    }
+    const q = this.state.transcript.find(x => x.id === id && (x.type === 'access' || x.type === 'form'));
+    if (q) throw new Error('That question is no longer waiting for an answer. Ask the assistant again.');
     const p = this.state.transcript.find(x => x.id === id && x.type === 'proposal');
     if (!p) throw new Error('That request is no longer here.');
     if (p.status !== 'pending') throw new Error('That request was already answered.');

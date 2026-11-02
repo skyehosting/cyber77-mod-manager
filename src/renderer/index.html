@@ -53,6 +53,9 @@
       <symbol id="i-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m16 12-4-4-4 4M12 16V8"/></symbol>
       <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z"/></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-file-code" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M10 13l-2 2 2 2M14 13l2 2-2 2"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
       <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
       <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4M4 4h13l-2.5 4L17 12H4"/></symbol>
       <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></symbol>
@@ -87,6 +90,9 @@
         </button>
         <button class="nav-item active" data-page="mods" title="Mods">
           <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="count" id="nav-mods-count">0</span>
+        </button>
+        <button class="nav-item" data-page="config" title="Mod config">
+          <svg class="i"><use href="#i-file-code"/></svg><span class="nav-label">Mod config</span>
         </button>
         <button class="nav-item" data-page="loadorder" title="Load order">
           <svg class="i"><use href="#i-sort"/></svg><span class="nav-label">Load order</span>
@@ -355,6 +361,33 @@
             <p class="empty-text">Paste a mod link above and pick its files. Downloads show their progress here.</p>
           </div>
         </div>
+      </section>
+
+      <!-- MOD CONFIG -->
+      <section class="page" id="page-config" aria-labelledby="h-config">
+        <header class="page-head">
+          <div class="page-title">
+            <h1 id="h-config">Mod config</h1>
+            <p class="page-sub" id="cfg-sub">Every mod's files, enabled or not. Point at a text file and click the pencil to edit it.</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost collapsible" id="cfg-refresh" title="Read the mod folders again" aria-label="Refresh"><svg class="i"><use href="#i-refresh"/></svg><span>Refresh</span></button>
+          </div>
+        </header>
+        <div class="toolbar">
+          <label class="search">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="cfg-search" placeholder="Search mods" type="search" aria-label="Search mods">
+          </label>
+          <div class="seg" id="cfg-filter" role="group" aria-label="Filter">
+            <button class="seg-btn active" data-f="all" aria-pressed="true">All</button>
+            <button class="seg-btn" data-f="enabled" aria-pressed="false">Enabled</button>
+            <button class="seg-btn" data-f="disabled" aria-pressed="false">Disabled</button>
+            <button class="seg-btn" data-f="vortex" aria-pressed="false">Vortex</button>
+            <button class="seg-btn" data-f="hand" aria-pressed="false" title="Files in the mod folders that no mod manager put there">Not from a manager</button>
+          </div>
+        </div>
+        <div class="card cfg-card"><div class="cfg-list" id="cfg-list" role="tree" aria-label="Mods and their files"></div></div>
       </section>
 
       <!-- AI ASSISTANT -->
@@ -716,6 +749,11 @@
     <div class="drawer-body" id="drawer-body"></div>
   </aside>
 
+  <!-- EDITOR -->
+  <div class="ed-back" id="ed-back" hidden>
+    <div class="ed" id="ed" role="dialog" aria-modal="true" aria-labelledby="ed-title"></div>
+  </div>
+
   <!-- MODAL -->
   <div class="modal-back" id="modal-back" hidden>
     <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
@@ -738,6 +776,8 @@
   <script src="features.js"></script>
   <script src="browse.js"></script>
   <script src="loadorder.js"></script>
+  <script src="modconfig.js"></script>
+  <script src="editor.js"></script>
   <script src="assistant.js"></script>
 </body>
 </html>

@@ -15,6 +15,7 @@ const { Assistant } = require('./core/ai');
 const { makeTools } = require('./core/aiTools');
 const { WebReader } = require('./core/web');
 const { GameFiles } = require('./core/gameFiles');
+const { ModConfig } = require('./core/modConfig');
 
 let win = null;
 let settings = null;
@@ -22,6 +23,7 @@ let manager = null;
 let gameLogs = null;
 let updater = null;
 let assistant = null;
+let modConfig = null;
 let lastExport = '';
 
 const cipher = {
@@ -189,9 +191,10 @@ async function boot() {
   gameLogs.start();
   app.on('before-quit', () => gameLogs.stop());
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
+  const gameFiles = new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot });
+  modConfig = new ModConfig({ manager, files: gameFiles, ownerRoot, backupDir: path.join(app.getPath('userData'), 'edited-originals') });
   const tools = makeTools({
-    manager, gameLogs, logger, web: new WebReader(),
-    files: new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot }),
+    manager, gameLogs, logger, web: new WebReader(), files: gameFiles, config: modConfig,
     allMods: () => {
       const snap = manager.snapshot();
       return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
@@ -278,7 +281,30 @@ async function boot() {
   handle('ai:view', () => assistant.view());
   handle('ai:send', text => { assistant.send(text).catch(err => send('ai', { type: 'item', item: { id: String(Date.now()), type: 'error', text: err.message } })); return true; });
   handle('ai:stop', () => assistant.stop());
-  handle('ai:decide', (id, approve) => assistant.decide(String(id), !!approve));
+  handle('ai:decide', (id, approve, values) => assistant.decide(String(id), !!approve, values || {}));
+  // Mod config: every mod's files, and the built-in editor.
+  handle('cfg:list', () => modConfig.list());
+  handle('cfg:files', key => modConfig.modFiles(String(key)));
+  handle('cfg:read', loc => {
+    const { full, ...r } = modConfig.read(loc);
+    return r;
+  });
+  handle('cfg:write', (loc, text, opts) => {
+    try {
+      const r = modConfig.write(loc, text, opts || {});
+      logger.success(`Saved ${loc.rel}${loc.base === 'game' ? '' : ' (stored copy)'}`);
+      return r;
+    } catch (err) {
+      if (err.conflict) return { conflict: true };
+      throw err;
+    }
+  });
+  handle('cfg:restore', loc => {
+    const { full, ...r } = modConfig.restore(loc);
+    logger.info(`Put back the original ${loc.rel}`);
+    return r;
+  });
+  handle('cfg:show', loc => shell.showItemInFolder(modConfig.resolve(loc)));
   handle('ai:clear', () => assistant.clear());
   handle('ai:test', () => assistant.test());
   // Links in the assistant's answers open in the user's browser (web pages only).

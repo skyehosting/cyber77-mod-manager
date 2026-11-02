@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, icon, run, toast, goTo, pageHooks, quickDownload, openMod, fmtCount */
+/* global api, $, h, icon, run, toast, goTo, pageHooks, quickDownload, openMod, fmtCount, openEditor */
 
 // ---------------------------------------------------------------- AI assistant
 
@@ -7,7 +7,7 @@
  * The chat. The engine runs in the main process (it holds the key and the tools); this page draws
  * what it sends: messages, what the assistant looked at, mod cards, and approval cards.
  */
-const ai = { view: null, items: [], busy: false, cards: new Map() };
+const ai = { view: null, items: [], busy: false, waiting: false, cards: new Map(), forms: new Map() };
 
 const SUGGESTIONS = [
   'What changed recently, and could it break my game?',
@@ -227,8 +227,75 @@ function modCardEl(item) {
   return el;
 }
 
+const QSTATUS = { approved: ['tag-ok', 'Allowed'], saved: ['tag-ok', 'Saved'], declined: ['', 'Declined'], expired: ['', 'Not answered'] };
+
+/** The assistant asks to read settings files: it waits for Allow / Decline. */
+function accessEl(q) {
+  const pending = q.status === 'pending';
+  const [cls, label] = QSTATUS[q.status] || [];
+  return h('div', { class: `ai-card ai-access${pending ? ' ai-proposal pending' : ''}` },
+    h('div', { class: 'ai-card-head' }, icon('shield'), h('span', { class: 'ai-card-title' }, `The assistant asks to ${q.title}`), !pending ? h('span', { class: `tag ${cls}` }, label) : null),
+    q.reason ? h('p', { class: 'ai-card-why' }, q.reason) : null,
+    h('ul', { class: 'ai-files' }, q.files.map(f => h('li', {}, icon('file-code'), h('span', {}, f)))),
+    h('div', { class: 'ai-secure' }, icon('key'), h('span', {}, 'Keys, tokens and passwords in these files are hidden before the assistant sees them: it only learns whether each one is filled in.')),
+    pending ? h('div', { class: 'ai-card-foot' },
+      h('span', { class: 'hint' }, 'It reads them only if you allow it.'),
+      h('button', { class: 'btn', onclick: () => answerQ(q, false) }, 'Decline'),
+      h('button', { class: 'btn btn-primary', onclick: () => answerQ(q, true) }, icon('check'), h('span', {}, 'Allow'))) : null);
+}
+
+/** The assistant asks the user to fill in settings: the app writes them; the assistant never sees secret values. */
+function formEl(q) {
+  const pending = q.status === 'pending';
+  const [cls, label] = QSTATUS[q.status] || [];
+  if (!ai.forms.has(q.id)) ai.forms.set(q.id, {});
+  const values = ai.forms.get(q.id);
+  const fields = q.fields.map((f, i) => {
+    const id = `ai-f-${q.id}-${i}`;
+    const input = h('input', {
+      id, type: f.secret ? 'password' : 'text', autocomplete: 'off', spellcheck: 'false', value: values[f.key] || '', disabled: !pending,
+      placeholder: pending ? (f.secret ? 'Paste it here' : '') : 'Not shown', oninput: ev => { values[f.key] = ev.target.value; },
+      onkeydown: ev => { if (ev.key === 'Enter') { ev.preventDefault(); answerQ(q, true); } },
+    });
+    return h('div', { class: 'ai-field' },
+      h('label', { class: 'label', for: id }, f.label, h('span', { class: 'hint' }, `  ${f.key}`)),
+      h('div', { class: 'ai-field-row' }, input,
+        f.secret && pending ? h('button', { class: 'btn btn-icon', type: 'button', title: 'Show or hide', 'aria-label': `Show or hide ${f.label}`, onclick: () => { input.type = input.type === 'password' ? 'text' : 'password'; } }, icon('eye')) : null),
+      f.hint ? h('p', { class: 'hint' }, f.hint) : null);
+  });
+  return h('div', { class: `ai-card ai-form${pending ? ' ai-proposal pending' : ''}` },
+    h('div', { class: 'ai-card-head' }, icon('edit'), h('span', { class: 'ai-card-title' }, `The assistant asks you to ${q.title}`), !pending ? h('span', { class: `tag ${cls}` }, label) : null),
+    q.reason ? h('p', { class: 'ai-card-why' }, q.reason) : null,
+    h('div', { class: 'ai-form-fields' }, fields),
+    h('div', { class: 'ai-secure' }, icon('key'), h('span', {}, `Saved straight into ${q.path}. The assistant learns only that a hidden field was filled in, never what you typed.`)),
+    pending ? h('div', { class: 'ai-card-foot' },
+      h('button', { class: 'btn btn-ghost', onclick: () => openEditor({ loc: { base: 'game', rel: q.path } }) }, icon('file-code'), h('span', {}, 'Open the file')),
+      h('span', { class: 'hint' }, ''),
+      h('button', { class: 'btn', onclick: () => answerQ(q, false) }, 'Cancel'),
+      h('button', { class: 'btn btn-primary', onclick: () => answerQ(q, true) }, icon('save'), h('span', {}, 'Save'))) : null);
+}
+
+async function answerQ(q, approve) {
+  const values = q.type === 'form' && approve ? { ...ai.forms.get(q.id) } : undefined;
+  const r = await api.aiDecide(q.id, approve, values);
+  ai.forms.delete(q.id);
+  if (r.error) toast(r.error, 'error');
+}
+
+/** A file the assistant points at, with Edit (the built-in editor). */
+function fileCardEl(it) {
+  const open = () => openEditor({ loc: { base: 'game', rel: it.path } });
+  return h('div', { class: 'ai-card' },
+    h('div', { class: 'ai-filecard' }, icon('file-code'),
+      h('div', { class: 'ai-filecard-body' }, h('div', { class: 'ai-filecard-path' }, it.path), it.note ? h('p', { class: 'ai-mod-note' }, it.note) : null),
+      h('button', { class: 'btn btn-sm btn-primary', onclick: open }, icon('edit'), h('span', {}, 'Edit'))));
+}
+
 function itemEl(it) {
   switch (it.type) {
+    case 'access': return accessEl(it);
+    case 'form': return formEl(it);
+    case 'filecard': return fileCardEl(it);
     case 'user': return h('div', { class: 'ai-msg ai-user' }, h('div', { class: 'ai-bubble' }, it.text));
     case 'assistant': return h('div', { class: 'ai-msg ai-bot' }, h('div', { class: 'ai-bubble' }, markdown(it.text)));
     case 'activity': return h('div', { class: `ai-activity ${it.status || ''}` }, icon(it.status === 'failed' ? 'alert' : it.status === 'running' ? 'activity' : 'check'), h('span', {}, it.text));
@@ -252,7 +319,8 @@ function renderChat() {
     h('div', { class: 'ai-empty-title' }, 'Ask about your mods, errors or setup'),
     h('p', { class: 'hint' }, 'The assistant reads your mods, logs and load order, searches the web, and proposes changes for you to approve.'),
     h('div', { class: 'ai-suggest' }, SUGGESTIONS.map(s => h('button', { class: 'chip', onclick: () => sendText(s) }, s))))]));
-  if (ai.busy) box.append(h('div', { class: 'ai-thinking' }, h('span', {}), h('span', {}), h('span', {})));
+  if (ai.busy && ai.waiting) box.append(h('div', { class: 'ai-note' }, icon('shield'), h('span', {}, 'Waiting for your answer above')));
+  else if (ai.busy) box.append(h('div', { class: 'ai-thinking' }, h('span', {}), h('span', {}), h('span', {})));
   if (nearEnd || ai.busy) box.scrollTop = box.scrollHeight;
   $('#ai-send').hidden = ai.busy;
   $('#ai-stop').hidden = !ai.busy;
@@ -274,10 +342,10 @@ api.onAi(e => {
   if (e.type === 'reset') { ai.items = []; ai.cards.clear(); }
   if (e.type === 'item') ai.items.push(e.item);
   if (e.type === 'update') { const i = ai.items.findIndex(x => x.id === e.item.id); if (i >= 0) ai.items[i] = e.item; }
-  if (e.type === 'status') ai.busy = e.busy;
+  if (e.type === 'status') { ai.busy = e.busy; ai.waiting = !!e.waiting && e.busy; }
   if ($('#page-ai').classList.contains('active')) renderChat();
   // A request waiting for approval: say so wherever the user is.
-  if (e.type === 'item' && e.item.type === 'proposal' && !$('#page-ai').classList.contains('active')) toast('The AI assistant asks for your approval', 'info', { label: 'Show', fn: () => goTo('ai') });
+  if (e.type === 'item' && ['proposal', 'access', 'form'].includes(e.item.type) && !$('#page-ai').classList.contains('active')) toast('The AI assistant asks for your answer', 'info', { label: 'Show', fn: () => goTo('ai') });
 });
 
 async function loadAi() {
@@ -286,6 +354,7 @@ async function loadAi() {
   ai.view = r;
   ai.items = r.transcript;
   ai.busy = r.busy;
+  ai.waiting = !!r.waiting;
   renderChat();
 }
 

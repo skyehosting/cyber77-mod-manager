@@ -78,7 +78,7 @@ class GameFiles {
   }
 
   /** Lines containing `text` in the mod folders' text files (not logs unless asked for). */
-  async search({ text, folder, ext, limit = 80 }) {
+  async search({ text, folder, ext, limit = 80, skip = null, clean = null }) {
     const needle = String(text || '').toLowerCase();
     if (needle.length < 2) throw new Error('Give at least 2 characters to search for.');
     const idx = this.index();
@@ -87,6 +87,8 @@ class GameFiles {
     const pool = idx.files.filter(f => isText(f.rel) && f.size <= MAX_TEXT_BYTES &&
       (exts ? exts.has(extOf(f.rel)) : extOf(f.rel) !== '.log') &&
       (!under || f.rel.toLowerCase().startsWith(`${under}/`)));
+    const skipped = skip ? pool.filter(f => skip(f.rel)).length : 0;
+    if (skip) pool.splice(0, pool.length, ...pool.filter(f => !skip(f.rel)));
     const n = Math.min(Math.max(Number(limit) || 80, 1), 200);
     const matches = [];
     let filesWithMatches = 0;
@@ -99,14 +101,17 @@ class GameFiles {
       filesWithMatches++;
       const lines = body.split(/\r?\n/);
       for (let i = 0; i < lines.length && matches.length < n; i++) {
-        if (lines[i].toLowerCase().includes(needle)) matches.push({ path: f.rel, line: i + 1, text: lines[i].trim().slice(0, 240), mod: this.ownerOf(f.rel, idx.own) });
+        if (lines[i].toLowerCase().includes(needle)) matches.push({ path: f.rel, line: i + 1, text: (clean ? clean(lines[i]) : lines[i]).trim().slice(0, 240), mod: this.ownerOf(f.rel, idx.own) });
       }
     }
-    return { gameFolder: idx.dir, filesSearched: scanned, filesNotSearched: Math.max(0, pool.length - MAX_SEARCH_FILES) || undefined, filesWithMatches, shown: matches.length, matches };
+    return {
+      gameFolder: idx.dir, filesSearched: scanned, filesNotSearched: Math.max(0, pool.length - MAX_SEARCH_FILES) || undefined,
+      settingsFilesNotSearched: skipped || undefined, filesWithMatches, shown: matches.length, matches,
+    };
   }
 
   /** One text file, with line numbers, from `from` (1-based) for `count` lines. */
-  async read({ file, from = 1, count = 200 }) {
+  async read({ file, from = 1, count = 200, clean = null }) {
     const idx = this.index();
     const rel = String(file || '').replace(/\\/g, '/').replace(/^\/+/, '');
     const full = path.resolve(idx.dir, rel);
@@ -124,7 +129,7 @@ class GameFiles {
     return {
       path: inside.replace(/\\/g, '/'), mod: this.ownerOf(inside.replace(/\\/g, '/'), idx.own), totalLines: lines.length,
       from: start, to: start + slice.length - 1,
-      text: slice.map((l, i) => `${String(start + i).padStart(4)}| ${l.slice(0, 500)}`).join('\n'),
+      text: slice.map((l, i) => `${String(start + i).padStart(4)}| ${(clean ? clean(l) : l).slice(0, 500)}`).join('\n'),
     };
   }
 }
