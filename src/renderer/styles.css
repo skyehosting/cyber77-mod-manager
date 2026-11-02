@@ -1737,7 +1737,7 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 /* AI: tokens, live next to the dots and under each answer */
 .ai-thinking-row { display: flex; align-items: center; gap: var(--sp-2); }
 .ai-tokens { color: var(--muted); font: var(--fs-xs) var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ai-usage { margin: 0.3rem 0 0 var(--sp-2); color: var(--faint); font: var(--fs-xs) var(--mono); font-variant-numeric: tabular-nums; }
+.ai-usage { color: var(--faint); font: var(--fs-xs) var(--mono); font-variant-numeric: tabular-nums; }
 .ai-bot { flex-direction: column; align-items: flex-start; }
 .plain-list { margin: var(--sp-2) 0 0; padding-left: 1.2rem; color: var(--text-2); font-size: var(--fs-sm); }
 .plain-list li { margin: 0.25rem 0; }
@@ -1745,3 +1745,10 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ai-timeout-row .hint { margin: 0; align-self: center; }
 .ai-stop-inline { margin-left: var(--sp-1); color: var(--muted); }
 .ai-stop-inline:hover { color: var(--err); }
+/* Under an answer: Copy fades in when you point at the answer (always there for the keyboard) */
+.ai-msg-foot { display: flex; align-items: center; gap: var(--sp-2); min-height: 1.9rem; margin-top: 0.15rem; padding-left: 0.1rem; }
+.ai-copy { opacity: 0; transition: opacity .15s var(--ease), color .15s; color: var(--muted); height: 1.7rem; }
+.ai-bot:hover .ai-copy, .ai-copy:focus-visible, .ai-copy.done { opacity: 1; }
+.ai-copy:hover { color: var(--text); }
+.ai-copy.done { color: var(--ok); }
+@media (hover: none) { .ai-copy { opacity: 1; } }

@@ -297,9 +297,14 @@ function itemEl(it) {
     case 'form': return formEl(it);
     case 'filecard': return fileCardEl(it);
     case 'user': return h('div', { class: 'ai-msg ai-user' }, h('div', { class: 'ai-bubble' }, it.text));
-    case 'assistant': return h('div', { class: 'ai-msg ai-bot' }, h('div', { class: 'ai-bubble' }, markdown(it.text)),
-      it.usage ? h('div', { class: 'ai-usage', title: `Tokens this answer used${it.usage.steps > 1 ? `, over ${it.usage.steps} requests to the model (each one re-reads the chat so far)` : ''}${it.usage.estimated ? '. Your provider does not report them: estimated' : ''}` },
-        tokenLine(it.usage, it.usage.steps > 1 ? `${it.usage.steps} steps` : '')) : null);
+    case 'assistant': {
+      const bubble = h('div', { class: 'ai-bubble' }, markdown(it.text));
+      return h('div', { class: 'ai-msg ai-bot' }, bubble,
+        h('div', { class: 'ai-msg-foot' },
+          h('button', { class: 'btn btn-sm btn-ghost ai-copy', title: 'Copy (with its formatting)', 'aria-label': 'Copy this answer', onclick: ev => copyAnswer(it.text, bubble, ev.currentTarget) }, icon('copy'), h('span', {}, 'Copy')),
+          it.usage ? h('span', { class: 'ai-usage', title: `Tokens this answer used${it.usage.steps > 1 ? `, over ${it.usage.steps} requests to the model (each one re-reads the chat so far)` : ''}${it.usage.estimated ? '. Your provider does not report them: estimated' : ''}` },
+            tokenLine(it.usage, it.usage.steps > 1 ? `${it.usage.steps} steps` : '')) : null));
+    }
     case 'activity': return h('div', { class: `ai-activity ${it.status || ''}` }, icon(it.status === 'failed' ? 'alert' : it.status === 'running' ? 'activity' : 'check'), h('span', {}, it.text));
     case 'modcard': return modCardEl(it);
     case 'proposal': return proposalEl(it);
@@ -333,6 +338,75 @@ function renderChat() {
   $('#ai-send').hidden = ai.busy;
   $('#ai-stop').hidden = !ai.busy;
   $('#ai-input').disabled = false;
+}
+
+// ---- copy an answer
+
+// A pasted answer lands on a light page (Word, Docs, mail): the app's dark colours would be
+// unreadable there, so each part gets a light-page look, written inline (no stylesheet travels).
+const PASTE_TONE = { error: '#c62828', warn: '#b45309', ok: '#1a7f37', info: '#0b62c4', mod: '#8a6100', muted: '#6b7280' };
+const PASTE_TINT = { error: '#fdecec', warn: '#fff4e5', ok: '#e9f7ee', info: '#e8f1fc', mod: '#fdf6dd', muted: '#f3f4f6' };
+const MONO = 'font-family:Consolas,\'Cascadia Mono\',monospace';
+
+/** The answer as HTML for Word, Docs, mail and the like: headings, colours, code, callouts, tables. */
+function answerHtml(bubble) {
+  const copy = bubble.cloneNode(true);
+  copy.querySelectorAll('svg').forEach(s => s.remove()); // icons point into this page's sprite sheet
+  const toneOf = el => (el.className.match(/ai-(?:c|callout)-(\w+)/) || [])[1];
+  for (const el of copy.querySelectorAll('*')) {
+    const cls = el.className || '';
+    let style = '';
+    if (el.classList.contains('ai-c')) {
+      const t = toneOf(el);
+      style = `color:${PASTE_TONE[t] || 'inherit'}${t === 'muted' ? '' : ';font-weight:600'}`;
+    } else if (el.classList.contains('ai-task')) {
+      el.replaceWith(document.createTextNode(cls.includes('done') ? '☑ ' : '☐ '));
+      continue;
+    } else if (el.classList.contains('ai-code')) style = `${MONO};background:#f6f8fa;border:1px solid #e1e4e8;border-radius:6px;padding:8px 10px;white-space:pre-wrap`;
+    else if (el.tagName === 'CODE' && !el.closest('pre')) style = `${MONO};background:#f1f3f5;border-radius:3px;padding:0 3px`;
+    else if (el.classList.contains('ai-callout')) {
+      const t = toneOf(el);
+      style = `border-left:4px solid ${PASTE_TONE[t] || '#888'};background:${PASTE_TINT[t] || '#f5f5f5'};padding:6px 12px;margin:8px 0;border-radius:4px`;
+      const head = el.querySelector('.ai-callout-head');
+      if (head) head.dataset.tone = t; // this element's class is gone by the time the walk reaches it
+    } else if (el.classList.contains('ai-callout-head')) {
+      style = `font-weight:700;color:${PASTE_TONE[el.dataset.tone] || 'inherit'}`;
+      el.removeAttribute('data-tone');
+    } else if (el.classList.contains('ai-quote')) style = 'border-left:3px solid #ccc;padding-left:10px;color:#555;margin:6px 0';
+    else if (el.tagName === 'TABLE') style = 'border-collapse:collapse;margin:6px 0';
+    else if (el.tagName === 'TH') style = 'border:1px solid #d0d7de;padding:4px 8px;background:#f6f8fa;text-align:left';
+    else if (el.tagName === 'TD') style = `border:1px solid #d0d7de;padding:4px 8px${cls.includes('ai-al-right') ? ';text-align:right' : cls.includes('ai-al-center') ? ';text-align:center' : ''}`;
+    else if (el.tagName === 'HR') style = 'border:0;border-top:1px solid #d0d7de';
+    else if (el.tagName === 'A') {
+      if (el.title) el.setAttribute('href', el.title); // links keep their address
+      el.removeAttribute('onclick');
+    }
+    el.removeAttribute('class');
+    el.removeAttribute('title');
+    if (style) el.setAttribute('style', style);
+  }
+  return `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:11pt;line-height:1.5">${copy.innerHTML}</div>`;
+}
+
+/** The answer as Markdown, with colour tags as plain words (Discord, Notepad, comments). */
+const answerText = text => String(text).replace(/\{[a-zA-Z]+\|([^{}\n]+)\}/g, '$1');
+
+async function copyAnswer(text, bubble, btn) {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([answerHtml(bubble)], { type: 'text/html' }),
+      'text/plain': new Blob([answerText(text)], { type: 'text/plain' }),
+    })]);
+  } catch {
+    await navigator.clipboard.writeText(answerText(text)); // formatting refused: at least the text
+  }
+  btn.classList.add('done');
+  btn.replaceChildren(icon('check'), h('span', {}, 'Copied'));
+  setTimeout(() => {
+    if (!document.contains(btn)) return;
+    btn.classList.remove('done');
+    btn.replaceChildren(icon('copy'), h('span', {}, 'Copy'));
+  }, 1600);
 }
 
 // ---- token use
