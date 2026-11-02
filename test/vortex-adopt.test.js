@@ -141,6 +141,32 @@ test('a clash left from before waits while Vortex is open, and is settled once i
   assert.ok(cli.flat().some(a => a.includes('alpha.enabled=false')));
 });
 
+test('"Vortex mods: move them here automatically": only when chosen, only while Vortex is closed, into the active profile', async () => {
+  const { mgr, cli } = setup();
+  const d = () => mgr.vortex.read();
+  assert.strictEqual(mgr.settings.get('vortexAutoMove'), 'ask', 'nobody\'s Vortex mods move unasked');
+  assert.strictEqual(mgr.vortexView().pending, 3);
+  await mgr.autoMoveVortex(d());
+  assert.strictEqual(Object.keys(mgr.data.mods).length, 0, '"ask" moves nothing by itself');
+
+  mgr.settings.update({ vortexAutoMove: 'on' });
+  mgr.vortexRunning = true;
+  await mgr.autoMoveVortex(d());
+  assert.deepStrictEqual([Object.keys(mgr.data.mods).length, cli.length], [0, 0], 'Vortex open: it waits, and Vortex is not closed');
+
+  mgr.vortexRunning = false;
+  await mgr.autoMoveVortex(d());
+  const names = Object.values(mgr.data.mods).map(m => m.name).sort();
+  assert.deepStrictEqual(names, ['ALPHA', 'BETA', 'GAMMA']);
+  assert.ok(cli.flat().some(a => a.includes('alpha.enabled=false')), 'switched off in Vortex');
+  const active = mgr.data.profiles.list[mgr.data.profiles.active];
+  assert.deepStrictEqual(active.enabled.map(id => mgr.data.mods[id].name).sort(), ['ALPHA', 'BETA'], 'the enabled ones are in the active profile');
+  assert.strictEqual(mgr.vortexView().pending, 0);
+  const before = cli.length;
+  await mgr.autoMoveVortex(d());
+  assert.strictEqual(cli.length, before, 'nothing left to move: nothing happens');
+});
+
 test('enabling and disabling remembers when (for sorting by recent changes)', async () => {
   const { mgr } = setup();
   mgr.data.mods.m = { id: 'm', key: 'm', name: 'Mine', modId: 1, fileId: 1, files: [], enabled: false, priority: 1 };

@@ -22,7 +22,8 @@ test('OpenAI-compatible: messages, tool calls and results; no empty tool list', 
   assert.strictEqual(body.tools[0].function.name, 'get_overview');
   assert.ok(!('tools' in openaiRequest({ model: 'm', system: 's', history, tools: [] })));
   const r = openaiReply({ choices: [{ message: { content: null, tool_calls: [{ id: 'x', function: { name: 'list_mods', arguments: '{"filter":"enabled"}' } }] } }] });
-  assert.deepStrictEqual(r, { text: '', calls: [{ id: 'x', name: 'list_mods', args: { filter: 'enabled' } }] });
+  assert.deepStrictEqual(r, { text: '', calls: [{ id: 'x', name: 'list_mods', args: { filter: 'enabled' } }], usage: null });
+  assert.deepStrictEqual(openaiReply({ choices: [{ message: { content: 'hi' } }], usage: { prompt_tokens: 1200, completion_tokens: 35, total_tokens: 1235 } }).usage, { input: 1200, output: 35 });
 });
 
 test('Anthropic: tool_use and tool_result blocks, alternating roles', () => {
@@ -33,7 +34,33 @@ test('Anthropic: tool_use and tool_result blocks, alternating roles', () => {
   assert.deepStrictEqual(body.messages[2].content[0], { type: 'tool_result', tool_use_id: 'c1', content: '{"mods":3}' });
   assert.strictEqual(body.tools[0].input_schema.type, 'object');
   const r = anthropicReply({ content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', id: 't', name: 'get_problems', input: { limit: 5 } }] });
-  assert.deepStrictEqual(r, { text: 'ok', calls: [{ id: 't', name: 'get_problems', args: { limit: 5 } }] });
+  assert.deepStrictEqual(r, { text: 'ok', calls: [{ id: 't', name: 'get_problems', args: { limit: 5 } }], usage: null });
+  // Cached input still counts as input read.
+  assert.deepStrictEqual(anthropicReply({ content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 50, cache_read_input_tokens: 900, cache_creation_input_tokens: 100, output_tokens: 20 } }).usage, { input: 1050, output: 20 });
+});
+
+test('token use: counted per answer (every step) and per chat, sent as it goes, kept with the answer', async () => {
+  const replies = [
+    { text: '', calls: [{ id: 'a', name: 'get_overview', args: {} }], usage: { input: 1000, output: 40 } },
+    { text: 'All good.', calls: [], usage: { input: 1300, output: 60 } },
+  ];
+  const events = [];
+  const a = new Assistant({
+    settings: fakeSettings(), tools: fakeTools(), file: file(),
+    call: async ({ onSend }) => { onSend?.(1234); return replies.shift(); },
+  });
+  a.on('event', e => { if (e.type === 'usage') events.push(e); });
+  await a.send('check');
+  assert.deepStrictEqual(events[0], { type: 'usage', turn: { input: 0, output: 0, steps: 0, estimated: false }, sending: 1234, total: null }, 'the request size first');
+  assert.deepStrictEqual(events.at(-1).turn, { input: 2300, output: 100, steps: 2, estimated: false });
+  assert.deepStrictEqual(a.view().usage, { input: 2300, output: 100, estimated: false });
+  assert.deepStrictEqual(a.view().transcript.find(x => x.type === 'assistant').usage, { input: 2300, output: 100, steps: 2, estimated: false });
+  // A provider that reports nothing: estimated, and marked so.
+  replies.push({ text: 'x'.repeat(400), calls: [] });
+  await a.send('again');
+  assert.deepStrictEqual(a.view().usage, { input: 3534, output: 201, estimated: true }, 'about 4 characters a token');
+  a.clear();
+  assert.strictEqual(a.view().usage, null);
 });
 
 test('endpoints: a base URL gets the right path; a full one is kept', () => {

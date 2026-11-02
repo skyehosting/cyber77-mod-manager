@@ -7,7 +7,7 @@
  * The chat. The engine runs in the main process (it holds the key and the tools); this page draws
  * what it sends: messages, what the assistant looked at, mod cards, and approval cards.
  */
-const ai = { view: null, items: [], busy: false, waiting: false, cards: new Map(), forms: new Map() };
+const ai = { view: null, items: [], busy: false, waiting: false, live: null, cards: new Map(), forms: new Map() };
 
 const SUGGESTIONS = [
   'What changed recently, and could it break my game?',
@@ -297,7 +297,9 @@ function itemEl(it) {
     case 'form': return formEl(it);
     case 'filecard': return fileCardEl(it);
     case 'user': return h('div', { class: 'ai-msg ai-user' }, h('div', { class: 'ai-bubble' }, it.text));
-    case 'assistant': return h('div', { class: 'ai-msg ai-bot' }, h('div', { class: 'ai-bubble' }, markdown(it.text)));
+    case 'assistant': return h('div', { class: 'ai-msg ai-bot' }, h('div', { class: 'ai-bubble' }, markdown(it.text)),
+      it.usage ? h('div', { class: 'ai-usage', title: `Tokens this answer used${it.usage.steps > 1 ? `, over ${it.usage.steps} requests to the model (each one re-reads the chat so far)` : ''}${it.usage.estimated ? '. Your provider does not report them: estimated' : ''}` },
+        tokenLine(it.usage, it.usage.steps > 1 ? `${it.usage.steps} steps` : '')) : null);
     case 'activity': return h('div', { class: `ai-activity ${it.status || ''}` }, icon(it.status === 'failed' ? 'alert' : it.status === 'running' ? 'activity' : 'check'), h('span', {}, it.text));
     case 'modcard': return modCardEl(it);
     case 'proposal': return proposalEl(it);
@@ -312,7 +314,7 @@ function renderChat() {
   $('#ai-setup').hidden = !!v?.configured;
   $('#ai-main').hidden = !v?.configured;
   $('#ai-clear').hidden = !v?.configured;
-  $('#ai-model').textContent = v?.model ? `Model: ${v.model}` : '';
+  showChatTotal();
   if (!v?.configured) return;
   const nearEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   box.replaceChildren(...(ai.items.length ? ai.items.map(itemEl) : [h('div', { class: 'ai-empty' },
@@ -320,11 +322,49 @@ function renderChat() {
     h('p', { class: 'hint' }, 'The assistant reads your mods, logs and load order, searches the web, and proposes changes for you to approve.'),
     h('div', { class: 'ai-suggest' }, SUGGESTIONS.map(s => h('button', { class: 'chip', onclick: () => sendText(s) }, s))))]));
   if (ai.busy && ai.waiting) box.append(h('div', { class: 'ai-note' }, icon('shield'), h('span', {}, 'Waiting for your answer above')));
-  else if (ai.busy) box.append(h('div', { class: 'ai-thinking' }, h('span', {}), h('span', {}), h('span', {})));
+  else if (ai.busy) {
+    box.append(h('div', { class: 'ai-thinking-row' },
+      h('div', { class: 'ai-thinking' }, h('span', {}), h('span', {}), h('span', {})),
+      h('span', { class: 'ai-tokens', id: 'ai-live-tokens', 'aria-live': 'off' })));
+    showLiveTokens();
+  }
   if (nearEnd || ai.busy) box.scrollTop = box.scrollHeight;
   $('#ai-send').hidden = ai.busy;
   $('#ai-stop').hidden = !ai.busy;
   $('#ai-input').disabled = false;
+}
+
+// ---- token use
+
+const fmtTok = n => (n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`);
+
+/** "12.4k in · 860 out" (with ~ when the provider does not report them), plus an optional extra. */
+function tokenLine(u, extra = '') {
+  const t = u.estimated ? '~' : '';
+  return [`${t}${fmtTok(u.input)} in`, `${t}${fmtTok(u.output)} out`, extra].filter(Boolean).join('  ·  ');
+}
+
+/** Next to the dots: this answer so far, and the request on its way. */
+function showLiveTokens() {
+  const el = $('#ai-live-tokens');
+  if (!el) return;
+  const l = ai.live;
+  if (!l) { el.textContent = 'Starting…'; return; }
+  const parts = [];
+  if (l.turn.steps) parts.push(tokenLine(l.turn, l.turn.steps > 1 ? `${l.turn.steps} steps` : ''));
+  if (l.sending) parts.push(`sending ~${fmtTok(l.sending)}`);
+  el.textContent = parts.join('  ·  ') || 'Starting…';
+  el.title = 'Tokens this answer has used so far. Each step is one request to the model, which reads the whole chat again; "sending" is the request now on its way (estimated until the reply says).';
+}
+
+/** In the header: the model, and what this chat has used. */
+function showChatTotal() {
+  const v = ai.view;
+  const el = $('#ai-model');
+  if (!v?.model) { el.textContent = ''; return; }
+  const u = v.usage;
+  el.textContent = `Model: ${v.model}${u && (u.input || u.output) ? `  ·  ${u.estimated ? '~' : ''}${fmtTok(u.input + u.output)} tokens this chat` : ''}`;
+  el.title = u ? `This chat so far: ${tokenLine(u)}. Clear chat starts the count again.` : '';
 }
 
 async function sendText(text) {
@@ -342,7 +382,16 @@ api.onAi(e => {
   if (e.type === 'reset') { ai.items = []; ai.cards.clear(); }
   if (e.type === 'item') ai.items.push(e.item);
   if (e.type === 'update') { const i = ai.items.findIndex(x => x.id === e.item.id); if (i >= 0) ai.items[i] = e.item; }
-  if (e.type === 'status') { ai.busy = e.busy; ai.waiting = !!e.waiting && e.busy; }
+  if (e.type === 'status') { ai.busy = e.busy; ai.waiting = !!e.waiting && e.busy; if (!e.busy) ai.live = null; }
+  if (e.type === 'reset' && ai.view) ai.view.usage = null;
+  // Token counts change often: update them in place, without redrawing the chat.
+  if (e.type === 'usage') {
+    ai.live = { turn: e.turn, sending: e.sending };
+    if (ai.view) ai.view.usage = e.total;
+    showLiveTokens();
+    showChatTotal();
+    return;
+  }
   if ($('#page-ai').classList.contains('active')) renderChat();
   // A request waiting for approval: say so wherever the user is.
   if (e.type === 'item' && ['proposal', 'access', 'form'].includes(e.item.type) && !$('#page-ai').classList.contains('active')) toast('The AI assistant asks for your answer', 'info', { label: 'Show', fn: () => goTo('ai') });

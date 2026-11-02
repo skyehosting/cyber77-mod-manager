@@ -1734,3 +1734,10 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .prof-out-text span { color: var(--text-2); }
 .prof-out-actions { display: flex; gap: var(--sp-2); flex: none; }
 #prof-others-head { margin-top: var(--sp-5); }
+/* AI: tokens, live next to the dots and under each answer */
+.ai-thinking-row { display: flex; align-items: center; gap: var(--sp-2); }
+.ai-tokens { color: var(--muted); font: var(--fs-xs) var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ai-usage { margin: 0.3rem 0 0 var(--sp-2); color: var(--faint); font: var(--fs-xs) var(--mono); font-variant-numeric: tabular-nums; }
+.ai-bot { flex-direction: column; align-items: flex-start; }
+.plain-list { margin: var(--sp-2) 0 0; padding-left: 1.2rem; color: var(--text-2); font-size: var(--fs-sm); }
+.plain-list li { margin: 0.25rem 0; }

@@ -28,6 +28,7 @@ class Settings {
       launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'steam': through Steam, with its overlay
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       redmodLast: null, // the last REDmod deploy this app ran: { ok, at, reason }
+      vortexAutoMove: 'ask', // Vortex's mods: 'on' move into this app automatically | 'ask' once | 'off' leave them
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
       // The AI assistant: the user's own provider. Its key is stored like the Nexus key.
       aiProvider: 'openai', // 'openai' (any OpenAI-compatible endpoint) | 'anthropic'
@@ -109,6 +110,7 @@ class Settings {
     if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
     if ('launchMode' in patch && ['direct', 'steam', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode === 'store' ? 'steam' : patch.launchMode;
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
+    if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));

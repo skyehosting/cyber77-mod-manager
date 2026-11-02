@@ -1088,7 +1088,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', launchMode: '#s-launch',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1162,6 +1162,37 @@ function renderVortexMove() {
     ? `${plural(n, 'mod')} in Vortex (${vx.mods.filter(m => m.enabled).length} enabled)${vx.adopted ? ` · ${vx.adopted} moved here already` : ''}`
     : `All Vortex mods are managed here${vx.adopted ? ` (${vx.adopted} moved)` : ''}`;
   $('#s-vx-move').disabled = !n;
+  // "Vortex mods: ask": once per start, when Vortex has mods this app has not taken over.
+  if (state.settings?.vortexAutoMove === 'ask' && vx.pending && !vortexAsked) {
+    vortexAsked = true;
+    askVortexAutoMove(vx);
+  }
+}
+
+let vortexAsked = false;
+
+/** Profiles and share codes cover this app's mods only: offer to take over Vortex's, now and from now on. */
+async function askVortexAutoMove(vx) {
+  const v = await modal({
+    title: 'Move your Vortex mods into this app?',
+    sub: `${plural(vx.pending, 'mod')} in Vortex`,
+    body: h('div', {},
+      h('p', {}, 'Profiles and share codes only cover mods this app manages. Moved here, your Vortex mods are in your profiles too, and updated here.'),
+      h('ul', { class: 'plain-list' },
+        h('li', {}, 'Vortex switches them off and keeps them: nothing is deleted there, and you can switch back.'),
+        h('li', {}, 'Their files are linked from disk: no downloads, no extra space. Mods you already have here are matched, not added twice.'),
+        h('li', {}, 'With "Always", mods you add in Vortex later move here too, whenever Vortex is closed.'))),
+    buttons: [
+      { label: 'Not now', value: false, safe: true },
+      { label: 'Leave them in Vortex', value: 'off' },
+      { label: 'Always move them here', value: 'on', kind: 'btn-primary' },
+    ],
+  });
+  if (!v) return;
+  const s = await run(api.setSettings({ vortexAutoMove: v }));
+  if (s) state.settings = s;
+  if ($('#s-vx-auto')) $('#s-vx-auto').value = v;
+  toast(v === 'on' ? (vx.running ? 'Your Vortex mods move here as soon as Vortex is closed' : 'Moving your Vortex mods here…') : 'Vortex mods stay in Vortex (Settings → Vortex changes this)');
 }
 
 // The nxm switch is not here: it applies at once, see "Nexus download links" below.

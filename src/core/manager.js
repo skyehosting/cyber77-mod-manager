@@ -1054,6 +1054,7 @@ class ModManager extends EventEmitter {
     return {
       installed: true,
       running: this.vortexRunning,
+      pending: this.vortexPending(data).length,
       busy: this.vortex.busy,
       activeProfileName: data.activeProfileName,
       snapshotTime: data.snapshotTime,
@@ -1079,9 +1080,34 @@ class ModManager extends EventEmitter {
         this.emit('changed');
         if (!this.vortexRunning) await this.switchOffVortexTwins(null, { allowClose: false }).catch(err => this.log.warn("Could not switch off Vortex's copy of a mod enabled here", err.message));
       }
+      if (!this.vortexRunning) await this.autoMoveVortex(d).catch(err => this.log.warn('Could not move the Vortex mods into this app', err.message));
     };
     tick();
     this.vortexTimer = setInterval(() => tick().catch(() => {}), 5000);
+  }
+
+  /** Vortex mods this app has not taken over yet. */
+  vortexPending(d = this.vortex.read()) {
+    const adopted = this.data.vortexAdopted || {};
+    return (d.mods || []).filter(m => !adopted[m.vortexId]);
+  }
+
+  /**
+   * With "Vortex mods: move them here automatically", every Vortex mod becomes this app's (so
+   * profiles and share codes cover it): Vortex switches it off and keeps it, its files are
+   * linked from disk. Only while Vortex is closed, so it is never closed for this.
+   */
+  async autoMoveVortex(d) {
+    if (this.settings.get('vortexAutoMove') !== 'on' || this.autoMoving || this.vortexRunning || this.busy) return;
+    const pending = this.vortexPending(d);
+    if (!pending.length) return;
+    this.autoMoving = true;
+    try {
+      this.log.info(`Moving ${plural(pending.length, 'Vortex mod')} into this app (Vortex keeps them, switched off)…`);
+      await this.adoptFromVortex(pending.map(m => m.id));
+    } finally {
+      this.autoMoving = false;
+    }
   }
 
   // ---------------------------------------------------------------- profiles

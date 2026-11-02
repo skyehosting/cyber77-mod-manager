@@ -71,6 +71,8 @@ function endpointFor(provider, endpoint) {
   return /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
 }
 
+const estimateTokens = text => Math.ceil(String(text || '').length / 4);
+
 const schemaOf = t => ({ type: 'object', properties: t.params || {}, required: t.required || [] });
 
 /** The request body for an OpenAI-compatible chat completions endpoint. */
@@ -100,7 +102,11 @@ function openaiReply(body) {
     try { args = JSON.parse(c.function?.arguments || '{}'); } catch { args = {}; }
     return { id: c.id || `call_${crypto.randomBytes(4).toString('hex')}`, name: c.function?.name, args };
   });
-  return { text: typeof msg.content === 'string' ? msg.content : (msg.content || []).map(p => p.text || '').join(''), calls };
+  const u = body.usage;
+  return {
+    text: typeof msg.content === 'string' ? msg.content : (msg.content || []).map(p => p.text || '').join(''), calls,
+    usage: u ? { input: Number(u.prompt_tokens) || 0, output: Number(u.completion_tokens) || 0 } : null,
+  };
 }
 
 /** The request body for Anthropic's Messages API. */
@@ -129,18 +135,23 @@ function anthropicRequest({ model, system, history, tools }) {
 function anthropicReply(body) {
   const blocks = body?.content;
   if (!Array.isArray(blocks)) throw new Error('The AI endpoint sent no reply.');
+  const u = body.usage;
   return {
     text: blocks.filter(b => b.type === 'text').map(b => b.text).join('\n'),
     calls: blocks.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, name: b.name, args: b.input || {} })),
+    // Cached input still counts as input read.
+    usage: u ? { input: (Number(u.input_tokens) || 0) + (Number(u.cache_read_input_tokens) || 0) + (Number(u.cache_creation_input_tokens) || 0), output: Number(u.output_tokens) || 0 } : null,
   };
 }
 
-async function callModel({ provider, endpoint, key, model, history, tools, signal }) {
+async function callModel({ provider, endpoint, key, model, history, tools, signal, onSend }) {
   if (!model) throw new Error('Set the AI model in Settings.');
   const url = endpointFor(provider, endpoint);
   const system = systemPrompt();
   const anthropic = provider === 'anthropic';
   const body = anthropic ? anthropicRequest({ model, system, history, tools }) : openaiRequest({ model, system, history, tools });
+  // A first guess at the request's size (about 4 characters a token), shown until the reply says.
+  onSend?.(estimateTokens(JSON.stringify(body)));
   const headers = { 'Content-Type': 'application/json' };
   if (anthropic) { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; } else if (key) headers.Authorization = `Bearer ${key}`;
   const timeout = AbortSignal.timeout(REQUEST_MS);
@@ -191,7 +202,7 @@ class Assistant extends EventEmitter {
   }
 
   view() {
-    return { configured: this.configured(), busy: this.busy, waiting: !!this.waiting, model: this.settings.get('aiModel') || '', transcript: this.state.transcript };
+    return { configured: this.configured(), busy: this.busy, waiting: !!this.waiting, model: this.settings.get('aiModel') || '', transcript: this.state.transcript, usage: this.state.usage || null };
   }
 
   save() {
@@ -249,16 +260,29 @@ class Assistant extends EventEmitter {
     this.abort = new AbortController();
     this.emit('event', { type: 'status', busy: true });
     const proposal = [];
+    // Tokens this answer used, across every step (a step = one request to the model).
+    const turn = { input: 0, output: 0, steps: 0, estimated: false };
+    const usage = sending => this.emit('event', { type: 'usage', turn: { ...turn }, sending, total: this.state.usage || null });
+    let answer = null;
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
+        let guess = 0;
         const reply = await this.call({
           provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey,
           model: this.settings.get('aiModel'), history: this.state.history, tools: this.tools.defs, signal: this.abort.signal,
+          onSend: n => { guess = n; usage(n); },
         });
+        // Providers that report no usage: count it roughly (about 4 characters a token).
+        const used = reply.usage || { input: guess, output: estimateTokens(`${reply.text || ''}${JSON.stringify(reply.calls || [])}`) };
+        if (!reply.usage) turn.estimated = true;
+        turn.input += used.input;
+        turn.output += used.output;
+        turn.steps++;
+        usage(0);
         this.state.history.push({ role: 'assistant', text: reply.text || '', calls: reply.calls });
-        if (reply.text?.trim() && reply.calls.length) this.show({ type: 'assistant', text: reply.text.trim() });
+        if (reply.text?.trim() && reply.calls.length) answer = this.show({ type: 'assistant', text: reply.text.trim() });
         if (!reply.calls.length) {
-          if (reply.text?.trim()) this.show({ type: 'assistant', text: reply.text.trim() });
+          if (reply.text?.trim()) answer = this.show({ type: 'assistant', text: reply.text.trim() });
           break;
         }
         const results = [];
@@ -316,6 +340,12 @@ class Assistant extends EventEmitter {
         if (last?.role === 'assistant' && last.calls?.length) this.state.history.push({ role: 'tool', results: last.calls.map(c => ({ id: c.id, name: c.name, content: `{"error":${JSON.stringify(err.message)}}` })) });
       }
     } finally {
+      if (turn.steps) {
+        const t = this.state.usage || { input: 0, output: 0 };
+        this.state.usage = { input: t.input + turn.input, output: t.output + turn.output, estimated: !!t.estimated || turn.estimated };
+        if (answer) this.update(answer, { usage: { ...turn } });
+        usage(0);
+      }
       this.busy = false;
       this.abort = null;
       this.save();
