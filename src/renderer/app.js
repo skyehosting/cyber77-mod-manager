@@ -1036,7 +1036,51 @@ $$('#dl-bulk [data-act]').forEach(b => b.addEventListener('click', async () => {
 const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
+  updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
 };
+// ---------------------------------------------------------------- app updates
+
+let upd = null;
+let updTick = null;
+function renderUpdate(st) {
+  if (st) upd = st;
+  if (!upd) return;
+  const when = upd.lastCheck ? `last checked ${new Date(upd.lastCheck).toLocaleTimeString()}` : '';
+  const line = {
+    dev: `Version ${upd.current}. Updates are checked in the installed app only (this copy runs from its source folder).`,
+    idle: `Version ${upd.current}.`,
+    checking: `Version ${upd.current} · checking…`,
+    current: `Version ${upd.current} is the newest${when ? ` · ${when}` : ''}.`,
+    downloading: `Downloading version ${upd.available}… ${upd.progress || 0}%`,
+    ready: `Version ${upd.available} is downloaded and installs with a restart.`,
+    error: `Version ${upd.current} · could not check for updates (${upd.error})${when ? ` · ${when}` : ''}.`,
+  }[upd.status] || '';
+  const el = $('#s-upd-state');
+  el.textContent = line;
+  el.className = `hint${upd.status === 'error' ? ' bad' : upd.status === 'ready' ? ' ok' : ''}`;
+  $('#s-upd-check').disabled = upd.status === 'dev' || upd.status === 'checking' || upd.status === 'downloading';
+
+  // The bar: a new version is ready.
+  const bar = $('#update-bar');
+  clearInterval(updTick);
+  bar.hidden = upd.status !== 'ready';
+  if (bar.hidden) return;
+  const text = () => {
+    const left = upd.restartAt ? Math.max(0, Math.ceil((upd.restartAt - Date.now()) / 1000)) : 0;
+    $('#update-text').textContent = upd.postponed ? `Version ${upd.available} installs when you close the app.`
+      : upd.waiting ? `Version ${upd.available} is ready. The app restarts to install it when downloads and installs finish.`
+        : `Version ${upd.available} is ready. Restarting to install it in ${left} s.`;
+  };
+  text();
+  $('#update-later').hidden = !!upd.postponed;
+  if (upd.restartAt && !upd.postponed) updTick = setInterval(text, 1000);
+}
+api.onUpdate(renderUpdate);
+api.updateState().then(r => r.ok && renderUpdate(r.ok));
+$('#update-later').addEventListener('click', () => run(api.postponeUpdate()));
+$('#update-now').addEventListener('click', () => run(api.installUpdate()));
+$('#s-upd-check').addEventListener('click', () => run(api.checkForUpdate()));
+
 // The nxm switch is not here: it applies at once, see "Nexus download links" below.
 // ---------------------------------------------------------------- Nexus download links (nxm://)
 

@@ -201,6 +201,9 @@
               <h1 id="h-browse">Browse Nexus</h1>
               <p class="page-sub" id="browse-sub">Cyberpunk 2077 mods on Nexus Mods</p>
             </div>
+            <div class="head-actions">
+              <button class="btn btn-ghost collapsible" id="browse-login" title="Sign in to nexusmods.com for the pages shown here (once; it is remembered). Downloads in this app only need the API key." aria-label="Log in to Nexus"><svg class="i"><use href="#i-users"/></svg><span>Log in to Nexus</span></button>
+            </div>
           </header>
           <div class="browse-bar">
             <label class="search browse-search">
@@ -552,6 +555,18 @@
                 <button type="button" class="btn btn-sm" data-open="backups">Backups</button>
                 <button type="button" class="btn btn-sm" data-open="logs">Logs</button>
               </div>
+              <span class="label" id="s-upd-label">App updates</span>
+              <div class="field-row upd-row" role="group" aria-labelledby="s-upd-label">
+                <span class="upd-text">Check every</span>
+                <input type="number" id="s-upd-every" min="1" max="999" step="1" aria-label="Check for updates every">
+                <select id="s-upd-unit" aria-label="Unit">
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="days">days</option>
+                </select>
+                <button type="button" class="btn" id="s-upd-check">Check now</button>
+              </div>
+              <p class="hint" id="s-upd-state"></p>
             </section>
           </div>
 
@@ -611,6 +626,12 @@
 
   <div class="drop-zone" id="drop-zone" hidden aria-hidden="true">
     <div class="drop-card"><svg class="i"><use href="#i-package"/></svg><span class="drop-title">Drop to install</span><span class="drop-sub">.zip, .7z or .rar mod archives</span></div>
+  </div>
+  <div class="update-bar" id="update-bar" hidden role="status" aria-live="polite">
+    <svg class="i"><use href="#i-up-circle"/></svg>
+    <span class="update-text" id="update-text"></span>
+    <button class="btn btn-sm" id="update-later">Later</button>
+    <button class="btn btn-sm btn-primary" id="update-now">Restart now</button>
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 

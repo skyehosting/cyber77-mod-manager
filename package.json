@@ -1,23 +1,88 @@
 {
   "name": "cyber-mod-manager",
   "productName": "Cyber Mod Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Nexus Mods downloader and mod manager for Cyberpunk 2077",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --require ./test/setup.cjs --test test/*.test.js"
+    "test": "node --require ./test/setup.cjs --test test/*.test.js",
+    "check-secrets": "node tools/check-secrets.js",
+    "dist": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "2.20.1",
+    "electron-updater": "6.8.10",
     "fast-xml-parser": "5.11.2"
   },
   "devDependencies": {
-    "electron": "45.2.1"
+    "electron": "45.2.1",
+    "electron-builder": "26.17.0"
   },
   "overrides": {
     "@ghostery/adblocker": "2.20.1",
-    "@ghostery/adblocker-electron-preload": "2.20.1"
+    "@ghostery/adblocker-electron-preload": "2.20.1",
+    "@ghostery/adblocker-content": "2.20.1",
+    "@ghostery/adblocker-extended-selectors": "2.20.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skyehosting/cyber77-mod-manager.git"
+  },
+  "author": "skyehosting",
+  "license": "MIT",
+  "homepage": "https://github.com/skyehosting/cyber77-mod-manager",
+  "build": {
+    "appId": "io.github.skyehosting.cybermodmanager",
+    "productName": "Cyber Mod Manager",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "build/7zip",
+        "to": "7zip",
+        "filter": [
+          "7z.exe",
+          "7z.dll",
+          "License.txt"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Cyber-Mod-Manager-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Cyber Mod Manager"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "skyehosting",
+        "repo": "cyber77-mod-manager",
+        "releaseType": "release"
+      }
+    ]
   }
 }

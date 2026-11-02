@@ -10,11 +10,13 @@ const { launchGame } = require('./core/launcher');
 const { GameLogMonitor } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
+const { AppUpdater } = require('./core/updater');
 
 let win = null;
 let settings = null;
 let manager = null;
 let gameLogs = null;
+let updater = null;
 let lastExport = '';
 
 const cipher = {
@@ -151,6 +153,15 @@ async function boot() {
   manager.startHealthChecks();
   manager.startVortexWatch();
   applyNxmSetting().catch(err => logger.error('Could not set the Nexus link handler', err.message));
+  updater = new AppUpdater({
+    autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
+    enabled: app.isPackaged && !process.env.CMM_CAPTURE,
+    getSchedule: () => ({ every: settings.get('updateEvery'), unit: settings.get('updateUnit') }),
+    isBusy: () => manager.busy,
+    log: logger,
+  });
+  updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
+  updater.start();
   applyAdBlock();
 
   gameLogs = new GameLogMonitor({
@@ -190,6 +201,7 @@ async function boot() {
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
     if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
     if ('blockAds' in patch) applyAdBlock();
+    if ('updateEvery' in patch || 'updateUnit' in patch) updater?.start();
     logger.success('Settings saved');
     pushSnapshot();
     return settings.publicView();
@@ -226,6 +238,10 @@ async function boot() {
   // One report for both export buttons: every error and warning, and every mod with its state.
   handle('logs:history', () => logger.history);
   handle('nxm:status', () => nxmStatus());
+  handle('update:state', () => ({ ...updater.state, current: app.getVersion() }));
+  handle('update:check', () => updater.check());
+  handle('update:postpone', () => updater.postpone());
+  handle('update:install', () => updater.installNow());
   // The switch applies at once (not with Save): Settings shows the result right away.
   handle('nxm:set', async on => {
     settings.update({ handleNxm: !!on });

@@ -92,11 +92,11 @@ async function quickDownload(modId) {
 
 let view = null; // the <webview>, made once and reused
 
-function showTab(tab) {
+function showTab(tab, pageUrl = '') {
   br.tab = tab;
   setSegActive('#bd-tabs', 'tab', tab);
   $$('#bd-tabs .seg-btn').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false'));
-  const url = modPage(br.mod.modId, tab);
+  const url = pageUrl || modPage(br.mod.modId, tab);
   if (!view) {
     view = document.createElement('webview');
     view.className = 'nexus-view';
@@ -118,7 +118,23 @@ function showTab(tab) {
   }
 }
 
+/** The page view without a mod: Nexus's own sign-in page. The login stays for these pages. */
+const SIGN_IN = 'https://users.nexusmods.com/auth/sign_in';
+function openLogin() {
+  br.mod = null;
+  $('#browse-list').hidden = true;
+  $('#browse-detail').hidden = false;
+  $('#browse-detail').classList.add('is-page');
+  $('#bd-name').textContent = 'Nexus Mods account';
+  $('#bd-meta').textContent = 'Sign in once: the pages shown in Browse remember it. Downloading in this app only needs your API key.';
+  $('#bd-thumb').hidden = true;
+  showTab('description', SIGN_IN);
+  $('#bd-back').focus();
+}
+$('#browse-login').addEventListener('click', openLogin);
+
 function openMod(m) {
+  $('#browse-detail').classList.remove('is-page');
   br.mod = m;
   $('#browse-list').hidden = true;
   $('#browse-detail').hidden = false;
@@ -134,6 +150,7 @@ function openMod(m) {
 
 function closeMod() {
   $('#browse-detail').hidden = true;
+  $('#browse-detail').classList.remove('is-page');
   $('#browse-list').hidden = false;
   const card = br.mod && $(`#browse-grid [data-id="${br.mod.modId}"] .mod-card-hit`);
   br.mod = null;
@@ -142,7 +159,7 @@ function closeMod() {
 
 $('#bd-back').addEventListener('click', closeMod);
 $('#bd-download').addEventListener('click', () => br.mod && quickDownload(br.mod.modId));
-$('#bd-external').addEventListener('click', () => br.mod && api.openNexusPage(modPage(br.mod.modId, br.tab)));
+$('#bd-external').addEventListener('click', () => api.openNexusPage(br.mod ? modPage(br.mod.modId, br.tab) : SIGN_IN));
 $('#bd-tabs').addEventListener('click', ev => {
   const b = ev.target.closest('.seg-btn');
   if (b && br.mod) showTab(b.dataset.tab);

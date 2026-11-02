@@ -23,6 +23,8 @@ class Settings {
       installDependencies: true,
       handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
+      updateEvery: 2, // how often the app looks for a new version of itself…
+      updateUnit: 'minutes', // …in 'minutes' | 'hours' | 'days'
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
     });
   }
@@ -66,6 +68,8 @@ class Settings {
     if ('installDependencies' in patch) d.installDependencies = !!patch.installDependencies;
     if ('handleNxm' in patch) d.handleNxm = !!patch.handleNxm;
     if ('blockAds' in patch) d.blockAds = !!patch.blockAds;
+    if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 2));
+    if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }

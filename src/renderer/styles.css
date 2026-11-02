@@ -1393,3 +1393,16 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 #gl-manager tr.row { user-select: text; }
 .nxm-state.ok { color: var(--ok); }
 .nxm-state.bad { color: var(--warn); }
+
+/* ================================================================== app updates */
+.upd-row { align-items: center; flex-wrap: wrap; }
+.upd-row input { flex: 0 0 5rem; width: 5rem; }
+.upd-row select { flex: 0 0 auto; width: auto; }
+.upd-text { color: var(--text-2); font-size: var(--fs-sm); }
+.update-bar { position: fixed; top: var(--sp-3); left: 50%; transform: translateX(-50%); z-index: 80; display: flex; align-items: center; gap: var(--sp-3); max-width: min(46rem, calc(100vw - 2 * var(--sp-4))); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); background: var(--surface-2); border: 1px solid var(--info-line); border-radius: var(--r-lg); box-shadow: var(--shadow); animation: pop .16s var(--ease); }
+.update-bar > .i { flex: none; color: var(--info); }
+.update-text { flex: 1; min-width: 0; font-size: var(--fs-sm); }
+.update-bar .btn { flex: none; }
+
+/* The sign-in page: no mod tabs and no Download button. */
+.browse-detail.is-page #bd-tabs, .browse-detail.is-page #bd-download { display: none; }

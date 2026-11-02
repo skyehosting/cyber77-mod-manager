@@ -1,10 +1,16 @@
 # Cyber Mod Manager
 
-A small Nexus Mods downloader and mod manager for Cyberpunk 2077 (Electron).
+A Nexus Mods downloader and mod manager for Cyberpunk 2077, for Windows.
+
+## Install
+
+Download `Cyber-Mod-Manager-Setup-<version>.exe` from the [latest release](https://github.com/skyehosting/cyber77-mod-manager/releases/latest) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
+
+The app keeps itself up to date: while it is open it checks for a new version every 2 minutes (Settings → Folders & tools → App updates: any number of minutes, hours or days), downloads it, and restarts to install it once nothing is downloading or installing. **Later** on the notice leaves the update for when you close the app. Your settings, mods and downloads are kept.
+
+7-Zip ships with the app (used when 7-Zip is not installed). You need a Nexus Mods account and its personal API key; downloads straight from the API need Premium.
 
 ## Start
-
-Double-click `Start Cyber Mod Manager.cmd` (or `npm start`). Requires 7-Zip (`C:\Program Files\7-Zip\7z.exe` by default).
 
 1. **Settings** → paste your Nexus API key → **Validate** → **Save**. The game folder is found automatically (Steam, GOG, Epic Games, the Xbox app); every install found is listed there to pick from.
 2. **Browse** → search Nexus by name or mod ID → **Download** on a mod (or open it to read its pages first). Or, in **Downloads**, paste one or more mod links (any form: with or without `?tab=…`, `/games/…`, or a `file_id`) → **Choose files** → tick the files you want → **Download**.
@@ -16,7 +22,7 @@ Double-click `Start Cyber Mod Manager.cmd` (or `npm start`). Requires 7-Zip (`C:
 - **Browse Nexus.** Search Cyberpunk 2077's mods on Nexus without leaving the app. Results update as you type: names match word by word as typed (`archivex` finds ArchiveXL), and a number is also looked up as a mod ID, shown first. Filter by category (with each one's mod count), sort by most endorsed, most downloaded, recently updated, newest, best match or name, and show 20 to 80 mods per page. Adult mods are included. Mods you already have, here or in Vortex, are marked **Installed**. **Download** on a card opens the file picker below.
   - Clicking a mod opens its Nexus pages inside the app, as tabs: **Description**, **Files**, **Posts** and **Bugs**. The pages run in their own sandboxed browser session that only shows nexusmods.com (other links open in your web browser), and they remember a Nexus login and the site's cookie choice. A "Manual download" or "Mod Manager Download" clicked there is downloaded by this app.
   - Ads and trackers on these pages are blocked (Settings → Downloading), with Ghostery's blocker and the usual filter lists (EasyList, EasyPrivacy, uBlock Origin's), the same kind Brave uses. The lists are downloaded once and refreshed weekly.
-  - Logging in to the Nexus website is separate from the API key: the site has no way to sign in with an API key, so log in once inside these pages if you want to (it is remembered). The app's own **Download** buttons only need the API key.
+  - Logging in to the Nexus website is separate from the API key: the site has no way to sign in with an API key, and your browser's own login cannot be borrowed (browsers encrypt it for themselves). **Log in to Nexus** on the Browse page opens the sign-in page once; it is remembered. Sign in with email and password there: Google, Discord and other sign-in buttons go to sites outside Nexus, which open in your browser instead. The app's own **Download** buttons only need the API key.
 - **Choose files.** Before downloading, a dialog lists every file on the mod's Files tab grouped by category (Main, Updates, Optional, Misc, Old versions, Archived), each with its description, version, size and upload date. Files in the categories chosen in Settings start ticked (Main, Update, Optional, Misc by default). **Select all**, **Select none**, **Suggested** and a tick per category change that. Files already downloaded are marked.
 - **Downloads** the ticked files directly through the Premium API, the same file the site's "Manual download" button gives you. The Downloads page shows each download's progress, speed and time left, and a live **Network** graph (current speed, peak, total this session).
 - **Nexus "Mod Manager Download" buttons** (`nxm://` links) can be handled here: turn on the switch in Settings (it applies at once and asks first). Clicking one on nexusmods.com then downloads that file in this app; the first time, your browser asks whether to open Cyber Mod Manager. This works without Premium, because the link carries its own key. Whatever handled these links before is saved first (`nxm-previous-handler.reg`), and turning the switch off puts it back. Settings shows which program has the links now. Vortex takes them back each time it starts, unless you turn off "Handle Nexus links" in Vortex's settings.
@@ -91,6 +97,12 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 
 `%APPDATA%\Cyber Mod Manager\`: `settings.json` (the API key is encrypted with Windows DPAPI), and `data\` (downloads, staging, backups, `library.json`, `deployment.json`).
 
+## Releases
+
+Every push to `main` publishes a new version (`.github/workflows/release.yml`, on GitHub's Windows runners): the tests run, the app is built with electron-builder, and a GitHub release `v1.1.<build number>` is published with the installer and `latest.yml`, which installed copies check. A push never ships a key: `tools/check-secrets.js` scans every tracked file, and then everything inside the built app, for API keys and tokens, and stops the release on any hit. The app's own settings (where your API key is kept, encrypted) live in `%APPDATA%\Cyber Mod Manager` and are never part of the repository or the build.
+
+From source: `npm install`, then `npm start` (or `Start Cyber Mod Manager.cmd`). `npm run dist` builds the installer locally into `dist/`.
+
 ## Tests
 
 `npm test`. These cover:
@@ -100,4 +112,5 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 - recursive requirement resolution;
 - log parsing and live tailing;
 - a full import → install → enable → conflict → uninstall run against a fake game folder;
+- the app's update schedule and restart;
 - reading Vortex's state and deploying Vortex mods without Vortex, mod link and `nxm://` parsing, the file picker plan, store detection, Nexus mod search, and the diagnostics report.

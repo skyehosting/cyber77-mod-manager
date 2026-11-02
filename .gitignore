@@ -1,3 +1,6 @@
 node_modules/
 *.log
 .design/shots-*/
+dist/
+build/7zip/
+.design/

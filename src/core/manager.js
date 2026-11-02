@@ -38,6 +38,12 @@ const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
 /** Nexus descriptions are BBCode/HTML: keep the words only. */
 const plainText = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/\[\/?[a-z0-9=#*"' -]+\]/gi, '').replace(/<[^>]+>/g, '')
   .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+function sevenZip(configured) {
+  if (configured && fs.existsSync(configured)) return configured;
+  const bundled = process.resourcesPath ? path.join(process.resourcesPath, '7zip', '7z.exe') : '';
+  return bundled && fs.existsSync(bundled) ? bundled : configured;
+}
+
 /** "A, B and C" or "A, B, C and 9 more": who an action was about. */
 const nameList = (mods, max = 6) => {
   const names = mods.map(m => (m.version ? `${m.name} v${m.version}` : m.name));
@@ -67,7 +73,8 @@ class ModManager extends EventEmitter {
     this.library = new JsonStore(path.join(dataDir, 'library.json'), { downloads: {}, mods: {}, nextPriority: 1 });
     this.nexus = new NexusClient(() => settings.apiKey, log);
     this.downloader = new Downloader(this.nexus, log, () => settings.get('concurrentDownloads'));
-    this.installer = new Installer({ getSevenZip: () => settings.get('sevenZipPath'), tempDir: () => settings.tempDir, log });
+    // The 7-Zip set in Settings, else the copy that ships with the installed app.
+    this.installer = new Installer({ getSevenZip: () => sevenZip(settings.get('sevenZipPath')), tempDir: () => settings.tempDir, log });
     this.deployer = new Deployer({ manifestFile: path.join(dataDir, 'deployment.json'), backupDir: settings.backupDir, log });
     this.pendingFomod = new Map();
     this.plans = new Map();
@@ -85,9 +92,16 @@ class ModManager extends EventEmitter {
 
   get data() { return this.library.data; }
 
+  /** True while work is in progress that a restart (an app update) must not cut off. */
+  get busy() {
+    const dl = this.downloader;
+    return (this.pendingOps || 0) > 0 || dl.active > 0 || dl.queue.length > 0 || this.pendingFomod.size > 0 || !!this.vortex.busy;
+  }
+
   /** Run state-changing work one at a time. */
   op(fn, { quiet = false } = {}) {
-    const run = this.chain.then(fn);
+    this.pendingOps = (this.pendingOps || 0) + 1;
+    const run = this.chain.then(fn).finally(() => { this.pendingOps--; });
     this.chain = run.catch(() => {});
     // Quiet work (the background health check) announces its own changes, if any.
     return quiet ? run : run.finally(() => this.emit('changed'));
