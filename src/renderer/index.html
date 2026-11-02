@@ -601,6 +601,12 @@
                 <input id="s-ai-key" type="password" spellcheck="false">
                 <button type="button" class="btn" id="s-ai-test">Test</button>
               </div>
+              <label class="label" for="s-ai-timeout">Time limit per answer step</label>
+              <div class="field-row ai-timeout-row">
+                <input id="s-ai-timeout" type="number" min="1" max="60" step="1" aria-describedby="s-ai-timeout-hint">
+                <span class="hint">minutes</span>
+              </div>
+              <p class="hint" id="s-ai-timeout-hint">How long to wait for the model before giving up (1 to 60). Local models can need several minutes for a long chat; Stop ends a wait at any time.</p>
               <p class="hint" id="s-ai-status">Your own provider and key: the assistant reads your mods and logs, searches the web, and can only change things you approve. The key is stored encrypted.</p>
             </section>
 

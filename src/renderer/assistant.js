@@ -325,7 +325,8 @@ function renderChat() {
   else if (ai.busy) {
     box.append(h('div', { class: 'ai-thinking-row' },
       h('div', { class: 'ai-thinking' }, h('span', {}), h('span', {}), h('span', {})),
-      h('span', { class: 'ai-tokens', id: 'ai-live-tokens', 'aria-live': 'off' })));
+      h('span', { class: 'ai-tokens', id: 'ai-live-tokens', 'aria-live': 'off' }),
+      h('button', { class: 'btn btn-sm btn-ghost ai-stop-inline', title: 'Stop this answer', onclick: () => api.aiStop() }, icon('x'), h('span', {}, 'Stop'))));
     showLiveTokens();
   }
   if (nearEnd || ai.busy) box.scrollTop = box.scrollHeight;

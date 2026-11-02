@@ -2,6 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const { EventEmitter } = require('events');
 
 /*
@@ -20,7 +22,7 @@ const { EventEmitter } = require('events');
 const MAX_ROUNDS = 12;
 const KEEP_TURNS = 60;
 const OLD_TOOL_TEXT = 1500;
-const REQUEST_MS = 120000;
+const DEFAULT_TIMEOUT_MS = 5 * 60e3; // how long one request may take (Settings → AI assistant → Time limit)
 
 // What the chat page renders (src/renderer/assistant.js). Kept in step with it.
 const FORMATTING = `Formatting: your replies are shown as Markdown. Use it to make answers easy to scan:
@@ -144,7 +146,37 @@ function anthropicReply(body) {
   };
 }
 
-async function callModel({ provider, endpoint, key, model, history, tools, signal, onSend }) {
+/**
+ * POST a JSON body and read the JSON answer. Plain http/https rather than fetch: fetch gives up on
+ * its own after 5 minutes without an answer, and local models can take longer than that.
+ * Resolves { ok, status, statusText, json }; rejects with .timedOut after `timeoutMs`.
+ */
+function postJson(url, headers, body, { signal, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const lib = u.protocol === 'https:' ? https : http;
+    let done = false;
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort); fn(v); };
+    const req = lib.request(u, { method: 'POST', headers: { ...headers, 'Content-Length': Buffer.byteLength(body) } }, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        let json = null;
+        try { json = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* not JSON */ }
+        finish(resolve, { ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, statusText: res.statusMessage || '', json });
+      });
+      res.on('error', err => finish(reject, err));
+    });
+    const timer = setTimeout(() => { req.destroy(); finish(reject, Object.assign(new Error('timed out'), { timedOut: true })); }, timeoutMs);
+    const onAbort = () => { req.destroy(); finish(reject, new Error('aborted')); };
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    req.on('error', err => finish(reject, err));
+    req.end(body);
+  });
+}
+
+async function callModel({ provider, endpoint, key, model, history, tools, signal, onSend, timeoutMs }) {
   if (!model) throw new Error('Set the AI model in Settings.');
   const url = endpointFor(provider, endpoint);
   const system = systemPrompt();
@@ -154,15 +186,19 @@ async function callModel({ provider, endpoint, key, model, history, tools, signa
   onSend?.(estimateTokens(JSON.stringify(body)));
   const headers = { 'Content-Type': 'application/json' };
   if (anthropic) { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; } else if (key) headers.Authorization = `Bearer ${key}`;
-  const timeout = AbortSignal.timeout(REQUEST_MS);
+  const limit = Math.max(1, Number(timeoutMs) || DEFAULT_TIMEOUT_MS);
   let res;
   try {
-    res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    res = await postJson(url, headers, JSON.stringify(body), { signal, timeoutMs: limit });
   } catch (err) {
     if (signal?.aborted) throw Object.assign(new Error('Stopped.'), { stopped: true });
+    if (err.timedOut) {
+      const min = Math.round(limit / 6000) / 10;
+      throw new Error(`The AI endpoint did not answer within ${min} minute${min === 1 ? '' : 's'} (${url}). A local model can need longer for a long chat: raise the time limit in Settings → AI assistant, or Clear chat to make requests smaller.`);
+    }
     throw new Error(`Could not reach the AI endpoint (${url}): ${err.message}`);
   }
-  const json = await res.json().catch(() => null);
+  const json = res.json;
   if (!res.ok) {
     const why = json?.error?.message || json?.error || json?.message || res.statusText;
     throw new Error(`The AI provider answered ${res.status}: ${typeof why === 'string' ? why : JSON.stringify(why)}`);
@@ -199,6 +235,12 @@ class Assistant extends EventEmitter {
   configured() {
     const s = this.settings;
     return !!(s.get('aiModel') && (s.get('aiProvider') === 'anthropic' ? s.aiKey : s.get('aiEndpoint')));
+  }
+
+  /** How long one request may take (Settings → AI assistant → Time limit, in minutes). */
+  timeoutMs() {
+    const min = Number(this.settings.get('aiTimeout'));
+    return (Number.isFinite(min) && min > 0 ? min : 5) * 60e3;
   }
 
   view() {
@@ -270,7 +312,7 @@ class Assistant extends EventEmitter {
         const reply = await this.call({
           provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey,
           model: this.settings.get('aiModel'), history: this.state.history, tools: this.tools.defs, signal: this.abort.signal,
-          onSend: n => { guess = n; usage(n); },
+          onSend: n => { guess = n; usage(n); }, timeoutMs: this.timeoutMs(),
         });
         // Providers that report no usage: count it roughly (about 4 characters a token).
         const used = reply.usage || { input: guess, output: estimateTokens(`${reply.text || ''}${JSON.stringify(reply.calls || [])}`) };
@@ -408,7 +450,7 @@ class Assistant extends EventEmitter {
   async test() {
     const r = await this.call({
       provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel'),
-      history: [{ role: 'user', text: 'Reply with the single word: ready' }], tools: [],
+      history: [{ role: 'user', text: 'Reply with the single word: ready' }], tools: [], timeoutMs: this.timeoutMs(),
     });
     return `${this.settings.get('aiModel')} replied "${(r.text || '').trim().slice(0, 60)}"`;
   }

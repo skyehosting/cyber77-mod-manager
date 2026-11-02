@@ -228,6 +228,35 @@ test('over HTTP: an OpenAI-style endpoint, a tool round trip, the key in the hea
   }
 });
 
+test('a slow model: waited for up to the time limit, then a clear message; Stop ends the wait', async () => {
+  const http = require('http');
+  const { callModel } = require('../src/core/ai');
+  let wait = 0; // how long the fake model takes to answer
+  const server = http.createServer((req, res) => {
+    req.resume();
+    setTimeout(() => { if (!res.destroyed) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ choices: [{ message: { content: 'slow but here' } }] })); } }, wait);
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const ask = (timeoutMs, signal) => callModel({ provider: 'openai', endpoint: `http://127.0.0.1:${server.address().port}/v1`, model: 'm', history: [{ role: 'user', text: 'hi' }], tools: [], timeoutMs, signal });
+  try {
+    wait = 300;
+    assert.strictEqual((await ask(3000)).text, 'slow but here', 'a slow answer within the limit arrives');
+    wait = 2000;
+    await assert.rejects(ask(200), /did not answer within .*raise the time limit in Settings/);
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 100);
+    await assert.rejects(ask(5000, stop.signal), e => e.stopped === true, 'Stop ends the wait at once');
+    // The setting: minutes, 1 to 60, 5 by default.
+    const s = { get: k => ({ aiTimeout: undefined })[k] };
+    assert.strictEqual(new Assistant({ settings: s, tools: fakeTools(), file: file(), call: async () => ({}) }).timeoutMs(), 5 * 60e3);
+    s.get = k => ({ aiTimeout: 12 })[k];
+    assert.strictEqual(new Assistant({ settings: s, tools: fakeTools(), file: file(), call: async () => ({}) }).timeoutMs(), 12 * 60e3);
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+});
+
 test('main builds the AI tools only after the game-log monitor exists', () => {
   // The tools keep the monitor they were given; built earlier, every log tool read null.
   const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'main.js'), 'utf8');

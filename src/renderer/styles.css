@@ -1741,3 +1741,7 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ai-bot { flex-direction: column; align-items: flex-start; }
 .plain-list { margin: var(--sp-2) 0 0; padding-left: 1.2rem; color: var(--text-2); font-size: var(--fs-sm); }
 .plain-list li { margin: 0.25rem 0; }
+.ai-timeout-row input { flex: 0 0 6rem; }
+.ai-timeout-row .hint { margin: 0; align-self: center; }
+.ai-stop-inline { margin-left: var(--sp-1); color: var(--muted); }
+.ai-stop-inline:hover { color: var(--err); }
