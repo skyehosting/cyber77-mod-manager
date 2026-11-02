@@ -77,3 +77,16 @@ test('follows the newest log of each group and picks up appended lines and new s
   assert.ok(seen.some(e => e.text === 'new session' && e.level === 'warn'));
   assert.ok(!seen.some(e => e.text === 'old session error'));
 });
+
+test('logs that are not *.log files: REDmod\'s deploy log and mods\' crash reports', () => {
+  const { isLogFile } = require('../src/core/gameLogs');
+  assert.ok(isLogFile('tools/redmod/bin', 'REDmodLog.txt'));
+  assert.ok(isLogFile('red4ext/plugins/AppearanceRuntimePlugin/Logs', 'crash-2026-11-02_020827.txt'));
+  assert.ok(isLogFile('bin/x64', 'ReShade.log'));
+  assert.ok(!isLogFile('red4ext/plugins/NightCoop/logs', 'nightcoop-mods.txt'), 'a mod list in a logs folder is not a log');
+  assert.ok(!isLogFile('red4ext/plugins/HeadRayOffscreen', 'THIRD-PARTY-NOTICES.txt'));
+  assert.ok(!isLogFile('bin/x64/plugins/cyber_engine_tweaks/mods/X', 'movement-log.lua'));
+  assert.strictEqual(sourceName('tools/redmod/bin/REDmodLog.txt'), 'REDmod deploy');
+  assert.strictEqual(sourceName('red4ext/plugins/AppearanceRuntimePlugin/Logs/crash-2026-11-02_020827.txt'), 'AppearanceRuntimePlugin · crash');
+  assert.strictEqual(parseLine('[CrashProbe] ACCESS VIOLATION: let_there_be_flight.dll+0x983A3 read at 0x18').level, 'error');
+});

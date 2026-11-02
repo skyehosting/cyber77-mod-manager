@@ -40,11 +40,20 @@ function groupKey(rel) {
     .replace(/-(exit|crash|hang)\b/g, '');
 }
 
+/**
+ * Whether a file is a log: *.log, *log.txt (REDmod's REDmodLog.txt), or a crash/error/log .txt in a
+ * mod's logs folder (crash reports such as AppearanceRuntimePlugin/Logs/crash-….txt).
+ */
+function isLogFile(dir, name) {
+  if (/\.log(\.txt)?$|log\.txt$/i.test(name)) return true;
+  return /(^|\/)logs?$/i.test(dir) && /\.txt$/i.test(name) && /log|crash|error/i.test(name);
+}
+
 /** A short, human name for where a log comes from. */
 function sourceName(rel) {
   const p = rel.replace(/\\/g, '/');
   const lower = p.toLowerCase();
-  const file = path.posix.basename(p).replace(/\.log(\.txt)?$/i, '');
+  const file = path.posix.basename(p).replace(/\.log(\.txt)?$|\.txt$/i, '');
   const clean = s => s.replace(STAMP, '').replace(/[-_]rCURRENT$/i, '').replace(/\.previous\d*$/i, '').replace(/[-_ .]+$/, '') || s;
   let m = lower.match(/^bin\/x64\/plugins\/cyber_engine_tweaks\/mods\/([^/]+)\//);
   if (m) {
@@ -70,6 +79,7 @@ function sourceName(rel) {
   }
   if (lower === 'red4ext/red4ext.log') return 'RED4ext';
   if (lower.startsWith('mods/')) return `REDmod · ${p.split('/')[1]}`;
+  if (lower.startsWith('tools/redmod/')) return 'REDmod deploy';
   if (lower.startsWith('tools/')) return clean(file);
   return clean(file).replace(/-[0-9A-F]{12,}$/i, '');
 }
@@ -138,7 +148,7 @@ function parseLine(line, fileDate) {
     // No explicit level: judge by wording. Whole words only, so "ShowPauseWarning" is not a warning.
     // Counters such as "failure=0" or "0 errors" are not problems.
     const words = rest.replace(/\b\w+\s*[=:]\s*0\b/g, '').replace(/\b(no|0)\s+(errors?|warnings?|failures?)\b/gi, '');
-    if (/\b(error|exception|failed|failure|fatal|crash(ed)?|unhandled)\b/i.test(words)) norm = 'error';
+    if (/\b(error|exception|failed|failure|fatal|crash(ed)?|unhandled|access violation)\b/i.test(words)) norm = 'error';
     else if (/\b(warning|warn|deprecated|incompatible|missing)\b/i.test(words)) norm = 'warn';
   }
   return { time, level: norm, text: rest };
@@ -194,7 +204,7 @@ class GameLogMonitor extends EventEmitter {
       try { ents = fs.readdirSync(path.join(gameDir, rel), { withFileTypes: true }); } catch { return; }
       for (const e of ents) {
         const r = `${rel}/${e.name}`;
-        if (e.isDirectory()) { if (depth < MAX_DEPTH) walk(r, depth + 1); } else if (/\.log(\.txt)?$/i.test(e.name)) out.push(r);
+        if (e.isDirectory()) { if (depth < MAX_DEPTH) walk(r, depth + 1); } else if (isLogFile(rel, e.name)) out.push(r);
       }
     };
     for (const root of SCAN_ROOTS) walk(root, 0);
@@ -361,4 +371,4 @@ class GameLogMonitor extends EventEmitter {
   }
 }
 
-module.exports = { GameLogMonitor, parseLine, sourceName, groupKey, ownerRoot };
+module.exports = { GameLogMonitor, parseLine, sourceName, groupKey, ownerRoot, isLogFile };
