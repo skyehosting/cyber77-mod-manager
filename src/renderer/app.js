@@ -1336,14 +1336,36 @@ function renderPlay() {
   const here = installs.find(i => i.path.toLowerCase() === String(g.path || '').toLowerCase());
   const running = !!state.gameRunning;
   const btn = $('#play-btn');
-  btn.disabled = !g.valid || running;
+  if (!running) stopArmed = false;
+  btn.disabled = !g.valid;
   btn.classList.toggle('running', running);
-  $('#play-label').textContent = running ? 'Running' : 'Play';
-  $('#play-sub').textContent = !g.valid ? 'Set the game folder' : running ? 'Cyberpunk 2077 is open' : `Cyberpunk 2077 · ${here?.label || 'launch'}`;
-  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? 'The game is running' : `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
+  btn.classList.toggle('armed', running && stopArmed);
+  btn.querySelector('use').setAttribute('href', running ? '#i-x' : '#i-play');
+  $('#play-label').textContent = running ? (stopArmed ? 'Click again to close' : 'Stop') : 'Play';
+  $('#play-sub').textContent = !g.valid ? 'Set the game folder' : running ? (stopArmed ? 'Unsaved progress is lost' : 'Cyberpunk 2077 is running') : `Cyberpunk 2077 · ${here?.label || 'launch'}`;
+  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? 'Close the game (click twice)' : `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
 }
+// Stop asks twice: the first click arms it for a few seconds, the second closes the game.
+let stopArmed = false;
+let stopTimer = 0;
 $('#play-btn').addEventListener('click', async () => {
   const btn = $('#play-btn');
+  if (state.gameRunning) {
+    if (!stopArmed) {
+      stopArmed = true;
+      clearTimeout(stopTimer);
+      stopTimer = setTimeout(() => { stopArmed = false; renderPlay(); }, 4000);
+      renderPlay();
+      return;
+    }
+    clearTimeout(stopTimer);
+    stopArmed = false;
+    btn.disabled = true;
+    $('#play-label').textContent = 'Closing…';
+    if (await run(api.stopGame())) toast('Cyberpunk 2077 was closed', 'success');
+    setTimeout(renderPlay, 1500);
+    return;
+  }
   btn.disabled = true;
   $('#play-label').textContent = 'Starting…';
   let r = await run(api.launchGame());

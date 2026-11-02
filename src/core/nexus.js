@@ -91,6 +91,21 @@ class NexusClient {
    * Nexus requirements of a mod, from the v2 GraphQL API (v1 has no requirements endpoint).
    * Returns [{ modId, modName, gameId, url, notes, external }] plus the mod's own gameId.
    */
+  /** Which mods each of these mods requires (Nexus ids), many at once: Map modId → [modId]. */
+  async getRequirementsMany(game, modIds) {
+    const out = new Map();
+    const ids = [...new Set(modIds.map(Number).filter(n => n > 0))];
+    for (let i = 0; i < ids.length; i += 50) {
+      const data = await this.graphql(`query($ids: [CompositeDomainWithIdInput!]!) {
+        legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId externalRequirement } } } } } }`,
+      { ids: ids.slice(i, i + 50).map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
+      for (const n of data.legacyModsByDomain?.nodes || []) {
+        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).filter(r => !r.externalRequirement).map(r => Number(r.modId)).filter(Boolean));
+      }
+    }
+    return out;
+  }
+
   async getRequirements(game, modId) {
     const query = `query($ids: [CompositeDomainWithIdInput!]!) {
       legacyModsByDomain(ids: $ids) { nodes { modId gameId modRequirements {

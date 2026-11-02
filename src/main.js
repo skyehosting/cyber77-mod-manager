@@ -246,6 +246,23 @@ async function boot() {
     return r;
   });
   handle('redmod:deploy', () => runRedmodDeploy(settings.get('gamePath'), true));
+  handle('loadorder:get', () => manager.loadOrderView());
+  handle('loadorder:save', order => manager.saveLoadOrder(order));
+  handle('loadorder:auto', () => manager.autoSortLoadOrder());
+  handle('loadorder:reset', () => manager.resetLoadOrder());
+  // Stop: close the game (asked twice in the window). A normal close first, then a forced one.
+  handle('game:stop', async () => {
+    const pid = gameLogs.status().pid;
+    if (!pid) throw new Error('Cyberpunk 2077 is not running.');
+    const { execFile } = require('child_process');
+    const kill = force => new Promise(r => execFile('taskkill', ['/PID', String(pid), '/T', ...(force ? ['/F'] : [])], { windowsHide: true }, () => r()));
+    const alive = () => new Promise(r => execFile('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { windowsHide: true }, (_e, out) => r(String(out).includes(`"${pid}"`))));
+    await kill(false);
+    for (let i = 0; i < 10 && await alive(); i++) await new Promise(r => setTimeout(r, 500));
+    if (await alive()) await kill(true);
+    logger.info('Closed Cyberpunk 2077 (Stop)');
+    return true;
+  });
   // One report for both export buttons: every error and warning, and every mod with its state.
   handle('logs:history', () => logger.history);
   handle('nxm:status', () => nxmStatus());

@@ -1426,3 +1426,31 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .vx-move-row .btn { flex: none; }
 
 .pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Stop: the Play button while the game runs; red once armed (the second click closes the game). */
+.play-btn.running:hover:not(:disabled) { border-color: var(--err-line); background: var(--err-tint); }
+.play-btn.running .play-icon { background: var(--surface-3); color: var(--err); }
+.play-btn.armed { border-color: var(--err); background: var(--err-soft); }
+.play-btn.armed .play-icon { background: var(--err); color: #2a0509; }
+.play-btn.armed .play-sub { color: var(--err-text); }
+
+/* ================================================================== load order */
+.lo-status { margin: 0 0 var(--sp-3); color: var(--muted); font-size: var(--fs-sm); }
+.lo-card { padding: 0; overflow: hidden; }
+.lo-list { display: flex; flex-direction: column; }
+.lo-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 2.9rem; padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-2); border-bottom: 1px solid var(--line); background: var(--surface); cursor: grab; position: relative; }
+.lo-row:last-child { border-bottom: 0; }
+.lo-row:hover { background: var(--hover); }
+.lo-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 0; }
+.lo-row.dragging { opacity: 0.45; }
+.lo-row.drop-before { box-shadow: inset 0 2px 0 var(--select); }
+.lo-row.drop-after { box-shadow: inset 0 -2px 0 var(--select); }
+.lo-grip { color: var(--faint); font-size: var(--fs-sm); letter-spacing: -0.15em; width: 1rem; text-align: center; flex: none; }
+.lo-pos { width: 2.2rem; flex: none; text-align: right; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.lo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.lo-name { font: var(--fs-sm) var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lo-mod { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lo-row .tag { flex: none; }
+.lo-moves { display: flex; gap: 0.15rem; flex: none; opacity: 0; transition: opacity .12s; }
+.lo-row:hover .lo-moves, .lo-row:focus-within .lo-moves { opacity: 1; }
+.lo-hint { margin-top: var(--sp-3); }

@@ -15,6 +15,7 @@ const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
 const { VortexBridge, parseFolderName } = require('./vortex');
 const { listFiles } = require('./vortexDeploy');
+const loadOrder = require('./loadOrder');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
 const profileCode = require('./profileCode');
@@ -924,6 +925,90 @@ class ModManager extends EventEmitter {
     return { switched: clash.length };
   }
 
+  // ---------------------------------------------------------------- archive load order
+
+  /** Which mod each archive in archive/pc/mod belongs to: this app's, Vortex's, or neither. */
+  archiveOwners() {
+    const owners = new Map();
+    for (const m of Object.values(this.data.mods)) {
+      if (!m.enabled) continue;
+      for (const f of m.files) {
+        const mt = f.match(/^archive\/pc\/mod\/([^/]+\.archive)$/i);
+        if (mt) owners.set(mt[1].toLowerCase(), { mod: m.name, modId: Number(m.modId) || 0, source: 'app' });
+      }
+    }
+    try {
+      const vx = this.vortex.read();
+      for (const [file, src] of vx.deployedPaths || []) {
+        const mt = file.match(/^archive\/pc\/mod\/([^/]+\.archive)$/i);
+        if (!mt || owners.has(mt[1].toLowerCase())) continue;
+        const v = (vx.mods || []).find(x => x.vortexId === src);
+        owners.set(mt[1].toLowerCase(), { mod: v?.name || src, modId: v?.modId || 0, source: 'vortex' });
+      }
+    } catch { /* no Vortex */ }
+    return owners;
+  }
+
+  /** The archives in the order the game loads them, each with its mod. */
+  loadOrderView() {
+    const game = this.gameDir();
+    if (!isGameDir(game)) return { custom: false, archives: [], needs: {} };
+    const { custom, order } = loadOrder.currentOrder(game);
+    const owners = this.archiveOwners();
+    return {
+      custom,
+      archives: order.map(name => ({ name, ...(owners.get(name.toLowerCase()) || { mod: '', modId: 0, source: 'other' }) })),
+      // What each mod needs, from the last auto-sort (shown next to the archives).
+      needs: this.data.loadOrderNeeds || {},
+    };
+  }
+
+  /** Save an order (from dragging): modlist.txt names every archive, in this order. */
+  saveLoadOrder(order) {
+    const game = this.gameDir();
+    if (!isGameDir(game)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    this.data.loadOrder = loadOrder.writeOrder(game, Array.isArray(order) ? order.map(String) : []);
+    this.library.save();
+    this.log.info(`Saved the archive load order (${this.data.loadOrder.length} archives)`);
+    return this.loadOrderView();
+  }
+
+  /**
+   * Auto-sort: every mod that needs another goes above it (so it wins what it changes), the rest
+   * keeps its place. Requirements come from Nexus. Returns the view and how many archives moved.
+   */
+  async autoSortLoadOrder() {
+    const game = this.gameDir();
+    if (!isGameDir(game)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    const { order } = loadOrder.currentOrder(game);
+    const owners = this.archiveOwners();
+    const ownerOf = new Map(order.map(n => [n, owners.get(n.toLowerCase())?.modId || 0]).filter(([, id]) => id));
+    const needs = await this.nexus.getRequirementsMany('cyberpunk2077', [...new Set(ownerOf.values())]);
+    const sorted = loadOrder.autoSort(order, ownerOf, needs);
+    const moved = sorted.filter((n, i) => order[i] !== n).length;
+    // Remembered for the page: "needs …" next to each mod that has requirements here.
+    const names = new Map([...owners.values()].map(o => [o.modId, o.mod]));
+    this.data.loadOrderNeeds = {};
+    for (const [id, reqs] of needs) {
+      const here = reqs.filter(r => names.has(r)).map(r => names.get(r));
+      if (here.length) this.data.loadOrderNeeds[id] = here;
+    }
+    this.data.loadOrder = loadOrder.writeOrder(game, sorted);
+    this.library.save();
+    this.log.success(`Auto-sorted the archive load order: ${moved ? `${plural(moved, 'archive')} moved` : 'it was already in order'}`);
+    return { ...this.loadOrderView(), moved };
+  }
+
+  /** Back to the game's own order (alphabetical by file name). */
+  resetLoadOrder() {
+    const game = this.gameDir();
+    if (isGameDir(game)) loadOrder.resetOrder(game);
+    delete this.data.loadOrder;
+    this.library.save();
+    this.log.info('Archive load order reset to the game\'s default (alphabetical)');
+    return this.loadOrderView();
+  }
+
   /** Vortex's mods for the UI, plus every place where our enabled files and Vortex's files meet. */
   vortexView() {
     let data;
@@ -1325,6 +1410,9 @@ class ModManager extends EventEmitter {
     const res = this.deployer.sync(game, enabled.map(m => ({
       id: m.id, stagingDir: path.join(this.settings.stagingDir, m.id), files: m.files,
     })), this.settings.get('deployMethod'));
+    if (this.data.loadOrder?.length) {
+      try { this.data.loadOrder = loadOrder.writeOrder(game, this.data.loadOrder); } catch (err) { this.log.warn('Could not update the archive load order', err.message); }
+    }
     this.syncActiveProfile();
     this.library.save();
     if (res.added || res.removed) this.log.info(`Deployment: ${res.added} file(s) placed, ${res.removed} removed${res.restored ? `, ${res.restored} original(s) restored` : ''}`);
