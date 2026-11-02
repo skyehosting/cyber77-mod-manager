@@ -309,6 +309,17 @@ function groupedMods() {
   });
 }
 
+/**
+ * The update a row offers, as the id of the installed version it updates: the version shown, or
+ * else another installed version of the same mod. One per row, so the count, the Updates filter
+ * and Update all agree (and two versions of one mod are not updated twice).
+ */
+function rowUpdateId(row) {
+  const ups = state.snap.updates || {};
+  if (ups[row.id]) return row.id;
+  return (row.versions || []).find(v => ups[v.id])?.id || null;
+}
+
 function visibleMods() {
   const q = $('#mods-search').value.trim().toLowerCase();
   return groupedMods().filter(m => {
@@ -317,7 +328,7 @@ function visibleMods() {
     if (state.modFilter === 'disabled') return !m.enabled;
     if (state.modFilter === 'conflicts') return !!state.snap.conflicts[m.id];
     if (state.modFilter === 'problems') return hasProblem(m);
-    if (state.modFilter === 'updates') return !!state.snap.updates?.[m.id];
+    if (state.modFilter === 'updates') return !!rowUpdateId(m);
     if (state.modFilter === 'repair') return !!m.health;
     if (state.modFilter === 'vortex') return !!m.vortex;
     return true;
@@ -477,7 +488,7 @@ function renderMods() {
   // The subtitle summarises what needs attention; each part filters the list to it.
   const enabled = all.filter(m => m.enabled).length;
   const conflicts = Object.keys(state.snap.conflicts).length;
-  const updates = Object.keys(state.snap.updates || {}).filter(id => all.some(m => m.id === id));
+  const updates = groupedMods().map(rowUpdateId).filter(Boolean); // one per row, as listed
   const broken = all.filter(m => m.health).length;
   const problems = all.filter(hasProblem).length;
   const sub = $('#mods-sub');
@@ -666,7 +677,7 @@ $('#mods-import').addEventListener('click', importArchives);
 $('#mods-empty-import').addEventListener('click', importArchives);
 $('#mods-redeploy').addEventListener('click', () => run(api.redeploy(), 'Deployment checked'));
 $('#mods-update-all').addEventListener('click', () => {
-  const ids = Object.keys(state.snap.updates || {}).filter(id => allMods().some(m => m.id === id));
+  const ids = groupedMods().map(rowUpdateId).filter(Boolean);
   modAction('update', ids);
 });
 $('#mods-check-updates').addEventListener('click', async ev => {
