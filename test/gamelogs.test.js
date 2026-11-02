@@ -90,3 +90,26 @@ test('logs that are not *.log files: REDmod\'s deploy log and mods\' crash repor
   assert.strictEqual(sourceName('red4ext/plugins/AppearanceRuntimePlugin/Logs/crash-2026-11-02_020827.txt'), 'AppearanceRuntimePlugin · crash');
   assert.strictEqual(parseLine('[CrashProbe] ACCESS VIOLATION: let_there_be_flight.dll+0x983A3 read at 0x18').level, 'error');
 });
+
+test('a log a mod starts writing anywhere in the install during a game run is found, followed and remembered', async () => {
+  const game = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-discover-'));
+  const known = path.join(game, '..', `cmm-found-${process.pid}.json`);
+  const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(game, rel)), { recursive: true }); fs.writeFileSync(path.join(game, rel), body); };
+  put('bin/x64/plugins/SomeMod/runtime/state.txt', 'en');
+  put('bin/x64/plugins/SomeMod/output.txt', 'started\n');
+  const mon = new GameLogMonitor({ getGameDir: () => game, log: { warn() {}, info() {} }, crashDir: '', knownFile: known });
+  mon.baseline = await mon.possibleLogs(game); // the game just started
+  put('bin/x64/plugins/SomeMod/runtime/state.txt', 'de'); // rewritten, same size: a setting, not a log
+  put('bin/x64/plugins/SomeMod/output.txt', 'started\n[error] it broke\n'); // grew: a log
+  put('engine/odd place/Whatever Mod Trace.out', 'ERROR: something\n'); // new, in a place nobody looks
+  put('bin/x64/plugins/SomeMod/README.txt', 'Read me\n'); // new, but a readme
+  put('bin/x64/plugins/SomeMod/blob.txt', Buffer.from([1, 0, 2, 0, 3])); // new, but binary
+  await mon.discover();
+  assert.deepEqual([...mon.found].sort(), ['bin/x64/plugins/SomeMod/output.txt', 'engine/odd place/Whatever Mod Trace.out']);
+  assert.ok([...mon.files.keys()].includes('engine/odd place/Whatever Mod Trace.out'), 'followed now');
+  // Remembered: a new start follows it without a game run.
+  const again = new GameLogMonitor({ getGameDir: () => game, log: { warn() {}, info() {} }, crashDir: '', knownFile: known });
+  assert.ok(again.findLogs(game).includes('engine/odd place/Whatever Mod Trace.out'));
+  fs.rmSync(known, { force: true });
+  fs.rmSync(game, { recursive: true, force: true });
+});

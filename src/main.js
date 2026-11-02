@@ -178,6 +178,7 @@ async function boot() {
     getGameDir: () => settings.get('gamePath'),
     log: logger,
     crashDir: path.join(process.env.LOCALAPPDATA || '', 'REDEngine', 'ReportQueue'),
+    knownFile: path.join(app.getPath('userData'), 'found-logs.json'),
   });
   gameLogs.on('entries', batch => send('gamelog', batch));
   logger.on('entry', e => {

@@ -49,6 +49,34 @@ function isLogFile(dir, name) {
   return /(^|\/)logs?$/i.test(dir) && /\.txt$/i.test(name) && /log|crash|error/i.test(name);
 }
 
+// Looking for logs a mod writes anywhere: how often while the game runs, and what is never one.
+const DISCOVER_MS = 30000;
+const SKIP_DIRS = new Set(['archive/pc/content', 'archive/pc/ep1', 'r6/cache']);
+const NOT_LOGS = /^(readme|read me|license|licence|notice|third[-_ ]party|changelog|change log|credits|modlist)/i;
+
+/**
+ * Could this file be a log some mod writes? Text-like names (.log, .txt, .out, .err) or anything
+ * in a logs folder; never readmes, licences or the archive mod list this app writes.
+ */
+function mayBeLog(dir, name) {
+  if (NOT_LOGS.test(name) || /\.(zip|7z|rar|dmp|png|jpe?g|dds|dll|exe|archive|bin|sqlite3?|db)$/i.test(name)) return false;
+  return isLogFile(dir, name) || /\.(txt|out|err)$/i.test(name) || /(^|\/)logs?$/i.test(dir);
+}
+
+/** A text file: no NUL bytes at its start (a UTF-16 log starts with its byte-order mark). */
+function isText(full) {
+  try {
+    const fd = fs.openSync(full, 'r');
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    fs.closeSync(fd);
+    const head = buf.subarray(0, n);
+    return (head[0] === 0xff && head[1] === 0xfe) || !head.includes(0);
+  } catch {
+    return false;
+  }
+}
+
 /** A short, human name for where a log comes from. */
 function sourceName(rel) {
   const p = rel.replace(/\\/g, '/');
@@ -161,11 +189,17 @@ function decode(buf) {
 }
 
 class GameLogMonitor extends EventEmitter {
-  constructor({ getGameDir, log, crashDir }) {
+  /** knownFile: where logs found by watching a game run are remembered (followed on every start). */
+  constructor({ getGameDir, log, crashDir, knownFile = '' }) {
     super();
     this.getGameDir = getGameDir;
     this.log = log;
     this.crashDir = crashDir;
+    this.knownFile = knownFile;
+    this.found = new Set();
+    try { for (const r of JSON.parse(fs.readFileSync(knownFile, 'utf8')).logs || []) this.found.add(r); } catch { /* none yet */ }
+    this.baseline = null; // rel -> size of every possible log when the game started
+    this.discovering = false;
     this.files = new Map(); // rel -> { rel, full, source, root, offset, size, mtime, followed, errors, warns, partial }
     this.entries = [];
     this.nextId = 1;
@@ -182,6 +216,7 @@ class GameLogMonitor extends EventEmitter {
     this.timers.push(setInterval(() => this.pollFiles(), 1000));
     this.timers.push(setInterval(() => this.checkGame(), 3000));
     this.timers.push(setInterval(() => this.flush(), 300));
+    this.timers.push(setInterval(() => { if (this.game.running) this.discover(); }, DISCOVER_MS));
     this.checkGame();
     this.snapshotCrashes();
   }
@@ -208,7 +243,60 @@ class GameLogMonitor extends EventEmitter {
       }
     };
     for (const root of SCAN_ROOTS) walk(root, 0);
+    const have = new Set(out.map(r => r.toLowerCase()));
+    for (const r of this.found) if (!have.has(r.toLowerCase()) && fs.existsSync(path.join(gameDir, r))) out.push(r);
     return out;
+  }
+
+  /**
+   * Every file in the whole install that could be a log (see mayBeLog), with its size. Walks the
+   * folder without blocking; the game's own content archives are skipped.
+   */
+  async possibleLogs(gameDir) {
+    const sizes = new Map();
+    const walk = async rel => {
+      let ents;
+      try { ents = await fs.promises.readdir(rel ? path.join(gameDir, rel) : gameDir, { withFileTypes: true }); } catch { return; }
+      for (const e of ents) {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) { if (!SKIP_DIRS.has(r.toLowerCase())) await walk(r); } else if (e.isFile() && mayBeLog(rel, e.name)) {
+          try { sizes.set(r, (await fs.promises.stat(path.join(gameDir, r))).size); } catch { /* gone */ }
+        }
+      }
+    };
+    await walk('');
+    return sizes;
+  }
+
+  /**
+   * While the game runs: a text file that appeared or grew since it started is a log some mod writes,
+   * wherever it is. Follow it from now on, and remember it for later starts.
+   */
+  async discover() {
+    const gameDir = this.getGameDir();
+    if (this.discovering || !this.baseline || !gameDir) return;
+    this.discovering = true;
+    try {
+      const now = await this.possibleLogs(gameDir);
+      const followed = new Set([...this.files.keys()].map(r => r.toLowerCase()));
+      const fresh = [];
+      for (const [rel, size] of now) {
+        if (followed.has(rel.toLowerCase()) || this.found.has(rel)) continue;
+        const before = this.baseline.get(rel);
+        if (size > 0 && (before === undefined || size > before) && isText(path.join(gameDir, rel))) fresh.push(rel);
+      }
+      if (!fresh.length) return;
+      for (const rel of fresh) {
+        this.found.add(rel);
+        this.note('info', `Found a new log, written while the game ran: ${rel}. Following it from now on.`, 'Logs');
+      }
+      if (this.knownFile) {
+        try { fs.writeFileSync(this.knownFile, JSON.stringify({ logs: [...this.found].sort() }, null, 1)); } catch (err) { this.log.warn('Could not remember the new logs', err.message); }
+      }
+      this.scan(false);
+    } finally {
+      this.discovering = false;
+    }
   }
 
   scan(initial) {
@@ -343,7 +431,13 @@ class GameLogMonitor extends EventEmitter {
         this.game = { running: true, since: Date.now(), pid: Number(m[1]) };
         this.note('success', `Cyberpunk 2077 started (PID ${m[1]})`);
         this.snapshotCrashes();
+        // What could be a log right now; anything that appears or grows during the run is one.
+        this.baseline = null;
+        const dir = this.getGameDir();
+        if (dir) this.possibleLogs(dir).then(sizes => { if (this.game.running) this.baseline = sizes; }).catch(() => {});
       } else {
+        // One last look for logs the run wrote (crash logs are often written on the way out).
+        this.discover().finally(() => { this.baseline = null; });
         const ran = this.game.since ? Math.round((Date.now() - this.game.since) / 60000) : 0;
         this.game = { running: false, since: null, pid: null };
         const crash = this.newCrashReport();
@@ -371,4 +465,4 @@ class GameLogMonitor extends EventEmitter {
   }
 }
 
-module.exports = { GameLogMonitor, parseLine, sourceName, groupKey, ownerRoot, isLogFile };
+module.exports = { GameLogMonitor, parseLine, sourceName, groupKey, ownerRoot, isLogFile, mayBeLog };
