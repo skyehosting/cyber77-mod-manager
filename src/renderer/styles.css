@@ -1575,3 +1575,8 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ai-table .ai-al-right { text-align: right; }
 .ai-bubble li.ai-task-item { list-style: none; margin-left: -1.15rem; }
 .ai-bubble li.ai-task-item > ul, .ai-bubble li.ai-task-item > ol { padding-left: 2.5rem; }
+/* Play through Steam: the launch options to paste */
+.steam-opts ol { margin: 0 0 var(--sp-2); padding-left: 1.3rem; }
+.steam-opts-line { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); background: var(--console-bg); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: var(--sp-2); }
+.steam-opts-line code { flex: 1; min-width: 0; font: var(--fs-sm) var(--mono); }
+.steam-opts-line code span { white-space: nowrap; }

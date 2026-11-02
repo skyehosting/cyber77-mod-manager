@@ -25,7 +25,7 @@ class Settings {
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
       updateEvery: 2, // how often the app looks for a new version of itself…
       updateUnit: 'minutes', // …in 'minutes' | 'hours' | 'days'
-      launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'store'
+      launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'steam': through Steam, with its overlay
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
       // The AI assistant: the user's own provider. Its key is stored like the Nexus key.
@@ -37,7 +37,10 @@ class Settings {
     });
   }
 
-  get(key) { return this.store.data[key]; }
+  get(key) {
+    const v = this.store.data[key];
+    return key === 'launchMode' && v === 'store' ? 'steam' : v; // 'store' was the old name of 'steam'
+  }
 
   get apiKey() {
     const d = this.store.data;
@@ -85,7 +88,7 @@ class Settings {
     const { apiKeyEnc, apiKeyPlain, aiKeyEnc, aiKeyPlain, ...rest } = this.store.data;
     const key = this.apiKey;
     const ai = this.aiKey;
-    return { ...rest, hasApiKey: !!key, apiKeyHint: key ? `••••••••${key.slice(-4)}` : '', hasAiKey: !!ai, aiKeyHint: ai ? `••••••••${ai.slice(-4)}` : '' };
+    return { ...rest, launchMode: this.get('launchMode'), hasApiKey: !!key, apiKeyHint: key ? `••••••••${key.slice(-4)}` : '', hasAiKey: !!ai, aiKeyHint: ai ? `••••••••${ai.slice(-4)}` : '' };
   }
 
   update(patch) {
@@ -103,7 +106,7 @@ class Settings {
     if ('blockAds' in patch) d.blockAds = !!patch.blockAds;
     if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 2));
     if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
-    if ('launchMode' in patch && ['direct', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode;
+    if ('launchMode' in patch && ['direct', 'steam', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode === 'store' ? 'steam' : patch.launchMode;
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));

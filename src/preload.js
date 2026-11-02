@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('api', {
   queuePlan: (token, deps, files) => call('links:queue', token, deps, files),
   gameInstalls: () => call('game:installs'),
   launchGame: opts => call('game:launch', opts),
+  steamLaunchOptions: () => call('steam:launchOptions'),
+  openSteamGame: () => call('steam:openGame'),
   deployRedmods: () => call('redmod:deploy'),
   stopGame: () => call('game:stop'),
   aiView: () => call('ai:view'),

@@ -143,4 +143,45 @@ async function storeOf(dir) {
   return { store: 'custom', label: STORE_LABEL.custom, path: dir };
 }
 
-module.exports = { findCyberpunk, findInstalls, storeOf, isGameDir, STEAM_APP_ID, GOG_GAME_ID, STORE_LABEL };
+/**
+ * The game's launch options and last play time in one Steam user's localconfig.vdf (the
+ * apps → 1091500 block that holds "LastPlayed" / "LaunchOptions"), or null if it has none.
+ */
+function parseLaunchOptions(vdf) {
+  const unq = s => s.replace(/\\(["\\])/g, '$1');
+  for (const m of String(vdf).matchAll(new RegExp(`"${STEAM_APP_ID}"\\s*\\{([^{}]*(?:\\{[^{}]*\\}[^{}]*)*)\\}`, 'g'))) {
+    const body = m[1];
+    if (!/"(LastPlayed|LaunchOptions|Playtime)"/.test(body)) continue;
+    const opt = body.match(/"LaunchOptions"\s+"((?:[^"\\]|\\.)*)"/);
+    return { options: opt ? unq(opt[1]) : '', lastPlayed: Number(body.match(/"LastPlayed"\s+"(\d+)"/)?.[1]) || 0 };
+  }
+  return null;
+}
+
+/**
+ * Cyberpunk 2077's launch options as Steam has them (Steam → the game's Properties → Launch
+ * Options), for the Steam user who played it last. They apply when Steam starts the game itself.
+ */
+async function steamLaunchOptions() {
+  const steam = (await regQuery('HKCU\\Software\\Valve\\Steam', 'SteamPath'))
+    || (await regQuery('HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'));
+  if (!steam) return null;
+  const users = path.join(path.normalize(steam.replace(/\//g, '\\')), 'userdata');
+  let best = null;
+  let names = [];
+  try { names = fs.readdirSync(users); } catch { return null; }
+  for (const id of names) {
+    let r;
+    try { r = parseLaunchOptions(fs.readFileSync(path.join(users, id, 'config', 'localconfig.vdf'), 'utf8')); } catch { continue; }
+    if (r && (!best || r.lastPlayed > best.lastPlayed)) best = { ...r, user: id };
+  }
+  return best;
+}
+
+/** The launch options Steam needs for this app's Play: skip the launcher, and load REDmods. */
+function missingLaunchOptions(options, needsModded) {
+  const have = String(options || '').split(/\s+/).map(s => s.toLowerCase());
+  return ['--launcher-skip', needsModded ? '-modded' : ''].filter(o => o && !have.includes(o));
+}
+
+module.exports = { findCyberpunk, findInstalls, storeOf, isGameDir, STEAM_APP_ID, GOG_GAME_ID, STORE_LABEL, parseLaunchOptions, steamLaunchOptions, missingLaunchOptions };

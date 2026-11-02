@@ -239,6 +239,31 @@ test('Play starts the game directly, with -modded when there are REDmods; REDmod
 
   await launchGame({ gameDir: game, store: 'steam' }, async u => opened.push(u), fakeRun);
   assert.deepStrictEqual(calls[1][1], ['-modded']);
-  await launchGame({ gameDir: game, store: 'steam', mode: 'store' }, async u => opened.push(u), fakeRun);
-  assert.deepStrictEqual(opened, ['steam://run/1091500//-modded/'], 'through Steam only when chosen');
+  const r2 = await launchGame({ gameDir: game, store: 'steam', mode: 'steam' }, async u => opened.push(u), fakeRun);
+  // Through Steam: no arguments (they would make Steam ask); Steam's own launch options carry them.
+  assert.deepStrictEqual(opened, ['steam://rungameid/1091500'], 'through Steam only when chosen');
+  assert.deepStrictEqual(r2.args, []);
+});
+
+test('Steam launch options: read from localconfig.vdf, and what Play through Steam still needs', () => {
+  const { parseLaunchOptions, missingLaunchOptions } = require('../src/core/gameFinder');
+  const vdf = `"UserLocalConfigStore"
+{
+	"Licenses" { "1091500" "4a0000ff" }
+	"Software" { "Valve" { "Steam" { "apps" {
+		"1091500"
+		{
+			"LastPlayed"		"1793594759"
+			"cloud" { "last_sync_state" "synchronized" }
+			"LaunchOptions"		"-debug \\"my arg\\" -no-tls"
+		}
+		"993090" { "LaunchOptions" "--launcher-skip" }
+	} } } }
+}`;
+  assert.deepStrictEqual(parseLaunchOptions(vdf), { options: '-debug "my arg" -no-tls', lastPlayed: 1793594759 });
+  assert.strictEqual(parseLaunchOptions('"apps" { "1091500" { "LastPlayed" "5" } }').options, '');
+  assert.strictEqual(parseLaunchOptions('"apps" { "42" { "LastPlayed" "5" } }'), null);
+  assert.deepStrictEqual(missingLaunchOptions('-debug -no-tls', true), ['--launcher-skip', '-modded']);
+  assert.deepStrictEqual(missingLaunchOptions('--launcher-skip -modded -skipStartScreen', true), []);
+  assert.deepStrictEqual(missingLaunchOptions('-launcher-skip', false), ['--launcher-skip'], 'one dash does not skip it');
 });

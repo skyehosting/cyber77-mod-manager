@@ -5,7 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
-const { findCyberpunk, findInstalls, storeOf, isGameDir } = require('./core/gameFinder');
+const { findCyberpunk, findInstalls, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
@@ -250,8 +250,13 @@ async function boot() {
   handle('links:plan', text => manager.planLinks(text));
   handle('links:queue', (token, deps, files) => manager.queuePlan(token, deps, files));
   handle('game:installs', () => findInstalls());
+  handle('steam:launchOptions', async () => {
+    const found = await steamLaunchOptions();
+    return found ? { options: found.options, missing: missingLaunchOptions(found.options, true) } : null;
+  });
+  handle('steam:openGame', () => shell.openExternal(`steam://nav/games/details/${STEAM_APP_ID}`));
   // Play: REDmod deploy first when the REDmods changed since the last one, then the game.
-  handle('game:launch', async ({ skipDeploy = false } = {}) => {
+  handle('game:launch', async ({ skipDeploy = false, skipSteamCheck = false } = {}) => {
     const dir = settings.get('gamePath');
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
     if (!skipDeploy) {
@@ -259,6 +264,12 @@ async function boot() {
       if (r && !r.ok) return { deployFailed: true, reason: r.reason };
     }
     const store = await storeOf(dir);
+    // Through Steam: the game's Steam launch options must skip the launcher (and load REDmods).
+    if (store.store === 'steam' && ['steam', 'store'].includes(settings.get('launchMode')) && !skipSteamCheck) {
+      const found = await steamLaunchOptions();
+      const missing = missingLaunchOptions(found?.options, true);
+      if (missing.length) return { steamOptions: { current: found?.options || '', missing, suggested: [found?.options, ...missing].filter(Boolean).join(' ') } };
+    }
     const r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp, mode: settings.get('launchMode') }, url => shell.openExternal(url));
     logger.success(`Launching Cyberpunk 2077 through ${r.via}${r.args.length ? ` (${r.args.join(' ')}, for REDmod)` : ''}`);
     return r;

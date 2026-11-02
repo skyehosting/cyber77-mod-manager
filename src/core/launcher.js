@@ -76,7 +76,9 @@ function deployRedmods(gameDir, { onLine = () => {}, timeoutMs = 20 * 60e3 } = {
  * Start the game. By default the game's own program runs directly: no Steam "custom arguments"
  * prompt and no CD Projekt launcher (Steam still starts for the game if it is not running).
  * Epic installs go through the Epic Games Launcher, which signs the game in. With
- * mode 'store', Steam installs go through Steam too (it asks to confirm -modded).
+ * mode 'steam', Steam installs are started by Steam itself (its overlay works). Steam asks to
+ * confirm any arguments another program passes, so none are passed: the game's own Steam launch
+ * options (--launcher-skip -modded) do that job.
  * `openExternal` is Electron's shell.openExternal (passed in so this module stays testable).
  */
 async function launchGame({ gameDir, store, epicApp, mode = 'direct' }, openExternal, run = spawn) {
@@ -87,9 +89,9 @@ async function launchGame({ gameDir, store, epicApp, mode = 'direct' }, openExte
     await openExternal(`com.epicgames.launcher://apps/${encodeURIComponent(epicApp)}?action=launch&silent=true`);
     return { via: 'Epic Games Launcher', args: [] };
   }
-  if (store === 'steam' && mode === 'store') {
-    await openExternal(`steam://run/${STEAM_APP_ID}//${args.join(' ')}/`);
-    return { via: 'Steam', args };
+  if (store === 'steam' && (mode === 'steam' || mode === 'store')) {
+    await openExternal(`steam://rungameid/${STEAM_APP_ID}`);
+    return { via: 'Steam (with its overlay)', args: [] };
   }
   const child = run(exe, args, { cwd: path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: false });
   child.on('error', () => {}); // reported through the process check
