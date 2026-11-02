@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:;">
+  <title>Cyber Mod Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">CMM</div>
+        <div>
+          <div class="brand-name">Cyber Mod Manager</div>
+          <div class="brand-sub">Cyberpunk 2077 · Nexus Mods</div>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-item active" data-page="mods">Mods <span class="count" id="nav-mods-count">0</span></button>
+        <button class="nav-item" data-page="downloads">Downloads <span class="count" id="nav-dl-count">0</span></button>
+        <button class="nav-item" data-page="settings">Settings</button>
+      </nav>
+      <div class="side-status">
+        <div class="status-row"><span class="dot" id="st-game-dot"></span><span id="st-game">Game folder</span></div>
+        <div class="status-row"><span class="dot" id="st-key-dot"></span><span id="st-key">API key</span></div>
+        <div class="status-row muted" id="st-rate"></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- MODS -->
+      <section class="page active" id="page-mods">
+        <header class="page-head">
+          <h1>Mods</h1>
+          <div class="head-actions">
+            <button class="btn" id="mods-import">Install from file…</button>
+            <button class="btn" id="mods-redeploy" title="Re-check every enabled mod's files in the game folder">Redeploy</button>
+            <button class="btn danger-ghost" id="mods-purge" title="Take every mod out of the game folder (keeps them installed)">Disable all</button>
+          </div>
+        </header>
+        <div class="toolbar">
+          <input class="search" id="mods-search" placeholder="Search mods…" type="search">
+          <div class="seg" id="mods-filter">
+            <button class="seg-btn active" data-f="all">All</button>
+            <button class="seg-btn" data-f="enabled">Enabled</button>
+            <button class="seg-btn" data-f="disabled">Disabled</button>
+            <button class="seg-btn" data-f="conflicts">Conflicts</button>
+          </div>
+          <div class="spacer"></div>
+          <div class="bulk" id="mods-bulk">
+            <span class="sel-count" id="mods-sel-count">0 selected</span>
+            <button class="btn primary" data-act="enable">Enable</button>
+            <button class="btn" data-act="disable">Disable</button>
+            <button class="btn" data-act="prioritize" title="Selected mods win file conflicts">Prioritize</button>
+            <button class="btn" data-act="reinstall">Reinstall</button>
+            <button class="btn" data-act="uninstall">Uninstall</button>
+            <button class="btn danger" data-act="delete" title="Uninstall and delete the downloaded archive">Delete</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid" id="mods-table">
+            <thead>
+              <tr>
+                <th class="c-check"><input type="checkbox" id="mods-all"></th>
+                <th class="c-toggle">On</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Version</th>
+                <th>Category</th>
+                <th class="num">Files</th>
+                <th class="num" title="Higher wins file conflicts">Priority</th>
+                <th>Conflicts</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="mods-empty">No mods installed yet. Add a Nexus link on the Downloads page, or install an archive from a file.</div>
+        </div>
+      </section>
+
+      <!-- DOWNLOADS -->
+      <section class="page" id="page-downloads">
+        <header class="page-head">
+          <h1>Downloads</h1>
+          <div class="head-actions">
+            <button class="btn" id="dl-open-folder">Open downloads folder</button>
+          </div>
+        </header>
+        <div class="card add-card">
+          <label for="dl-links" class="label">Nexus Mods links</label>
+          <div class="add-row">
+            <textarea id="dl-links" rows="2" placeholder="https://www.nexusmods.com/cyberpunk2077/mods/107?tab=files   (one or more, separated by spaces or new lines)"></textarea>
+            <button class="btn primary big" id="dl-go">Download all files</button>
+          </div>
+          <div class="hint" id="dl-hint"></div>
+        </div>
+
+        <div class="section-title">
+          <h2>Queue</h2>
+          <button class="btn small" id="dl-clear">Clear finished</button>
+        </div>
+        <div id="jobs" class="jobs"><div class="empty small">Nothing downloading.</div></div>
+
+        <div class="section-title">
+          <h2>Library</h2>
+          <input class="search" id="dl-search" placeholder="Search downloads…" type="search">
+          <div class="spacer"></div>
+          <div class="bulk" id="dl-bulk">
+            <span class="sel-count" id="dl-sel-count">0 selected</span>
+            <button class="btn primary" data-act="installEnable">Install &amp; enable</button>
+            <button class="btn" data-act="install">Install</button>
+            <button class="btn danger" data-act="delete">Delete</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid" id="dl-table">
+            <thead>
+              <tr>
+                <th class="c-check"><input type="checkbox" id="dl-all"></th>
+                <th>File</th>
+                <th>Category</th>
+                <th>Version</th>
+                <th class="num">Size</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="dl-empty">No downloads yet.</div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="page" id="page-settings">
+        <header class="page-head"><h1>Settings</h1></header>
+        <form id="settings-form" class="settings" autocomplete="off">
+          <div class="card">
+            <h2>Nexus Mods</h2>
+            <label class="label" for="s-apikey">Personal API key</label>
+            <div class="field-row">
+              <input id="s-apikey" type="password" placeholder="Paste your key from nexusmods.com → Site preferences → API keys" spellcheck="false">
+              <button type="button" class="btn" id="s-validate">Validate</button>
+            </div>
+            <div class="hint" id="s-key-status"></div>
+            <p class="hint">Find it at <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">next.nexusmods.com/settings/api-keys</a>. The key is stored encrypted with Windows' data protection and never shown again.</p>
+          </div>
+
+          <div class="card">
+            <h2>Game</h2>
+            <label class="label" for="s-game">Cyberpunk 2077 folder</label>
+            <div class="field-row">
+              <input id="s-game" type="text" spellcheck="false">
+              <button type="button" class="btn" id="s-game-browse">Browse…</button>
+              <button type="button" class="btn" id="s-game-detect">Detect</button>
+            </div>
+            <div class="hint" id="s-game-status"></div>
+            <label class="label" for="s-deploy">Deploy method</label>
+            <select id="s-deploy">
+              <option value="hardlink">Hardlinks (fast, no extra disk space — needs the data folder on the game's drive)</option>
+              <option value="copy">Copy files</option>
+            </select>
+          </div>
+
+          <div class="card">
+            <h2>Downloading</h2>
+            <label class="label">File categories to download</label>
+            <div class="chips" id="s-cats">
+              <label class="chip"><input type="checkbox" value="MAIN">Main</label>
+              <label class="chip"><input type="checkbox" value="UPDATE">Update</label>
+              <label class="chip"><input type="checkbox" value="OPTIONAL">Optional</label>
+              <label class="chip"><input type="checkbox" value="MISCELLANEOUS">Miscellaneous</label>
+              <label class="chip"><input type="checkbox" value="OLD_VERSION">Old versions</label>
+              <label class="chip"><input type="checkbox" value="ARCHIVED">Archived</label>
+            </div>
+            <div class="grid2">
+              <div>
+                <label class="label" for="s-conc">Parallel downloads</label>
+                <input id="s-conc" type="number" min="1" max="10">
+              </div>
+              <div>
+                <label class="label" for="s-auto">After a download finishes</label>
+                <select id="s-auto">
+                  <option value="main">Install Main files automatically</option>
+                  <option value="all">Install every file automatically</option>
+                  <option value="off">Don't install automatically</option>
+                </select>
+              </div>
+            </div>
+            <label class="check"><input type="checkbox" id="s-autoenable"> Enable mods right after an automatic install</label>
+          </div>
+
+          <div class="card">
+            <h2>Folders &amp; tools</h2>
+            <label class="label" for="s-data">Data folder (downloads, staging, backups)</label>
+            <div class="field-row">
+              <input id="s-data" type="text" spellcheck="false">
+              <button type="button" class="btn" id="s-data-browse">Browse…</button>
+            </div>
+            <div class="hint">Changing it takes effect after a restart. Existing downloads are not moved.</div>
+            <label class="label" for="s-7z">7-Zip (7z.exe) — extracts .zip, .7z and .rar</label>
+            <div class="field-row">
+              <input id="s-7z" type="text" spellcheck="false">
+              <button type="button" class="btn" id="s-7z-browse">Browse…</button>
+            </div>
+            <div class="folder-links">
+              <button type="button" class="btn small" data-open="game">Game folder</button>
+              <button type="button" class="btn small" data-open="downloads">Downloads</button>
+              <button type="button" class="btn small" data-open="staging">Staging</button>
+              <button type="button" class="btn small" data-open="backups">Backups</button>
+              <button type="button" class="btn small" data-open="logs">Logs</button>
+            </div>
+          </div>
+
+          <div class="save-bar">
+            <button type="submit" class="btn primary big">Save settings</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- CONSOLE -->
+  <div class="console" id="console">
+    <div class="console-head" id="console-head">
+      <button class="console-toggle" id="console-toggle">Console</button>
+      <span class="badge err" id="console-errs" hidden>0</span>
+      <span class="badge warn" id="console-warns" hidden>0</span>
+      <span class="console-last" id="console-last"></span>
+      <div class="spacer"></div>
+      <div class="seg small" id="console-filter">
+        <button class="seg-btn active" data-f="all">All</button>
+        <button class="seg-btn" data-f="warn">Warnings</button>
+        <button class="seg-btn" data-f="error">Errors</button>
+      </div>
+      <button class="btn small" id="console-copy">Copy</button>
+      <button class="btn small" id="console-clear">Clear</button>
+    </div>
+    <div class="console-body" id="console-body"></div>
+  </div>
+
+  <!-- DRAWER: mod details -->
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title" id="drawer-title"></div>
+        <div class="drawer-sub" id="drawer-sub"></div>
+      </div>
+      <button class="btn small" id="drawer-close">Close</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-back" id="modal-back" hidden>
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="../shared/fomod.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

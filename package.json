@@ -1,0 +1,18 @@
+{
+  "name": "cyber-mod-manager",
+  "productName": "Cyber Mod Manager",
+  "version": "1.0.0",
+  "description": "Nexus Mods downloader and mod manager for Cyberpunk 2077",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.11.2"
+  },
+  "devDependencies": {
+    "electron": "45.2.1"
+  }
+}
