@@ -94,7 +94,8 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
   - Vortex locks its data while it is open. If it is open, it is closed for a moment and reopened after the change (you are asked once first).
   - Files that two Vortex mods both ship, or that are already in the game folder from somewhere else, follow Vortex's own rules: they are left for Vortex, which sorts them out the next time it starts.
   - Each Vortex mod's Type is worked out from its files, and the **Vortex** tag sits in the Type column.
-- **Check for updates** includes Vortex mods. **Update** hands the new file to Vortex, which installs it and asks how to replace the old version.
+- **Check for updates** includes Vortex mods. **Update** on a Vortex mod moves it to this app (see below) and updates it here; Vortex is not opened.
+- **Move my Vortex mods here** (Settings → Folders & tools → Vortex) moves every Vortex mod into this app in one go; **Move to this app** in a Vortex mod's details moves just that one. Each keeps its files (linked from Vortex's staging folder, so no extra disk space), name, version, Nexus IDs and on/off state, and its archive when Vortex still has it (so Reinstall works). A mod that won a shared file in Vortex gets the higher priority here, so the game ends up with the same files. In Vortex the moved mods stay installed but switched off: enable them there to go back. Moved mods are no longer listed as Vortex mods. Vortex is not opened (if it is open, it closes for a moment).
 - Reinstall, uninstall and delete for Vortex mods stay in Vortex.
 - A mod of this app that writes the same file as a Vortex mod gets a **Vortex N** tag in the Conflicts column. Whichever tool deploys last wins that file, so don't enable the same mod in both. If this app has to overwrite a file that Vortex deployed, it backs that file up first.
 

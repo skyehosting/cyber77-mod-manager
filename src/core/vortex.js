@@ -145,6 +145,8 @@ class VortexBridge extends EventEmitter {
         fileName: a.logicalFileName || a.customFileName || a.name || guess.name || id,
         modId: Number(a.modId) || guess.modId || 0,
         fileId: Number(a.fileId) || 0,
+        // The archive Vortex installed it from (in its downloads folder), when known.
+        archiveName: a.fileName || '',
         version: a.version || guess.version || '',
         author: a.author || a.uploader || '',
         game: GAME,

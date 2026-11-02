@@ -570,6 +570,12 @@ async function modAction(act, ids) {
     case 'update': {
       const withUpdate = ids.filter(id => state.snap.updates?.[id]);
       if (!withUpdate.length) { toast('No updates for the selected mods'); return null; }
+      // Vortex mods are updated here: they move to this app first.
+      const vx = withUpdate.filter(isVx);
+      if (vx.length) {
+        const ok = await confirmBox('Update Vortex mods here', `${plural(vx.length, 'Vortex mod')} will move to this app and be updated here, without opening Vortex. Vortex keeps the old version, switched off.`, 'Move and update');
+        if (!ok || !(await confirmVortexClose(vx.length))) return null;
+      }
       return run(api.updateMods(withUpdate), `Updating ${plural(withUpdate.length, 'mod')} — see Downloads`);
     }
     case 'repair': return run(api.repair(ids), `Repaired ${what}`);
@@ -762,7 +768,8 @@ function openVortexDrawer(m) {
       m.enabled
         ? h('button', { class: 'btn btn-sm', dataset: { key: 'act:disable' }, onclick: () => modAction('disable', [m.id]) }, icon('ban'), h('span', {}, 'Disable in Vortex'))
         : h('button', { class: 'btn btn-sm btn-primary', dataset: { key: 'act:enable' }, onclick: () => modAction('enable', [m.id]) }, icon('check'), h('span', {}, 'Enable in Vortex')),
-      h('button', { class: 'btn btn-sm', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
+      h('button', { class: 'btn btn-sm', title: 'This app manages it from now on; Vortex keeps it, switched off', onclick: () => moveFromVortex([m.id]) }, icon('download'), h('span', {}, 'Move to this app')),
+      h('button', { class: 'btn btn-sm btn-ghost', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
     ]);
     $('#drawer-body').replaceChildren(...[
       h('dl', { class: 'kv' },
@@ -770,11 +777,11 @@ function openVortexDrawer(m) {
         kv('Vortex profile', vx.activeProfileName || '—'),
         kv('Files in the game', String(m.fileCount)),
         m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
-        kv('Changes', 'Switching it here closes Vortex, applies the change and reopens Vortex, which then deploys.')),
+        kv('Changes', 'Switching it on or off here is done without opening Vortex (if Vortex is open, it closes for a moment). Move to this app to manage it here entirely.')),
       u ? h('h2', { dataset: { section: 'update' } }, 'Update available') : null,
       u ? h('div', { class: 'notice notice-info' }, icon('up-circle'),
-        h('div', { class: 'notice-text' }, h('div', { class: 'name' }, `${u.name}${u.version ? ` · v${u.version}` : ''}`), h('div', { class: 'subname' }, 'Vortex downloads and installs it, and asks how to replace the old version.')),
-        h('button', { class: 'btn btn-sm btn-primary', onclick: () => modAction('update', [m.id]) }, 'Update in Vortex')) : null,
+        h('div', { class: 'notice-text' }, h('div', { class: 'name' }, `${u.name}${u.version ? ` · v${u.version}` : ''}`), h('div', { class: 'subname' }, 'Updating moves it to this app, which downloads and installs the new version. Vortex is not opened.')),
+        h('button', { class: 'btn btn-sm btn-primary', onclick: () => modAction('update', [m.id]) }, 'Update')) : null,
       ours.length ? h('h2', {}, `Shares files with this app's mods · ${ours.length}`) : null,
       ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
     ].filter(Boolean));
@@ -1088,6 +1095,35 @@ api.updateState().then(r => r.ok && renderUpdate(r.ok));
 $('#update-later').addEventListener('click', () => run(api.postponeUpdate()));
 $('#update-now').addEventListener('click', () => run(api.installUpdate()));
 $('#s-upd-check').addEventListener('click', () => run(api.checkForUpdate()));
+
+// ---------------------------------------------------------------- moving mods from Vortex
+
+/** Take Vortex mods over (ids, or all of them): this app manages them from then on. */
+async function moveFromVortex(ids = null) {
+  const pv = await run(api.vortexAdoptPreview());
+  if (!pv) return null;
+  const count = ids ? ids.length : pv.mods;
+  if (!count) { toast('There are no Vortex mods left to move'); return null; }
+  const what = ids ? plural(ids.length, 'Vortex mod') : `all ${plural(pv.mods, 'Vortex mod')} (${pv.enabled} enabled, ${pv.files.toLocaleString()} files)`;
+  const ok = await confirmBox('Move mods from Vortex', `${what[0].toUpperCase()}${what.slice(1)} will be managed by this app: same files in the game, same versions and on/off state, updated here from now on. Their files are linked, not copied, so this takes no extra disk space. In Vortex they stay installed but switched off, so you can go back by enabling them there.${pv.already ? ` ${plural(pv.already, 'mod')} you already have here will be matched up instead of added twice.` : ''}`, ids ? 'Move' : 'Move them all');
+  if (!ok || !(await confirmVortexClose(pv.enabled))) return null;
+  const r = await run(api.adoptVortex(ids || 'all'));
+  if (r) toast(`Moved ${plural(r.adopted.length, 'mod')} from Vortex`, 'success', { label: 'Show', fn: () => goTo('mods') });
+  if (ids && state.drawerMod && ids.includes(state.drawerMod)) closeDrawer();
+  return r;
+}
+$('#s-vx-move').addEventListener('click', () => moveFromVortex());
+
+function renderVortexMove() {
+  const vx = state.snap.vortex;
+  $('#s-vx-block').hidden = !vx?.installed;
+  if (!vx?.installed) return;
+  const n = vx.mods?.length || 0;
+  $('#s-vx-text').textContent = n
+    ? `${plural(n, 'mod')} in Vortex (${vx.mods.filter(m => m.enabled).length} enabled)${vx.adopted ? ` · ${vx.adopted} moved here already` : ''}`
+    : `All Vortex mods are managed here${vx.adopted ? ` (${vx.adopted} moved)` : ''}`;
+  $('#s-vx-move').disabled = !n;
+}
 
 // The nxm switch is not here: it applies at once, see "Nexus download links" below.
 // ---------------------------------------------------------------- Nexus download links (nxm://)
@@ -1606,6 +1642,7 @@ function applySnapshot(snap) {
   renderDownloads();
   renderStatus();
   renderPlay();
+  renderVortexMove();
   if (state.drawerMod) {
     const m = allMods().find(x => x.id === state.drawerMod);
     if (!m) closeDrawer();

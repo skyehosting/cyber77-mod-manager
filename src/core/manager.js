@@ -7,13 +7,14 @@ const { pathToFileURL } = require('url');
 const { JsonStore } = require('./jsonStore');
 const { NexusClient, parseModUrl, parseNxm } = require('./nexus');
 const { Downloader } = require('./downloader');
-const { Installer } = require('./installer');
+const { Installer, isSafeRel } = require('./installer');
 const { Deployer } = require('./deployer');
 const { isGameDir } = require('./gameFinder');
 const { sanitizeName } = require('./layout');
 const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
 const { VortexBridge, parseFolderName } = require('./vortex');
+const { listFiles } = require('./vortexDeploy');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
 const profileCode = require('./profileCode');
@@ -689,7 +690,7 @@ class ModManager extends EventEmitter {
    * Results are kept in `updates` (mod id → newer file) until the mod is updated.
    */
   async checkUpdates() {
-    const vortexMods = this.vortex.read().mods || [];
+    const vortexMods = (this.vortex.read().mods || []).filter(v => !this.data.vortexAdopted?.[v.vortexId]);
     const mods = [...Object.values(this.data.mods), ...vortexMods].filter(m => Number(m.modId) > 0 && Number(m.fileId) > 0);
     const groups = new Map();
     for (const m of mods) {
@@ -739,23 +740,23 @@ class ModManager extends EventEmitter {
     const summary = { mods: 0, queued: 0, skipped: 0, errors: [] };
     for (const id of ids) {
       const u = this.data.updates?.[id];
+      let ownId = id;
       if (id.startsWith('vx:') && u) {
-        const v = (this.vortex.read().mods || []).find(x => x.id === id);
-        if (!v) continue;
         try {
-          const uri = await this.nexus.getDownloadLink(v.game, v.modId, u.fileId);
-          this.vortex.installUrl(uri);
-          this.log.info(`Sent the ${v.name} update (${u.version || u.fileName}) to Vortex to install`);
-          summary.mods++;
+          const r = await this.adoptFromVortex([id]);
+          ownId = r.adopted[0]?.id;
+          if (!ownId) continue;
+          this.log.info(`${this.data.mods[ownId]?.name || id} now updates here (taken over from Vortex)`);
         } catch (err) {
           summary.errors.push(err.message);
-          this.log.error(`Could not update ${v.name} in Vortex`, err.message);
+          this.log.error('Could not take that mod over from Vortex to update it', err.message);
+          continue;
         }
-        continue;
       }
-      const m = this.data.mods[id];
-      if (!m || !u) continue;
-      const file = { file_id: u.fileId, name: u.name, file_name: u.fileName, category_name: u.category, version: u.version, size_in_bytes: u.size, uploaded_timestamp: u.uploaded };
+      const m = this.data.mods[ownId];
+      const upd = this.data.updates?.[ownId] || u;
+      if (!m || !upd) continue;
+      const file = { file_id: upd.fileId, name: upd.name, file_name: upd.fileName, category_name: upd.category, version: upd.version, size_in_bytes: upd.size, uploaded_timestamp: upd.uploaded };
       this.queueFiles({ game: m.game, modId: m.modId, name: m.modName, author: m.author }, [file], m.dependencyOf || '', summary, { replaces: m.id });
       summary.mods++;
     }
@@ -766,16 +767,139 @@ class ModManager extends EventEmitter {
 
   // ---------------------------------------------------------------- Vortex, side by side
 
+  // ---------------------------------------------------------------- taking mods over from Vortex
+
+  /**
+   * What taking these Vortex mods over would do (Settings shows it before anything changes).
+   * ids: 'vx:…' mod ids, or 'all'.
+   */
+  vortexAdoptPreview(ids = 'all') {
+    const data = this.vortex.read();
+    const adopted = this.data.vortexAdopted || {};
+    const mods = (data.mods || []).filter(m => !adopted[m.vortexId] && (ids === 'all' || ids.includes(m.id)));
+    const own = new Set(Object.values(this.data.mods).map(m => String(m.fileId)).filter(x => x !== '0'));
+    return {
+      mods: mods.length,
+      enabled: mods.filter(m => m.enabled).length,
+      files: mods.reduce((n, m) => n + m.fileCount, 0),
+      already: mods.filter(m => m.fileId && own.has(String(m.fileId))).length,
+      vortexRunning: !!this.vortexRunning,
+    };
+  }
+
+  /**
+   * Take Vortex mods over: this app manages them from now on, as if installed here.
+   *   - Their files are hardlinked from Vortex's staging folder into this app's (no copying, no
+   *     extra space), and their archives into this app's downloads when Vortex still has them.
+   *   - Each keeps its name, version, Nexus ids and on/off state. Mods that won a file in Vortex
+   *     get the higher priority here, so the game ends up with the same files.
+   *   - Vortex switches them off (it keeps them, disabled; nothing is deleted there) and this
+   *     app places their files. Vortex is not opened for this (if it is open, it closes for a
+   *     moment, as for any change to its mods).
+   * Taken-over mods are no longer listed as Vortex mods. Returns { adopted: [{ vortexId, id }] }.
+   */
+  async adoptFromVortex(ids = 'all') {
+    const data = this.vortex.read();
+    if (!data.installed) throw new Error('Vortex is not installed.');
+    const game = this.gameDir();
+    if (!isGameDir(game)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    this.data.vortexAdopted ||= {};
+    const adopted = this.data.vortexAdopted;
+    const mods = (data.mods || []).filter(m => !adopted[m.vortexId] && (ids === 'all' || ids.includes(m.id)));
+    if (!mods.length) return { adopted: [] };
+    const manifestFile = this.vortex.deploymentFile();
+    let manifest = { files: [] };
+    try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); } catch { /* nothing deployed */ }
+    const vxStaging = manifest.stagingPath || path.join(this.vortex.root, 'cyberpunk2077', 'mods');
+    const vxDownloads = path.join(this.vortex.root, 'downloads', 'cyberpunk2077');
+
+    // 1. Vortex lets go of them: its record says disabled, its files leave the game folder.
+    const live = mods.filter(m => m.enabled);
+    if (live.length) await this.vortex.apply(live.map(m => ({ vortexId: m.vortexId, enabled: false })));
+
+    return this.op(async () => {
+      // 2. Their order: a mod that won a shared file in Vortex goes above the ones it beat.
+      const wins = new Map(mods.map(m => [m.vortexId, 0]));
+      const shippers = new Map();
+      for (const m of mods) for (const f of m.deployedFiles || []) {
+        const k = f.toLowerCase();
+        shippers.set(k, (shippers.get(k) || 0) + 1);
+      }
+      for (const f of manifest.files || []) {
+        if (wins.has(f.source) && (shippers.get(f.relPath.replace(/\\/g, '/').toLowerCase()) || 0) > 1) wins.set(f.source, wins.get(f.source) + 1);
+      }
+      const ordered = [...mods].sort((a, b) => wins.get(a.vortexId) - wins.get(b.vortexId));
+
+      const out = [];
+      for (const v of ordered) {
+        // A file this app already has installed: point at it instead of adding a second copy.
+        const same = v.fileId && Object.values(this.data.mods).find(m => Number(m.fileId) === v.fileId);
+        if (same) {
+          adopted[v.vortexId] = same.id;
+          if (v.enabled) same.enabled = true;
+          out.push({ vortexId: v.vortexId, id: same.id });
+          continue;
+        }
+        const id = v.fileId && !this.data.mods[String(v.fileId)] ? String(v.fileId)
+          : `vortex-${crypto.createHash('sha1').update(v.vortexId).digest('hex').slice(0, 10)}`;
+        const src = path.join(vxStaging, v.vortexId);
+        const dest = path.join(this.settings.stagingDir, id);
+        fs.rmSync(dest, { recursive: true, force: true });
+        // What Vortex deployed, exactly; for a disabled mod, its whole staging folder.
+        const rels = (v.deployedFiles?.length ? v.deployedFiles : listFiles(src).map(p => p.replace(/\\/g, '/'))).filter(isSafeRel);
+        for (const rel of rels) {
+          const from = path.join(src, rel);
+          const to = path.join(dest, rel);
+          fs.mkdirSync(path.dirname(to), { recursive: true });
+          try { fs.linkSync(from, to); } catch { fs.copyFileSync(from, to); }
+        }
+        // The archive too, so Reinstall works here.
+        let rec = null;
+        const archive = v.archiveName ? path.join(vxDownloads, v.archiveName) : '';
+        if (archive && fs.existsSync(archive)) {
+          const dl = path.join(this.settings.downloadsDir, 'vortex', v.archiveName);
+          fs.mkdirSync(path.dirname(dl), { recursive: true });
+          if (!fs.existsSync(dl)) { try { fs.linkSync(archive, dl); } catch { fs.copyFileSync(archive, dl); } }
+          rec = {
+            key: id, game: 'cyberpunk2077', modId: v.modId, modName: v.modName, fileId: v.fileId, name: v.name, fileName: v.archiveName,
+            version: v.version, category: 'MAIN', size: fs.statSync(dl).size, uploaded: 0, author: v.author, picture: '', path: dl, downloadedAt: Date.now(),
+          };
+          this.data.downloads[id] = rec;
+        }
+        this.data.mods[id] = {
+          id, key: id, name: v.name, modName: v.modName, modId: v.modId, fileId: v.fileId,
+          game: 'cyberpunk2077', version: v.version, category: 'MAIN', author: v.author,
+          type: v.type, files: rels, skipped: 0, warnings: [],
+          enabled: !!v.enabled, priority: this.data.nextPriority++, installedAt: v.installedAt || Date.now(),
+          fomod: false, dependencyOf: '', fromVortex: v.vortexId,
+        };
+        // Its Vortex update, if one was found, now belongs to this mod.
+        if (this.data.updates?.[v.id]) { this.data.updates[id] = this.data.updates[v.id]; delete this.data.updates[v.id]; }
+        adopted[v.vortexId] = id;
+        out.push({ vortexId: v.vortexId, id });
+      }
+      this.library.save();
+      // 3. This app places their files (the enabled ones) where Vortex's were.
+      this.deploy();
+      this.log.success(`Took over ${plural(out.length, 'mod')} from Vortex (${out.filter(o => this.data.mods[o.id]?.enabled).length} enabled). Vortex keeps them, switched off.`);
+      this.emit('changed');
+      return { adopted: out };
+    });
+  }
+
+
   /** Vortex's mods for the UI, plus every place where our enabled files and Vortex's files meet. */
   vortexView() {
     let data;
     try { data = this.vortex.read(); } catch (err) { return { installed: true, error: err.message, mods: [] }; }
     if (!data.installed) return { installed: false, mods: [] };
+    const adopted = this.data.vortexAdopted || {};
+    const vxMods = data.mods.filter(m => !adopted[m.vortexId]);
     const overlaps = {};
     for (const m of Object.values(this.data.mods)) {
       if (!m.enabled) continue;
       const hit = new Set();
-      for (const f of m.files) { const src = data.deployedPaths.get(f.toLowerCase()); if (src) hit.add(`vx:${src}`); }
+      for (const f of m.files) { const src = data.deployedPaths.get(f.toLowerCase()); if (src && !adopted[src]) hit.add(`vx:${src}`); }
       if (hit.size) overlaps[m.id] = [...hit];
     }
     return {
@@ -786,7 +910,8 @@ class ModManager extends EventEmitter {
       snapshotTime: data.snapshotTime,
       deployedAt: data.deployedAt,
       profiles: data.profiles.map(p => ({ id: p.id, name: p.name, active: p.active, count: p.enabledIds.length })),
-      mods: data.mods.map(({ deployedFiles, ...m }) => m),
+      mods: vxMods.map(({ deployedFiles, ...m }) => m),
+      adopted: Object.keys(adopted).length,
       overlaps,
     };
   }

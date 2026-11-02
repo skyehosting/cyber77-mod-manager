@@ -243,6 +243,8 @@ async function boot() {
   // One report for both export buttons: every error and warning, and every mod with its state.
   handle('logs:history', () => logger.history);
   handle('nxm:status', () => nxmStatus());
+  handle('vortex:adoptPreview', () => manager.vortexAdoptPreview('all'));
+  handle('vortex:adopt', ids => manager.adoptFromVortex(Array.isArray(ids) ? ids : 'all'));
   handle('update:state', () => ({ ...updater.state, current: app.getVersion() }));
   handle('update:check', () => updater.check());
   handle('update:postpone', () => updater.postpone());

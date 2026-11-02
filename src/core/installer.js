@@ -125,4 +125,4 @@ class Installer {
   }
 }
 
-module.exports = { Installer };
+module.exports = { isSafeRel, Installer };

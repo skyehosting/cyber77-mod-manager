@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('api', {
   logs: () => call('logs'),
   logHistory: () => call('logs:history'),
   nxmStatus: () => call('nxm:status'),
+  vortexAdoptPreview: () => call('vortex:adoptPreview'),
+  adoptVortex: ids => call('vortex:adopt', ids),
   profileCode: id => call('profiles:code', id),
   importProfileCode: text => call('profiles:importCode', text),
   updateState: () => call('update:state'),

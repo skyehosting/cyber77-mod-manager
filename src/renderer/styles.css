@@ -1419,3 +1419,8 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .dep-ref .name { font-style: italic; }
 .dep-ref .dep-check { color: var(--faint); }
 .pick-head .sub.sub-wrap { white-space: normal; }
+
+/* ================================================================== moving mods from Vortex */
+.vx-move-row { align-items: center; flex-wrap: wrap; }
+.vx-move-text { flex: 1 1 12rem; min-width: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.vx-move-row .btn { flex: none; }
