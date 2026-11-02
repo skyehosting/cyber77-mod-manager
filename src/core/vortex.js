@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
 const { EventEmitter } = require('events');
+const { planDeploy, runDeploy, listFiles } = require('./vortexDeploy');
+const { describeType } = require('./layout');
 
 /*
  * Vortex, side by side. Vortex stays the owner of its mods; this reads them and asks Vortex to
@@ -22,6 +24,18 @@ const { EventEmitter } = require('events');
 const GAME = 'cyberpunk2077';
 
 /** Vortex state paths split on dots; dots inside a key are escaped with a backslash. */
+/**
+ * Vortex names a mod's folder after its archive: "Name 4198 1.28.3 2026-10-28T19-16Z KRvfRxo6q"
+ * (newer) or "Name-4198-1-28-3-1712345678" (older). Used only until Vortex's snapshot has the mod.
+ */
+function parseFolderName(id) {
+  let m = String(id).match(/^(.*?) (\d{2,6}) (\S+) \d{4}-\d{2}-\d{2}T\S+ \S+$/);
+  if (m) return { name: m[1].trim(), modId: Number(m[2]), version: m[3] };
+  m = String(id).match(/^(.*?)-(\d{2,6})-((?:\d+-)*\d+)-(\d{9,})$/);
+  if (m) return { name: m[1].trim(), modId: Number(m[2]), version: m[3].replace(/-/g, '.') };
+  return {};
+}
+
 const escapeKey = k => String(k).replace(/\\/g, '\\\\').replace(/\./g, '\\.');
 
 class VortexBridge extends EventEmitter {
@@ -117,22 +131,28 @@ class VortexBridge extends EventEmitter {
       const a = m.attributes || {};
       const files = deployed.get(id) || [];
       const stateEnabled = !!active?.modState?.[id]?.enabled;
+      // A mod installed after the last snapshot: what its folder name says (name, Nexus id, version).
+      const guess = modsState[id] ? {} : parseFolderName(id);
+      // Every file the mod has, deployed or not, tells what kind of mod it is.
+      const all = files.length ? files : listFiles(path.join(staging, id)).map(p => p.replace(/\\/g, '/'));
       return {
         id: `vx:${id}`,
         vortexId: id,
         source: 'vortex',
-        name: a.customFileName || a.logicalFileName || a.modName || a.name || id,
-        modName: a.modName || a.logicalFileName || a.name || id,
-        modId: Number(a.modId) || 0,
+        name: a.customFileName || a.logicalFileName || a.modName || a.name || guess.name || id,
+        modName: a.modName || a.logicalFileName || a.name || guess.name || id,
+        // Versions of one Nexus file share this name (Vortex's own "logical file name").
+        fileName: a.logicalFileName || a.customFileName || a.name || guess.name || id,
+        modId: Number(a.modId) || guess.modId || 0,
         fileId: Number(a.fileId) || 0,
-        version: a.version || '',
+        version: a.version || guess.version || '',
         author: a.author || a.uploader || '',
         game: GAME,
-        type: m.type ? `Vortex (${m.type})` : 'Vortex',
+        type: m.type ? `${describeType(all)} (${m.type})` : describeType(all),
         // The deployment record is live; the snapshot can be up to an hour old.
         enabled: files.length > 0 || (stateEnabled && !depMtime),
         deployedFiles: files,
-        fileCount: files.length,
+        fileCount: all.length,
         installedAt: a.installTime ? Date.parse(a.installTime) : 0,
         category: 'VORTEX',
         known: !!modsState[id],
@@ -156,8 +176,14 @@ class VortexBridge extends EventEmitter {
   }
 
   /**
-   * Turn Vortex mods on or off in Vortex's active profile. Closes Vortex (gracefully), applies the
-   * change with Vortex's own command line, and starts Vortex again so it deploys.
+   * Turn Vortex mods on or off in Vortex's active profile, without opening Vortex:
+   *   1. Vortex's own command line records the new state (`Vortex.exe --set …` changes its
+   *      database and quits; no window). Vortex locks that database while it runs, so an open
+   *      Vortex is closed first and reopened afterwards.
+   *   2. The files are hardlinked into / removed from the game folder here, exactly as Vortex's
+   *      hardlink deployment does, and vortex.deployment.json is updated to match.
+   * Files two Vortex mods both ship are left to Vortex's own rules: a deployment is marked as
+   * needed and Vortex settles them on its next start.
    * changes: [{ vortexId, enabled }]
    */
   async apply(changes) {
@@ -170,21 +196,54 @@ class VortexBridge extends EventEmitter {
     try {
       const wasRunning = await this.isRunning();
       if (wasRunning) {
-        this.log.info('Closing Vortex to apply the change…');
+        this.log.info('Closing Vortex to apply the change (it locks its data while open)…');
         await this.closeVortex();
       }
+      const gameDir = this.getGameDir();
+      const manifestFile = this.deploymentFile();
+      let manifest = null;
+      try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); } catch { /* none */ }
+      const plan = manifest && gameDir ? planDeploy({ manifest, gameDir, changes }) : null;
+      const needVortex = !plan || plan.deferred.length > 0;
+
       const pid = escapeKey(data.activeProfile);
       const args = [];
       for (const c of changes) {
         args.push('--set', `persistent.profiles.${pid}.modState.${escapeKey(c.vortexId)}.enabled=${c.enabled ? 'true' : 'false'}`);
       }
-      args.push('--set', `persistent.deployment.needToDeploy.${GAME}=true`);
+      if (needVortex) args.push('--set', `persistent.deployment.needToDeploy.${GAME}=true`);
       await this.runCli(exe, args);
-      this.log.success(`Vortex: ${changes.filter(c => c.enabled).length} enabled, ${changes.filter(c => !c.enabled).length} disabled. Vortex is reopening to deploy.`);
+
+      let result = null;
+      if (plan) {
+        try {
+          result = runDeploy(plan, manifest, manifestFile);
+        } catch (err) {
+          // Half done: let Vortex redo the deployment properly.
+          await this.runCli(exe, ['--set', `persistent.deployment.needToDeploy.${GAME}=true`]).catch(() => {});
+          throw new Error(`Could not place the files (${err.message}). Vortex will redeploy the next time it starts.`);
+        }
+      }
+      const on = changes.filter(c => c.enabled).length;
+      const off = changes.length - on;
+      const what = [on ? `${on} enabled` : '', off ? `${off} disabled` : ''].filter(Boolean).join(', ');
+      if (result) {
+        this.log.success(`Vortex mods: ${what} without opening Vortex (${result.linked} files placed, ${result.removed} removed).`);
+        if (result.deferred) this.log.warn(`${result.deferred} files are shipped by more than one Vortex mod, or are already in the game folder. Vortex decides those the next time it starts.`);
+        if (result.kept) this.log.warn(`${result.kept} files had been replaced by another tool and were left in place.`);
+      } else {
+        this.log.success(`Vortex mods: ${what}. This deployment can only be done by Vortex, so Vortex is opening to deploy.`);
+      }
       this.cache = null;
-      this.startVortex(exe);
-      this.watchForDeploy();
-      return { reopened: true };
+      // Vortex is opened again only if it was open, or if only Vortex can deploy this.
+      const reopen = wasRunning || !plan;
+      if (reopen) {
+        this.startVortex(exe);
+        this.watchForDeploy();
+      } else {
+        this.emit('changed', true);
+      }
+      return { reopened: reopen, ...(result || {}) };
     } finally {
       this.busy = false;
     }
@@ -250,4 +309,4 @@ class VortexBridge extends EventEmitter {
   }
 }
 
-module.exports = { VortexBridge, escapeKey };
+module.exports = { VortexBridge, escapeKey, parseFolderName };

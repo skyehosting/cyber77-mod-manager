@@ -141,3 +141,35 @@ test('the store of a game folder is told from its files', async () => {
   assert.strictEqual((await storeOf(plain)).store, 'custom');
   assert.strictEqual((await storeOf(path.join(plain, 'nope'))).store, 'custom');
 });
+
+test('mod search: names as typed, a number also as a mod id (first), filters and paging', async () => {
+  const { NexusClient } = require('../src/core/nexus');
+  const sent = [];
+  const node = (modId, name, extra = {}) => ({ modId, name, summary: 's', author: 'a', version: '1', category: 'Gameplay', adultContent: false, downloads: 5, endorsements: 7, thumbnailUrl: 't', pictureUrl: 'p', updatedAt: '2026-01-01T00:00:00Z', createdAt: '', ...extra });
+  const realFetch = global.fetch;
+  global.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    sent.push(body.variables);
+    const byId = body.variables.f.modId;
+    const nodes = byId ? [node(4198, 'ArchiveXL')] : [node(1, 'Mod 4198 fan pack'), node(4198, 'ArchiveXL')];
+    return { ok: true, status: 200, json: async () => ({ data: { mods: { totalCount: byId ? 1 : 41, nodes } } }) };
+  };
+  try {
+    const n = new NexusClient(() => '', { info() {} });
+    const r = await n.searchMods({ query: '4198', category: 'Gameplay', sort: 'downloads', page: 1, perPage: 20 });
+    assert.deepStrictEqual(r.mods.map(m => m.modId), [4198, 1], 'the exact id first, no duplicate');
+    assert.strictEqual(r.total, 41);
+    const named = sent.find(v => !v.f.modId);
+    assert.deepStrictEqual(named.f.name, [{ value: '4198', op: 'WILDCARD' }]);
+    assert.deepStrictEqual(named.f.categoryName, [{ value: 'Gameplay' }]);
+    assert.deepStrictEqual(named.f.adultContent, [{ value: false }], 'adult mods are left out unless asked for');
+    assert.deepStrictEqual(named.s, [{ downloads: { direction: 'DESC' } }]);
+    sent.length = 0;
+    const p3 = await n.searchMods({ query: 'rain', page: 3, perPage: 40, sort: 'bogus' });
+    assert.strictEqual(sent.length, 1, 'a name is not looked up as an id');
+    assert.deepStrictEqual([sent[0].offset, sent[0].count, p3.page], [80, 40, 3]);
+    assert.deepStrictEqual(sent[0].s, [{ endorsements: { direction: 'DESC' } }], 'an unknown sort falls back');
+  } finally {
+    global.fetch = realFetch;
+  }
+});

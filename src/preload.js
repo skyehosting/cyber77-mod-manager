@@ -1,5 +1,5 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const call = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 const on = channel => cb => {
@@ -22,7 +22,11 @@ contextBridge.exposeInMainWorld('api', {
   queuePlan: (token, deps, files) => call('links:queue', token, deps, files),
   gameInstalls: () => call('game:installs'),
   launchGame: () => call('game:launch'),
-  exportJson: (kind, data) => call('export:json', kind, data),
+  exportJson: () => call('export:json'),
+  searchMods: opts => call('browse:search', opts),
+  modCategories: () => call('browse:categories'),
+  openNexusPage: url => call('browse:open', url),
+  onBrowseDownload: on('browse:download'),
   openVortex: () => call('vortex:open'),
   checkUpdates: () => call('updates:check'),
   updateMods: ids => call('updates:apply', ids),
@@ -43,8 +47,12 @@ contextBridge.exposeInMainWorld('api', {
   installAndEnable: keys => call('downloads:installAndEnable', keys),
   deleteDownloads: keys => call('downloads:delete', keys),
   importArchives: () => call('downloads:import'),
+  installPaths: paths => call('downloads:importPaths', paths),
+  // The path of a file dropped on the window (files from the disk only).
+  pathForFile: file => webUtils.getPathForFile(file),
   enable: ids => call('mods:enable', ids),
   disable: ids => call('mods:disable', ids),
+  switchVersion: (offIds, onId) => call('mods:switchVersion', offIds, onId),
   uninstall: ids => call('mods:uninstall', ids),
   reinstall: ids => call('mods:reinstall', ids),
   prioritize: ids => call('mods:prioritize', ids),

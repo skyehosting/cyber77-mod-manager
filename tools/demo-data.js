@@ -76,11 +76,13 @@
         { id: 'vp3', name: 'Multiplayer', active: false, count: 12 },
       ],
       mods: [
-        ['vx:a1', 'Ultra Plus', 10490, '5.2.1', 'sammilucia', true, 48],
-        ['vx:a2', 'Nova LUT', 2593, '2.3', 'Lowkey', true, 4],
-        ['vx:a3', 'Weather Probability Rebalance', 9872, '1.6', 'DJ_Kovrik', false, 2],
-        ['vx:a4', 'Enhanced Vehicle System', 6789, '0.9.4', 'Gaia', true, 17],
-      ].map(([id, name, modId, version, author, enabled, fileCount]) => ({ id, vortexId: id.slice(3), source: 'vortex', name, modName: name, modId, game: 'cyberpunk2077', version, author, type: 'Vortex', enabled, fileCount, installedAt: now - 9 * 86400000, category: 'VORTEX' })),
+        ['vx:a1', 'Ultra Plus', 10490, '5.2.1', 'sammilucia', true, 48, 'Archive + CET', 9],
+        ['vx:a2', 'Nova LUT', 2593, '2.3', 'Lowkey', true, 4, 'Archive', 9],
+        ['vx:a3', 'Weather Probability Rebalance', 9872, '1.6', 'DJ_Kovrik', false, 2, 'TweakXL', 9],
+        ['vx:a4', 'Enhanced Vehicle System', 6789, '0.9.4', 'Gaia', true, 17, 'CET + Redscript', 9],
+        ['vx:a5', 'Codeware', 7780, '1.21.2', 'psiberx', true, 6, 'RED4ext + Redscript', 3],
+        ['vx:a6', 'Codeware', 7780, '1.19.0', 'psiberx', false, 6, 'RED4ext + Redscript', 40],
+      ].map(([id, name, modId, version, author, enabled, fileCount, type, days]) => ({ id, vortexId: id.slice(3), source: 'vortex', name, modName: name, fileName: name, modId, game: 'cyberpunk2077', version, author, type, enabled, fileCount, installedAt: now - days * 86400000, category: 'VORTEX' })),
       overlaps: { m6: ['vx:a3'] },
     },
   };
@@ -164,6 +166,33 @@
   });
   window.demoImport = async () => { goTo('profiles'); importReview(await pickProfileFile()); };
 
+  // Browse: a fixed page of results (no network), with two mods already installed.
+  const thumb = id => `https://staticdelivery.nexusmods.com/mods/3333/images/thumbnails/${id}`;
+  const browseMods = [
+    // 102 and 103 are demo mods that are installed (see mod() above).
+    [102, 'Cyber Engine Tweaks', 'yamashi', 'Modders Resources', 'Scripting framework for modding Cyberpunk 2077.', 196000, 6900000],
+    [103, 'ArchiveXL', 'psiberx', 'Modders Resources', 'Archive extension loader', 146131, 13858976],
+    [790, 'Appearance Menu Mod', 'MaximiliumM', 'Appearance', 'Change NPC appearances, spawn characters and props, build decor scenes.', 98000, 4100000],
+    [2675, 'Immersive First Person 2.0 - Camera Rework and Native Height Adjustment', 'Avi', 'Gameplay', 'See your body, guns and cars in first person the way you expect.', 31000, 1500000],
+    [4454, 'Virtual Car Dealer', 'MisterChedda', 'Gameplay', 'Buy cars from the Autofixer and other dealers through a browser site.', 29000, 1400000],
+    [12044, 'Military Accessories - Modular Armor Pads Pack - ArchiveXL (4.0)', 'ScorpionTank', 'Armour and Clothing', 'Large pack of modular armor pads. 114 Items. Both Vs.', 7244, 2191013],
+    [11467, 'Preem Rain', 'Wrinkled', 'Visuals and Graphics', 'Rain that looks and sounds like rain.', 6100, 380000],
+    [3483, 'Constant Rain', 'Cookie', 'Visuals and Graphics', 'Makes it rain more often in Night City.', 1200, 90000],
+  ].map(([modId, name, author, category, summary, endorsements, downloads], i) => ({
+    modId, name, author, category, summary, endorsements, downloads, version: '1.0', adult: false,
+    thumbnail: '', picture: '', updatedAt: new Date(now - (i + 1) * 9 * 86400000).toISOString(), createdAt: '',
+  }));
+  window.demoBrowse = () => {
+    goTo('browse');
+    br.seq++;
+    br.q = '';
+    $('#browse-q').value = '';
+    br.result = { total: 25705, page: 1, perPage: 20, exact: false, mods: browseMods };
+    $('#browse-status').classList.remove('busy');
+    closeMod();
+    renderResults();
+  };
+
   window.resetDemo = () => {
     // Dialogs left open by the previous shot never resolve: drop them from the dialog queue.
     modalChain = Promise.resolve();
@@ -189,6 +218,7 @@
     prof.confirming = null;
     renderProfilesPage(true);
     document.querySelector('#mods-more-menu').hidden = true;
+    document.querySelector('#drop-zone').hidden = true;
     gl.status = snap.gameStatus;
     renderGameStatus();
     document.querySelectorAll('.page').forEach(p => { p.scrollTop = 0; });

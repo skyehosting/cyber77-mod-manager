@@ -48,7 +48,10 @@ const STATES = {
   'profile-import': { only: ['fhd-100', 'fhd-150', 'min-window'], run: 'demoImport();' },
   files: { only: ['fhd-100', 'fhd-150', 'qhd-100', '4k-200', 'min-window'], run: "goTo('downloads'); chooseFiles(window.demoPlan);" },
   menu: { only: ['fhd-100', 'min-window'], run: "goTo('mods'); document.querySelector('#mods-more').click();" },
-  'mods-vortex': { only: ['fhd-100'], run: "setModFilter('vortex');" },
+  'mods-vortex': { only: ['fhd-100', 'min-window'], run: "setModFilter('vortex');" },
+  browse: { all: true, run: 'demoBrowse();' },
+  'browse-detail': { only: ['fhd-100', 'min-window'], run: 'demoBrowse(); openMod(br.result.mods[1]);', wait: 4000 },
+  drop: { only: ['fhd-100'], run: "goTo('mods'); document.querySelector('#drop-zone').hidden = false;" },
   'mods-updates': { only: ['fhd-100'], run: "setModFilter('updates');" },
   fomod: { only: ['fhd-100', 'fhd-150', '4k-200', 'uw-3440', 'sxga-54', 'min-window'], run: 'demoWizard();' },
   confirm: { only: ['fhd-100', 'min-window'], run: "goTo('mods'); confirmBox('Uninstall mods', 'Uninstall 2 mods? Their files leave the game folder. The downloaded archives stay in your library.', 'Uninstall', true);" },
@@ -109,7 +112,7 @@ async function cdpConnect() {
         await send('Emulation.setDeviceMetricsOverride', { width: setup.w, height: setup.h, deviceScaleFactor: setup.s, mobile: false });
         await evaluate('resetDemo()');
         await evaluate(`${st.run}; 0`);
-        await new Promise(r => setTimeout(r, 350));
+        await new Promise(r => setTimeout(r, st.wait || 350));
         const shot = await send('Page.captureScreenshot', { format: 'png' });
         const file = `${name}--${setup.id}.png`;
         fs.writeFileSync(path.join(OUT, file), Buffer.from(shot.result.data, 'base64'));

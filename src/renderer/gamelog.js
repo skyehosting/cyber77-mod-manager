@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $, h, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
+/* global api, $, h, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
 
 // ---------------------------------------------------------------- game log page
 
@@ -366,11 +366,7 @@ $('#gl-stat-err').addEventListener('click', () => { setLevel('error'); setTab('p
 $('#gl-stat-warn').addEventListener('click', () => { setLevel('warn'); setTab('problems'); });
 $('#gl-stat-src').addEventListener('click', () => setTab('sources'));
 // Export the lines this view shows (its search, level and source), with every log's details.
-$('#gl-export').addEventListener('click', async () => {
-  const entries = gl.entries.filter(glMatches);
-  const r = await run(api.exportJson('gamelog', { entries, filter: { tab: gl.tab, level: gl.level, source: gl.source || null, search: gl.q || null } }));
-  if (r) toast(`Saved ${plural(r.count, 'log line')}`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
-});
+$('#gl-export').addEventListener('click', exportReport);
 
 pageHooks.gamelog = () => renderView();
 snapshotHooks.push(snap => {

@@ -1,13 +1,14 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session } = require('electron');
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, storeOf, isGameDir } = require('./core/gameFinder');
 const { launchGame } = require('./core/launcher');
 const { GameLogMonitor } = require('./core/gameLogs');
+const { buildReport } = require('./core/report');
 
 let win = null;
 let settings = null;
@@ -89,6 +90,8 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: !capture,
+      // The Browse page shows Nexus mod pages in a <webview> (locked down in guardWebviews).
+      webviewTag: true,
     },
   });
   if (saved?.maximized) win.maximize();
@@ -115,6 +118,7 @@ function createWindow() {
       event.preventDefault();
     }
   });
+  win.webContents.on('will-navigate', ev => ev.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -215,21 +219,29 @@ async function boot() {
     logger.success(`Launching Cyberpunk 2077 through ${r.via}${r.args.length ? ` (${r.args.join(' ')}, for REDmod)` : ''}`);
     return r;
   });
-  handle('export:json', async (kind, data) => {
+  // One report for both export buttons: every error and warning, and every mod with its state.
+  handle('browse:search', opts => manager.nexus.searchMods(opts || {}));
+  handle('browse:categories', () => manager.nexus.modCategories());
+  handle('browse:open', url => { if (NEXUS_PAGE.test(String(url))) shell.openExternal(String(url)); });
+  handle('export:json', async () => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     const r = await dialog.showSaveDialog(win, {
-      title: kind === 'gamelog' ? 'Export game log' : 'Export activity log',
-      defaultPath: path.join(app.getPath('documents'), `cyberpunk-${kind === 'gamelog' ? 'game-log' : 'activity'}-${stamp}.json`),
+      title: 'Export diagnostics report',
+      defaultPath: path.join(app.getPath('documents'), `cyberpunk-mods-report-${stamp}.json`),
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (r.canceled || !r.filePath) return null;
-    const doc = kind === 'gamelog'
-      ? { exportedAt: new Date().toISOString(), game: gameLogs.status(), sources: gameLogs.sources(), filter: data?.filter || null, entries: data?.entries || gameLogs.entries }
-      : { exportedAt: new Date().toISOString(), entries: logger.entries };
+    let vortex = null;
+    try { vortex = manager.vortex.read(); } catch { /* unreadable: left out */ }
+    const doc = buildReport({
+      snap: manager.snapshot(), vortex,
+      gameLog: gameLogs.entries, gameStatus: gameLogs.status(), sources: gameLogs.sources(),
+      activity: logger.entries, app: { version: app.getVersion() },
+    });
     fs.writeFileSync(r.filePath, JSON.stringify(doc, null, 2));
     lastExport = r.filePath;
-    logger.success(`Exported ${doc.entries.length} log lines to ${r.filePath}`);
-    return { file: r.filePath, count: doc.entries.length };
+    logger.success(`Exported a report (${doc.summary.errors} errors, ${doc.summary.warnings} warnings, ${doc.summary.mods} mods) to ${r.filePath}`);
+    return { file: r.filePath, ...doc.summary };
   });
   handle('vortex:open', () => {
     const exe = manager.vortex.exePath();
@@ -293,8 +305,18 @@ async function boot() {
     const keys = await manager.importArchives(r.filePaths);
     return manager.install(keys);
   });
+  // Archives dropped on the window: only existing .zip/.7z/.rar files are taken.
+  handle('downloads:importPaths', async paths => {
+    const ok = (Array.isArray(paths) ? paths : []).filter(p => typeof p === 'string' && /\.(zip|7z|rar)$/i.test(p) && path.isAbsolute(p))
+      .filter(p => { try { return fs.statSync(p).isFile(); } catch { return false; } });
+    if (!ok.length) throw new Error('Drop .zip, .7z or .rar mod archives to install them.');
+    const keys = await manager.importArchives(ok);
+    const results = await manager.install(keys);
+    return { count: ok.length, skipped: (paths?.length || 0) - ok.length, results };
+  });
   handle('mods:enable', ids => manager.setEnabled(ids, true));
   handle('mods:disable', ids => manager.setEnabled(ids, false));
+  handle('mods:switchVersion', (offIds, onId) => manager.switchVersion(offIds, onId));
   handle('mods:uninstall', ids => manager.uninstall(ids));
   handle('mods:reinstall', ids => manager.reinstall(ids));
   handle('mods:prioritize', ids => manager.prioritize(ids));
@@ -338,6 +360,48 @@ function applyNxmSetting() {
   }
 }
 
+/*
+ * Nexus pages inside the app (the Browse page). The <webview> gets no preload and no Node, runs
+ * sandboxed in its own persistent session (so a Nexus login and the cookie choice are kept), and
+ * may only show https://*.nexusmods.com. Other links open in the user's browser; nxm:// links and
+ * file downloads come to this app's downloader.
+ */
+const NEXUS_PAGE = /^https:\/\/([a-z0-9-]+\.)*nexusmods\.com(\/|$)/i;
+const NEXUS_PARTITION = 'persist:nexus';
+function guardWebviews() {
+  app.on('web-contents-created', (_e, wc) => {
+    wc.on('will-attach-webview', (ev, prefs, params) => {
+      delete prefs.preload;
+      prefs.nodeIntegration = false;
+      prefs.nodeIntegrationInSubFrames = false;
+      prefs.contextIsolation = true;
+      prefs.sandbox = true;
+      prefs.webSecurity = true;
+      prefs.partition = NEXUS_PARTITION;
+      if (!NEXUS_PAGE.test(params.src || '')) ev.preventDefault();
+    });
+    if (wc.getType() !== 'webview') return;
+    const route = url => {
+      if (/^nxm:\/\//i.test(url)) { handleNxmArgs([url]); return; }
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    };
+    wc.on('will-navigate', (ev, url) => { if (!NEXUS_PAGE.test(url)) { ev.preventDefault(); route(url); } });
+    wc.on('will-frame-navigate', ev => { if (ev.isMainFrame && !NEXUS_PAGE.test(ev.url)) { ev.preventDefault(); route(ev.url); } });
+    wc.setWindowOpenHandler(({ url }) => {
+      // A Nexus link meant for a new tab stays in the page view; anything else goes to the browser.
+      if (NEXUS_PAGE.test(url)) wc.loadURL(url); else route(url);
+      return { action: 'deny' };
+    });
+  });
+  // A "Manual download" clicked in the page: this app downloads it instead, with the file picker.
+  session.fromPartition(NEXUS_PARTITION).on('will-download', (ev, item) => {
+    ev.preventDefault();
+    const page = item.getURLChain?.().concat(item.getURL()).find(u => /\/mods\/\d+/.test(u)) || '';
+    const m = page.match(/nexusmods\.com\/(?:games\/)?([a-z0-9_-]+)\/mods\/(\d+)/i);
+    send('browse:download', m ? { game: m[1].toLowerCase(), modId: Number(m[2]) } : { url: item.getURL() });
+  });
+}
+
 const pendingNxm = [];
 function handleNxmArgs(argv) {
   for (const a of argv) {
@@ -354,6 +418,6 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => handleNxmArgs(argv));
-  app.whenReady().then(boot).then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); });
+  app.whenReady().then(guardWebviews).then(boot).then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); });
 }
 app.on('window-all-closed', () => app.quit());

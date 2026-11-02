@@ -13,7 +13,7 @@ const { isGameDir } = require('./gameFinder');
 const { sanitizeName } = require('./layout');
 const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
-const { VortexBridge } = require('./vortex');
+const { VortexBridge, parseFolderName } = require('./vortex');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
 const MAX_PROFILE_MODS = 1000;
@@ -422,9 +422,12 @@ class ModManager extends EventEmitter {
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         if (path.resolve(p) !== path.resolve(dest)) fs.copyFileSync(p, dest);
         const base = path.basename(p).replace(/\.(zip|7z|rar)$/i, '');
+        // A file downloaded by hand from Nexus keeps its name ("ArchiveXL-4198-1-28-6-1730000000"):
+        // its Nexus id and version make updates and version grouping work for it too.
+        const nx = parseFolderName(base);
         this.data.downloads[key] = {
-          key, game: 'cyberpunk2077', modId: 0, modName: base, fileId: 0, name: base, fileName: path.basename(p),
-          version: '', category: 'LOCAL', size: fs.statSync(dest).size, uploaded: 0, author: '', picture: '',
+          key, game: 'cyberpunk2077', modId: nx.modId || 0, modName: nx.name || base, fileId: 0, name: nx.name || base, fileName: path.basename(p),
+          version: nx.version || '', category: 'LOCAL', size: fs.statSync(dest).size, uploaded: 0, author: '', picture: '',
           path: dest, downloadedAt: Date.now(),
         };
         keys.push(key);
@@ -1102,7 +1105,28 @@ class ModManager extends EventEmitter {
     return Promise.all([vortexDone, this.setOwnEnabled(ours, enabled)]);
   }
 
-  /** Vortex mods are switched by Vortex itself (it closes, applies, reopens and deploys). */
+  /**
+   * Use another installed version of a mod: `onId` is enabled and `offIds` (the other versions)
+   * disabled, in one step (for Vortex mods, one change to Vortex).
+   */
+  async switchVersion(offIds, onId) {
+    if (String(onId).startsWith('vx:')) {
+      const all = this.vortex.read().mods || [];
+      const changes = [
+        ...offIds.map(id => all.find(m => m.id === id)).filter(m => m?.enabled).map(m => ({ vortexId: m.vortexId, enabled: false })),
+        ...[all.find(m => m.id === onId)].filter(m => m && !m.enabled).map(m => ({ vortexId: m.vortexId, enabled: true })),
+      ];
+      if (!changes.length) return;
+      await this.vortex.apply(changes);
+      this.emit('changed');
+      return;
+    }
+    // Off first, so the new version's files are not left behind the old one's.
+    await this.setOwnEnabled(offIds, false);
+    await this.setOwnEnabled([onId], true);
+  }
+
+  /** Vortex mods: their state is set through Vortex, their files are placed here (see vortex.js). */
   async setVortexEnabled(ids, enabled) {
     const all = this.vortex.read().mods || [];
     const changes = ids.map(id => all.find(m => m.id === id)).filter(m => m && m.enabled !== enabled).map(m => ({ vortexId: m.vortexId, enabled }));

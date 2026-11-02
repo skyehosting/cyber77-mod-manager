@@ -279,9 +279,39 @@ function allMods() {
 }
 const isVx = id => String(id).startsWith('vx:');
 
+/*
+ * Versions of one mod file share a row, as in Vortex: same tool, same Nexus mod, same file name
+ * once version numbers are taken out ("ArchiveXL" 1.28.3 and 1.28.6). The row shows the enabled
+ * version; a version menu switches to another one.
+ */
+const normFileName = s => String(s || '').toLowerCase()
+  .replace(/\bv?\d+(?:[._-]\d+)+[a-z]?\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+const groupKey = m => (m.modId ? `${m.vortex ? 'vx' : 'own'}|${m.modId}|${normFileName(m.vortex ? m.fileName || m.name : m.name)}` : '');
+state.versionPick = store.get('versionPick', {});
+
+function groupedMods() {
+  const groups = new Map();
+  const rows = [];
+  for (const m of allMods()) {
+    const k = groupKey(m);
+    if (!k) { rows.push(m); continue; }
+    if (!groups.has(k)) { groups.set(k, []); rows.push(k); }
+    groups.get(k).push(m);
+  }
+  return rows.map(r => {
+    if (typeof r !== 'string') return r;
+    const list = groups.get(r);
+    if (list.length === 1) return list[0];
+    const versions = [...list].sort((a, b) => (b.installedAt || 0) - (a.installedAt || 0));
+    const on = versions.filter(v => v.enabled);
+    const shown = on[0] || versions.find(v => v.id === state.versionPick[r]) || versions[0];
+    return { ...shown, versions, groupKey: r };
+  });
+}
+
 function visibleMods() {
   const q = $('#mods-search').value.trim().toLowerCase();
-  return allMods().filter(m => {
+  return groupedMods().filter(m => {
     if (q && !`${m.name} ${m.modName} ${m.type}`.toLowerCase().includes(q)) return false;
     if (state.modFilter === 'enabled') return m.enabled;
     if (state.modFilter === 'disabled') return !m.enabled;
@@ -308,6 +338,15 @@ function conflictCell(m, byId) {
     vxTag,
     c.wins ? h('button', { class: 'tag tag-ok', title: `Wins ${plural(c.wins, 'file')} over ${others} — click to review`, onclick: open }, `wins ${c.wins}`) : null,
     c.loses ? h('button', { class: 'tag tag-warn', title: `Loses ${plural(c.loses, 'file')} to ${others} — click to resolve`, onclick: open }, `loses ${c.loses}`) : null);
+}
+
+function versionMenu(m) {
+  const label = v => `${v.enabled ? '✓ ' : ''}${v.version ? `v${v.version}` : v.name}`;
+  return h('select', {
+    class: 'ver-select', 'aria-label': `Version of ${m.name}`, dataset: { key: `${m.groupKey}:ver` },
+    onclick: ev => ev.stopPropagation(),
+    onchange: ev => pickVersion(m, ev.target.value),
+  }, m.versions.map(v => h('option', { value: v.id, selected: v.id === m.id }, label(v))));
 }
 
 function paintModSelection() {
@@ -347,13 +386,15 @@ function renderMods() {
     // While the change is applied the switch stays focusable (aria-disabled), so focus isn't lost.
     const switchBtn = h('button', {
       class: `switch${m.enabled ? ' on' : ''}`, role: 'switch', 'aria-checked': m.enabled ? 'true' : 'false',
-      'aria-label': m.name, title: m.vortex ? `In Vortex — click to ${m.enabled ? 'disable' : 'enable'} (Vortex closes, applies it and reopens)` : m.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable',
+      'aria-label': m.name, title: m.vortex ? `Managed by Vortex — click to ${m.enabled ? 'disable' : 'enable'} (applied without opening Vortex)` : m.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable',
       dataset: { key: `${m.id}:switch` },
       onclick: async ev => {
         ev.stopPropagation();
         if (switchBtn.getAttribute('aria-disabled') === 'true') return;
         switchBtn.setAttribute('aria-disabled', 'true');
-        const ok = await setModsEnabled([m.id], !m.enabled);
+        // A grouped row turns off whichever versions are on.
+        const ids = m.enabled && m.versions ? m.versions.filter(v => v.enabled).map(v => v.id) : [m.id];
+        const ok = await setModsEnabled(ids, !m.enabled);
         if (ok === null) switchBtn.removeAttribute('aria-disabled');
       },
     });
@@ -376,15 +417,16 @@ function renderMods() {
     h('td', {}, h('div', { class: 'cell-name' },
       h('div', { class: 'name-line' },
         h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name),
-        m.vortex ? h('span', { class: 'tag tag-vortex', title: 'Managed by Vortex' }, 'Vortex') : null,
         m.warnings?.length ? tagBtn('tag-warn tag-icon', `${plural(m.warnings.length, 'install warning')} — click to see`, 'warnings', icon('alert'), { 'aria-label': plural(m.warnings.length, 'install warning') }) : null,
         logIssues ? tagBtn('tag-err', 'Errors in this mod\'s game logs — click to see them', 'logs', `${logIssues} log error${logIssues === 1 ? '' : 's'}`) : null,
         m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
         upd ? tagBtn('tag-info', `Update available: ${upd.name}${upd.version ? ` v${upd.version}` : ''} — click for details`, 'update', upd.version ? `↑ ${upd.version}` : 'Update') : null),
       sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
-    h('td', { title: m.type }, h('span', { class: 'type-text' }, m.type)),
-    h('td', { class: 'dim', title: m.version || '' }, m.version || '—'),
-    h('td', { class: 'dim col-cat', title: m.dependencyOf ? `Installed because ${m.dependencyOf} requires it` : '' }, m.vortex ? 'Vortex' : m.dependencyOf ? 'Dependency' : CAT_LABEL[m.category] || m.category),
+    h('td', { title: m.vortex ? `Managed by Vortex · ${m.type}` : m.type }, h('span', { class: 'type-cell' },
+      m.vortex ? h('span', { class: 'tag tag-vortex' }, 'Vortex') : null,
+      h('span', { class: 'type-text' }, m.type))),
+    h('td', { class: 'dim', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : m.version || '—'),
+    h('td', { class: 'dim col-cat', title: m.dependencyOf ? `Installed because ${m.dependencyOf} requires it` : '' }, m.vortex ? '—' : m.dependencyOf ? 'Dependency' : CAT_LABEL[m.category] || m.category),
     h('td', { class: 'num dim col-files' }, m.fileCount),
     h('td', { class: 'num dim col-prio', title: m.vortex ? 'Vortex orders its own mods' : '' }, m.vortex ? '—' : m.priority),
     h('td', {}, conflictCell(m, byId)));
@@ -411,8 +453,10 @@ function renderMods() {
   const broken = all.filter(m => m.health).length;
   const problems = all.filter(hasProblem).length;
   const sub = $('#mods-sub');
-  const vxCount = all.filter(m => m.vortex).length;
-  const own = all.length - vxCount;
+  // Counted as rows: the versions of one mod are one.
+  const rows = groupedMods();
+  const vxCount = rows.filter(m => m.vortex).length;
+  const own = rows.length - vxCount;
   sub.replaceChildren(all.length ? `${plural(own, 'mod')} here${vxCount ? '' : ''} · ${enabled} enabled` : 'Nothing installed yet');
   if (vxCount) sub.append(' · ', h('button', { class: 'link-btn quiet', onclick: () => setModFilter('vortex') }, `${vxCount} in Vortex (${state.snap.vortex.activeProfileName || 'profile'})`));
   $('#mods-filter-vortex').hidden = !vxCount;
@@ -474,14 +518,35 @@ document.addEventListener('keydown', ev => {
 
 /** Enable/disable; Vortex mods are switched by Vortex, which closes and reopens to apply them. */
 let vortexConfirmed = false;
+/** Vortex locks its data while it is open: then it has to close for a change, and reopens after. */
+async function confirmVortexClose(count) {
+  if (!count || !state.snap.vortex?.running || vortexConfirmed) return true;
+  const ok = await confirmBox('Vortex is open', `Vortex locks its data while it is open, so it closes for a moment: the change to ${plural(count, 'Vortex mod')} is applied, and Vortex opens again. Anything in progress in Vortex should finish first. With Vortex closed, changes apply without opening it.`, 'Close Vortex and apply');
+  if (ok) vortexConfirmed = true;
+  return ok;
+}
+
 async function setModsEnabled(ids, enabled) {
   const vx = ids.filter(isVx);
-  if (vx.length && state.snap.vortex?.running && !vortexConfirmed) {
-    const ok = await confirmBox('Change Vortex mods', `${plural(vx.length, 'Vortex mod')} will be ${enabled ? 'enabled' : 'disabled'}. Vortex has to close for this: it closes, applies the change and reopens, then deploys. Anything in progress in Vortex should finish first.`, `${enabled ? 'Enable' : 'Disable'} and reopen Vortex`);
-    if (!ok) return null;
-    vortexConfirmed = true;
+  if (!(await confirmVortexClose(vx.length))) return null;
+  return run(enabled ? api.enable(ids) : api.disable(ids));
+}
+
+/** The version menu of a grouped row. */
+async function pickVersion(m, id) {
+  const v = m.versions.find(x => x.id === id);
+  if (!v || id === m.id && v.enabled) return;
+  const on = m.versions.filter(x => x.enabled);
+  if (!on.length) {
+    // Nothing enabled: only which version the row shows (and the switch enables) changes.
+    state.versionPick[m.groupKey] = id;
+    store.set('versionPick', state.versionPick);
+    renderMods();
+    return;
   }
-  return run(enabled ? api.enable(ids) : api.disable(ids), vx.length ? `Vortex is applying ${plural(vx.length, 'change')}` : null);
+  if (!(await confirmVortexClose(isVx(id) ? 1 : 0))) { renderMods(); return; }
+  const ok = await run(api.switchVersion(on.map(x => x.id).filter(x => x !== id), id), `Switched ${m.name} to ${v.version ? `v${v.version}` : v.name}`);
+  if (ok === null) renderMods();
 }
 
 async function modAction(act, ids) {
@@ -528,6 +593,31 @@ async function modAction(act, ids) {
 $$('#mods-bulk [data-act]').forEach(b => b.addEventListener('click', () => modAction(b.dataset.act, [...state.modSel])));
 
 const importArchives = () => run(api.importArchives());
+
+// Archives dragged onto the window from Explorer are installed like "Install from file".
+let dragDepth = 0;
+const hasFiles = ev => [...(ev.dataTransfer?.types || [])].includes('Files');
+window.addEventListener('dragenter', ev => {
+  if (!hasFiles(ev)) return;
+  ev.preventDefault();
+  dragDepth++;
+  $('#drop-zone').hidden = false;
+});
+window.addEventListener('dragover', ev => { if (hasFiles(ev)) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; } });
+window.addEventListener('dragleave', ev => {
+  if (!hasFiles(ev)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) $('#drop-zone').hidden = true;
+});
+window.addEventListener('drop', async ev => {
+  ev.preventDefault();
+  dragDepth = 0;
+  $('#drop-zone').hidden = true;
+  const paths = [...(ev.dataTransfer?.files || [])].map(f => api.pathForFile(f)).filter(Boolean);
+  if (!paths.length) return;
+  const r = await run(api.installPaths(paths));
+  if (r) toast(`Installing ${plural(r.count, 'archive')}${r.skipped ? ` · ${r.skipped} skipped (not .zip, .7z or .rar)` : ''}`, 'success');
+});
 $('#mods-import').addEventListener('click', importArchives);
 $('#mods-empty-import').addEventListener('click', importArchives);
 $('#mods-redeploy').addEventListener('click', () => run(api.redeploy(), 'Deployment checked'));
@@ -1211,10 +1301,12 @@ $('#console-clear').addEventListener('click', () => {
   setConsoleFilter(con.filter);
   $('#console-last').textContent = '';
 });
-$('#console-export').addEventListener('click', async () => {
-  const r = await run(api.exportJson('activity'));
-  if (r) toast(`Saved ${plural(r.count, 'line')}`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
-});
+/** Both export buttons save one report: every error and warning, and every mod with its state. */
+async function exportReport() {
+  const r = await run(api.exportJson());
+  if (r) toast(`Saved a report: ${plural(r.errors, 'error')}, ${plural(r.warnings, 'warning')}, ${plural(r.mods, 'mod')}`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
+}
+$('#console-export').addEventListener('click', exportReport);
 $('#console-copy').addEventListener('click', async () => {
   const text = con.entries.filter(shown).map(e => `[${new Date(e.time).toISOString()}] ${e.level.toUpperCase()} ${e.message}${e.detail ? `\n  ${e.detail}` : ''}`).join('\n');
   await navigator.clipboard.writeText(text);

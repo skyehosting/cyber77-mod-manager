@@ -1329,3 +1329,63 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ================================================================== versions, Vortex type, drop zone */
+.type-cell { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; }
+.type-cell .tag { flex: none; }
+.type-cell .type-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ver-select { height: var(--control-h-sm); width: 100%; max-width: 9rem; padding: 0 1.7rem 0 var(--sp-2); font-size: var(--fs-sm); background-color: var(--surface-2); border-color: var(--line-strong); color: var(--text); background-position: calc(100% - 0.85rem) 50%, calc(100% - 0.55rem) 50%; }
+.drop-zone { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: var(--sp-6); background: var(--scrim); pointer-events: none; animation: fade-in .12s; }
+.drop-card { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); width: min(28rem, 100%); padding: var(--sp-6) var(--sp-5); border: 2px dashed var(--accent); border-radius: var(--r-lg); background: var(--surface); text-align: center; }
+.drop-card .i { width: 2.4rem; height: auto; aspect-ratio: 1; color: var(--accent); }
+.drop-title { font-size: var(--fs-lg); font-weight: var(--fw-bold); }
+.drop-sub { color: var(--muted); font-size: var(--fs-sm); }
+
+/* ================================================================== browse Nexus */
+#page-browse { gap: 0; }
+.browse-list { display: flex; flex-direction: column; min-width: 0; }
+.browse-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); }
+.browse-bar select { height: var(--control-h); width: auto; min-width: 0; max-width: 16rem; font-size: var(--fs-sm); }
+.search.browse-search { flex: 1 1 22rem; width: auto; max-width: none; }
+.browse-search input { height: calc(var(--control-h) + 0.25rem); font-size: var(--fs-md); }
+.browse-adult { margin: 0; align-items: center; font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
+.browse-status { min-height: 1.4rem; margin-bottom: var(--sp-3); color: var(--muted); font-size: var(--fs-sm); }
+.browse-status.busy { color: var(--select); }
+.browse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: var(--sp-4); }
+.mod-card { position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); transition: border-color .12s, transform .12s; }
+.mod-card:hover { border-color: var(--line-strong); }
+.mod-card:focus-within { border-color: var(--select); }
+/* The whole card opens the mod; the Download button sits above this layer. */
+.mod-card-hit { position: absolute; inset: 0; z-index: 1; border: 0; background: transparent; cursor: pointer; border-radius: inherit; }
+.mod-card-hit:focus-visible { outline-offset: -2px; }
+.mod-thumb { position: relative; width: 100%; height: auto; aspect-ratio: 16 / 9; display: grid; place-items: center; background: var(--console-bg); color: var(--line-strong); overflow: hidden; }
+.mod-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mod-thumb > .i { width: 2.2rem; }
+.mod-owned { position: absolute; left: var(--sp-2); top: var(--sp-2); box-shadow: var(--shadow-sm); background: var(--surface-2); }
+.mod-owned.tag-ok { background: #0f2a1c; }
+.mod-adult { position: absolute; right: var(--sp-2); top: var(--sp-2); background: #2c2010; }
+.mod-body { display: flex; flex-direction: column; gap: 0.2rem; padding: var(--sp-3) var(--sp-3) var(--sp-3); flex: 1; min-width: 0; }
+.mod-name { font-weight: var(--fw-bold); font-size: var(--fs-md); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mod-by { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mod-summary { margin-top: 0.2rem; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.9em; }
+.mod-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: auto; padding-top: var(--sp-3); color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.mod-stat { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+.mod-stat .i { width: 0.85rem; }
+.mod-updated { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mod-get { position: relative; z-index: 2; margin-left: auto; flex: none; }
+.pager { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); margin: var(--sp-5) 0 var(--sp-2); }
+.pager-text { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; min-width: 9rem; text-align: center; }
+
+/* One mod's pages: the header, the tabs, and the page itself filling the rest. */
+#page-browse:has(.browse-detail:not([hidden])) { overflow: hidden; padding-bottom: var(--sp-3); }
+#page-browse > .browse-detail { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.browse-detail[hidden] { display: none; }
+.detail-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.detail-thumb { width: 5.5rem; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r); background: var(--console-bg); flex: none; }
+.detail-thumb[hidden] { display: none; }
+.detail-title { flex: 1 1 16rem; min-width: 0; }
+.detail-title h1 { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-tabs { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.detail-load { color: var(--muted); font-size: var(--fs-sm); }
+.detail-view { flex: 1; min-height: 12rem; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: #101010; }
+.nexus-view { display: flex; width: 100%; height: 100%; border: 0; }

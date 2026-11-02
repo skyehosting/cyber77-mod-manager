@@ -119,6 +119,64 @@ class NexusClient {
     };
   }
 
+  /** A v2 GraphQL query. Public data needs no key; the key is sent when there is one. */
+  async graphql(query, variables, what) {
+    const headers = { 'Content-Type': 'application/json', 'Application-Name': APP_NAME, 'Application-Version': APP_VERSION };
+    const key = this.getKey();
+    if (key) headers.apikey = key;
+    let res;
+    try {
+      res = await fetch(GRAPHQL, { method: 'POST', headers, body: JSON.stringify({ query, variables }) });
+    } catch (err) {
+      throw new NexusError(`Network error ${what}: ${err.message}`, 0);
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.errors?.length) throw new NexusError(`Could not ${what} (${res.status}): ${body.errors?.[0]?.message || res.statusText}`, res.status);
+    return body.data;
+  }
+
+  /**
+   * Search a game's mods like the site does. `query` matches words of mod names as typed (prefix
+   * match); a number is also looked up as a mod id, which comes first.
+   * sort: endorsements | downloads | updatedAt | createdAt | name | relevance
+   */
+  async searchMods({ game = 'cyberpunk2077', gameId = 3333, query = '', category = '', sort = 'endorsements', adult = false, page = 1, perPage = 20 } = {}) {
+    const fields = 'modId name summary author version category adultContent downloads endorsements thumbnailUrl pictureUrl updatedAt createdAt uploader { name }';
+    const q = String(query || '').trim().slice(0, 100);
+    const filter = { gameDomainName: [{ value: game }] };
+    if (q) filter.name = [{ value: q, op: 'WILDCARD' }];
+    if (category) filter.categoryName = [{ value: String(category) }];
+    if (!adult) filter.adultContent = [{ value: false }];
+    const SORTS = { endorsements: 'DESC', downloads: 'DESC', updatedAt: 'DESC', createdAt: 'DESC', name: 'ASC', relevance: 'DESC' };
+    const key = SORTS[sort] ? sort : 'endorsements';
+    const count = Math.min(Math.max(Number(perPage) || 20, 1), 100);
+    const offset = (Math.max(Number(page) || 1, 1) - 1) * count;
+    const gql = `query($f: ModsFilter, $s: [ModsSort!], $count: Int, $offset: Int) {
+      mods(filter: $f, sort: $s, count: $count, offset: $offset) { totalCount nodes { ${fields} } } }`;
+    const byName = this.graphql(gql, { f: filter, s: [{ [key]: { direction: SORTS[key] } }], count, offset }, 'search Nexus');
+    // "4198" is also mod 4198 (first page only).
+    const byId = /^\d{1,7}$/.test(q) && offset === 0
+      ? this.graphql(`query($f: ModsFilter) { mods(filter: $f, count: 1) { nodes { ${fields} } } }`,
+        { f: { gameId: [{ value: String(gameId) }], modId: [{ value: q }] } }, 'look up that mod id').catch(() => null)
+      : Promise.resolve(null);
+    const [named, exact] = await Promise.all([byName, byId]);
+    const pick = n => ({
+      modId: n.modId, name: n.name, summary: n.summary || '', author: n.author || n.uploader?.name || '', version: n.version || '',
+      category: n.category || '', adult: !!n.adultContent, downloads: n.downloads || 0, endorsements: n.endorsements || 0,
+      thumbnail: n.thumbnailUrl || '', picture: n.pictureUrl || '', updatedAt: n.updatedAt || '', createdAt: n.createdAt || '',
+    });
+    const first = (exact?.mods?.nodes || []).filter(n => adult || !n.adultContent).map(pick);
+    const rest = (named.mods?.nodes || []).map(pick).filter(m => !first.some(f => f.modId === m.modId));
+    return { total: named.mods?.totalCount || 0, page: Math.floor(offset / count) + 1, perPage: count, exact: first.length > 0, mods: [...first, ...rest] };
+  }
+
+  /** The game's mod categories with how many mods each has (the site's category filter). */
+  async modCategories(game = 'cyberpunk2077') {
+    const data = await this.graphql(`query($f: ModsFilter) { mods(filter: $f, facets: { categoryName: [] }, count: 0) { facetsData } }`,
+      { f: { gameDomainName: [{ value: game }] } }, 'read the categories');
+    return Object.entries(data.mods?.facetsData?.categoryName || {}).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   /** Premium accounts get CDN links straight from the API. Returns the preferred URI. */
   async getDownloadLink(game, modId, fileId, { key = '', expires = '' } = {}) {
     const q = key && expires ? `?key=${encodeURIComponent(key)}&expires=${encodeURIComponent(expires)}` : '';

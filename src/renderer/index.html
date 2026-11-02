@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; frame-src https://*.nexusmods.com;">
   <title>Cyber Mod Manager</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,6 +14,10 @@
       <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 16 10 5 10-5"/><path d="m2 12 10 5 10-5"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/></symbol>
+      <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></symbol>
       <symbol id="i-file-plus" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></symbol>
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 3v6h-6"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L21 9"/></symbol>
@@ -69,11 +73,14 @@
         <span class="play-text"><span class="play-label" id="play-label">Play</span><span class="play-sub" id="play-sub">Cyberpunk 2077</span></span>
       </button>
       <nav class="nav" aria-label="Main navigation">
-        <button class="nav-item active" data-page="mods" title="Mods">
-          <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="count" id="nav-mods-count">0</span>
+        <button class="nav-item" data-page="browse" title="Browse Nexus">
+          <svg class="i"><use href="#i-globe"/></svg><span class="nav-label">Browse</span>
         </button>
         <button class="nav-item" data-page="downloads" title="Downloads">
           <svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span><span class="count" id="nav-dl-count">0</span>
+        </button>
+        <button class="nav-item active" data-page="mods" title="Mods">
+          <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="count" id="nav-mods-count">0</span>
         </button>
         <button class="nav-item" data-page="gamelog" title="Game log">
           <svg class="i"><use href="#i-activity"/></svg><span class="nav-label">Game log</span><span class="count" id="nav-log-count">0</span>
@@ -185,6 +192,70 @@
         </div>
       </section>
 
+      <!-- BROWSE -->
+      <section class="page" id="page-browse" aria-labelledby="h-browse">
+        <div class="browse-list" id="browse-list">
+          <header class="page-head">
+            <div class="page-title">
+              <h1 id="h-browse">Browse Nexus</h1>
+              <p class="page-sub" id="browse-sub">Cyberpunk 2077 mods on Nexus Mods</p>
+            </div>
+          </header>
+          <div class="browse-bar">
+            <label class="search browse-search">
+              <svg class="i"><use href="#i-search"/></svg>
+              <input id="browse-q" type="search" placeholder="Search by name, or type a mod ID" aria-label="Search Nexus mods" autocomplete="off" spellcheck="false">
+            </label>
+            <select id="browse-cat" aria-label="Category"><option value="">All categories</option></select>
+            <select id="browse-sort" aria-label="Sort by">
+              <option value="endorsements">Most endorsed</option>
+              <option value="downloads">Most downloaded</option>
+              <option value="updatedAt">Recently updated</option>
+              <option value="createdAt">Newest</option>
+              <option value="relevance">Best match</option>
+              <option value="name">Name A–Z</option>
+            </select>
+            <select id="browse-per" aria-label="Mods per page">
+              <option value="20">20 per page</option>
+              <option value="40">40 per page</option>
+              <option value="60">60 per page</option>
+              <option value="80">80 per page</option>
+            </select>
+            <label class="check browse-adult"><input type="checkbox" id="browse-adult"><span>Adult content</span></label>
+          </div>
+          <div class="browse-status" id="browse-status" role="status" aria-live="polite"></div>
+          <div class="browse-grid" id="browse-grid"></div>
+          <div class="pager" id="browse-pager" hidden>
+            <button class="btn btn-sm" id="browse-prev"><svg class="i"><use href="#i-arrow-left"/></svg><span>Previous</span></button>
+            <span class="pager-text" id="browse-page"></span>
+            <button class="btn btn-sm" id="browse-next"><span>Next</span><svg class="i"><use href="#i-chevron-right"/></svg></button>
+          </div>
+        </div>
+        <div class="browse-detail" id="browse-detail" hidden>
+          <div class="detail-head">
+            <button class="btn btn-icon btn-ghost" id="bd-back" title="Back to results" aria-label="Back to results"><svg class="i"><use href="#i-arrow-left"/></svg></button>
+            <img class="detail-thumb" id="bd-thumb" alt="">
+            <div class="detail-title">
+              <h1 id="bd-name"></h1>
+              <p class="page-sub" id="bd-meta"></p>
+            </div>
+            <div class="head-actions">
+              <button class="btn btn-ghost collapsible" id="bd-external" title="Open this page in your web browser" aria-label="Open in browser"><svg class="i"><use href="#i-external"/></svg><span>Open in browser</span></button>
+              <button class="btn btn-primary" id="bd-download"><svg class="i"><use href="#i-download"/></svg><span>Download</span></button>
+            </div>
+          </div>
+          <div class="detail-tabs"><div class="seg" id="bd-tabs" role="tablist" aria-label="Mod page">
+            <button class="seg-btn active" role="tab" data-tab="description" aria-selected="true">Description</button>
+            <button class="seg-btn" role="tab" data-tab="files" aria-selected="false">Files</button>
+            <button class="seg-btn" role="tab" data-tab="posts" aria-selected="false">Posts</button>
+            <button class="seg-btn" role="tab" data-tab="bugs" aria-selected="false">Bugs</button>
+          </div>
+            <span class="detail-load" id="bd-load" hidden>Loading…</span>
+          </div>
+          <div class="detail-view" id="bd-view"></div>
+        </div>
+      </section>
+
       <!-- DOWNLOADS -->
       <section class="page" id="page-downloads" aria-labelledby="h-dl">
         <header class="page-head">
@@ -282,7 +353,7 @@
           </div>
           <div class="head-actions">
             <button class="btn collapsible" id="gl-follow" aria-pressed="true" title="Pause or resume live updates" aria-label="Pause live updates"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
-            <button class="btn btn-ghost collapsible" id="gl-export" title="Save the log lines shown (with their sources) as a JSON file" aria-label="Export to JSON"><svg class="i"><use href="#i-share"/></svg><span>Export JSON</span></button>
+            <button class="btn btn-ghost collapsible" id="gl-export" title="Save every error and warning, and every mod with its state, as one JSON report" aria-label="Export report"><svg class="i"><use href="#i-share"/></svg><span>Export report</span></button>
             <button class="btn collapsible" id="gl-clear" title="Hide everything logged so far" aria-label="Clear view"><svg class="i"><use href="#i-trash"/></svg><span>Clear view</span></button>
           </div>
         </header>
@@ -500,7 +571,7 @@
             <button class="seg-btn" data-f="warn">Warnings</button>
             <button class="seg-btn" data-f="error">Errors</button>
           </div>
-          <button class="btn btn-sm btn-icon" id="console-export" title="Export to a JSON file" aria-label="Export activity log to JSON"><svg class="i"><use href="#i-share"/></svg></button>
+          <button class="btn btn-sm btn-icon" id="console-export" title="Export a JSON report: every error and warning, and every mod" aria-label="Export report"><svg class="i"><use href="#i-share"/></svg></button>
           <button class="btn btn-sm btn-icon" id="console-copy" title="Copy" aria-label="Copy activity log"><svg class="i"><use href="#i-copy"/></svg></button>
           <button class="btn btn-sm btn-icon" id="console-clear" title="Clear" aria-label="Clear activity log"><svg class="i"><use href="#i-trash"/></svg></button>
         </div>
@@ -528,11 +599,15 @@
     <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
   </div>
 
+  <div class="drop-zone" id="drop-zone" hidden aria-hidden="true">
+    <div class="drop-card"><svg class="i"><use href="#i-package"/></svg><span class="drop-title">Drop to install</span><span class="drop-sub">.zip, .7z or .rar mod archives</span></div>
+  </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="../shared/fomod.js"></script>
   <script src="app.js"></script>
   <script src="gamelog.js"></script>
   <script src="features.js"></script>
+  <script src="browse.js"></script>
 </body>
 </html>
