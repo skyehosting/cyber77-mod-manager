@@ -16,6 +16,7 @@ const { findUpdate } = require('./updates');
 const { VortexBridge, parseFolderName } = require('./vortex');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
+const profileCode = require('./profileCode');
 const MAX_PROFILE_MODS = 1000;
 
 /** FOMOD choices from a shared file: { step: { group: [optionIndex] } } with small integers only. */
@@ -828,8 +829,32 @@ class ModManager extends EventEmitter {
     const { active, list } = this.data.profiles;
     return {
       active,
-      list: Object.values(list).sort((a, b) => a.created - b.created).map(p => ({ id: p.id, name: p.name, created: p.created || 0, count: p.enabled.filter(id => this.data.mods[id]).length })),
+      list: Object.values(list).sort((a, b) => a.created - b.created).map(p => {
+        let tag = '';
+        try { tag = profileCode.fingerprint(profileCode.encode(this.exportProfile(p.id))); } catch { /* none */ }
+        return { id: p.id, name: p.name, created: p.created || 0, count: p.enabled.filter(id => this.data.mods[id]).length, codeTag: tag };
+      }),
     };
+  }
+
+  /** The profile as a share code, made from its mods as they are now. */
+  profileCode(id) {
+    const doc = this.exportProfile(id);
+    const code = profileCode.encode(doc);
+    const local = doc.mods.filter(m => !(m.modId > 0 && m.fileId > 0)).length;
+    return { code, name: doc.name, mods: doc.mods.length - local, local, tag: profileCode.fingerprint(code) };
+  }
+
+  /** A pasted share code, or pasted profile JSON, read like an imported file. */
+  async planProfileCode(text) {
+    const t = String(text || '').trim();
+    if (!t) throw new Error('Paste a profile code first.');
+    if (t.startsWith('{')) {
+      let doc;
+      try { doc = JSON.parse(t); } catch { throw new Error('That text is not a valid profile.'); }
+      return this.planProfileImport(doc);
+    }
+    return this.planProfileImport(profileCode.decode(t));
   }
 
   switchProfile(id) {
@@ -946,7 +971,7 @@ class ModManager extends EventEmitter {
     for (const [order, raw] of doc.mods.entries()) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
       const m = {
-        order, name: String(raw.name || raw.modName || 'Mod').slice(0, 200), modName: String(raw.modName || raw.name || '').slice(0, 200),
+        order, name: String(raw.name || raw.modName || '').slice(0, 200), modName: String(raw.modName || raw.name || '').slice(0, 200),
         game: 'cyberpunk2077', modId: id(raw.modId), fileId: id(raw.fileId),
         version: String(raw.version || '').slice(0, 40), fomod: !!raw.fomod,
         fomodChoices: validChoices(raw.fomodChoices),
@@ -994,12 +1019,20 @@ class ModManager extends EventEmitter {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
+    for (const r of rows) {
+      if (r.name) continue;
+      const here = r.key && (this.data.mods[r.key] || this.data.downloads[r.key]);
+      r.name = here?.name || r.file?.name || r.file?.file_name || (r.modId ? `Nexus mod ${r.modId}` : 'Mod');
+      if (!r.version) r.version = here?.version || r.file?.version || '';
+    }
     const token = crypto.randomBytes(6).toString('hex');
     this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows });
     while (this.profileImports.size > 3) this.profileImports.delete(this.profileImports.keys().next().value);
     return {
       token,
       name: String(doc.name || 'Imported profile').slice(0, 60),
+      // Mods the sender installed from local files: a code cannot carry them.
+      localCount: Number(doc.localCount) > 0 ? Math.min(9999, Number(doc.localCount)) : 0,
       mods: rows.map(r => ({ name: r.name, modName: r.modName, version: r.version, status: r.status, detail: r.detail || '', size: r.size || 0, fomod: r.fomod, choices: !!r.fomodChoices && r.status !== 'newer' })),
     };
   }

@@ -20,9 +20,9 @@ jobs:
     env:
       VERSION: 1.1.${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -61,7 +61,10 @@ jobs:
           NOTES: ${{ github.event.head_commit.message }}
         run: |
           $exe = "dist/Cyber-Mod-Manager-Setup-$env:VERSION.exe"
-          gh release create "v$env:VERSION" $exe "$exe.blockmap" dist/latest.yml `
+          # The same installer under a fixed name: .../releases/latest/download/Cyber-Mod-Manager-Setup.exe
+          # always downloads the newest version (the README's Download link).
+          Copy-Item $exe dist/Cyber-Mod-Manager-Setup.exe
+          gh release create "v$env:VERSION" $exe "$exe.blockmap" dist/latest.yml dist/Cyber-Mod-Manager-Setup.exe `
             --title "Cyber Mod Manager $env:VERSION" `
             --notes "$env:NOTES" `
             --latest

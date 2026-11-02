@@ -310,6 +310,8 @@ async function boot() {
     return manager.planProfileImport(doc);
   });
   handle('profiles:importApply', (token, name) => manager.applyProfileImport(token, name));
+  handle('profiles:code', id => manager.profileCode(id));
+  handle('profiles:importCode', text => manager.planProfileCode(text));
   handle('profiles:importCancel', token => manager.cancelProfileImport(token));
   handle('profiles:revealExport', () => { if (lastExport) shell.showItemInFolder(lastExport); });
   handle('jobs:cancel', id => manager.downloader.cancel(id));

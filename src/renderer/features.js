@@ -299,6 +299,15 @@ function exportProfile(x) {
   }, 'Exporting…');
 }
 
+function copyCode(x) {
+  return profGuard(async () => {
+    const r = await run(api.profileCode(x.id));
+    if (!r) return;
+    await navigator.clipboard.writeText(r.code);
+    toast(`Copied the code for "${x.name}": ${plural(r.mods, 'mod')}${r.local ? ` (${r.local} from local files left out)` : ''}, ${r.code.length.toLocaleString()} characters`, 'success');
+  });
+}
+
 function profileCard(x, p) {
   const active = x.id === p.active;
   const key = action => ({ key: `${x.id}:${action}` });
@@ -347,12 +356,14 @@ function profileCard(x, p) {
       h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('rename'), title: 'Rename', 'aria-label': `Rename ${x.name}`, onclick: () => { prof.editing = x.id; renderProfilesPage(true); } }, icon('edit'))),
     h('div', { class: 'prof-stats' },
       h('div', { class: 'prof-stat' }, h('b', {}, String(x.count)), h('span', {}, x.count === 1 ? 'mod enabled' : 'mods enabled')),
-      x.created ? h('div', { class: 'prof-stat' }, h('b', {}, fmtDay(x.created)), h('span', {}, 'created')) : null),
+      x.created ? h('div', { class: 'prof-stat' }, h('b', {}, fmtDay(x.created)), h('span', {}, 'created')) : null,
+      x.codeTag ? h('div', { class: 'prof-stat', title: 'This tag changes whenever the profile\'s mods change: a code you copy is always the profile as it is now' }, h('b', { class: 'code-tag' }, x.codeTag), h('span', {}, 'share code')) : null),
     h('div', { class: 'prof-actions' },
       active
         ? h('span', { class: 'prof-live' }, icon('check'), h('span', {}, 'In use'))
         : h('button', { class: 'btn btn-sm btn-primary', dataset: key('switch'), onclick: profGuard(() => switchTo(x), 'Switching…') }, icon('play'), h('span', {}, 'Activate')),
-      h('button', { class: 'btn btn-sm', dataset: key('export'), title: 'Save this profile to a file you can send to someone', 'aria-label': `Export ${x.name}`, onclick: exportProfile(x) }, icon('share'), h('span', {}, 'Export')),
+      h('button', { class: 'btn btn-sm', dataset: key('code'), title: 'Copy a code that sets up this profile, as it is now, on someone else\'s PC', 'aria-label': `Copy the share code of ${x.name}`, onclick: copyCode(x) }, icon('copy'), h('span', {}, 'Copy code')),
+      h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('export'), title: 'Save this profile as a .json file', 'aria-label': `Export ${x.name} as a file`, onclick: exportProfile(x) }, icon('share')),
       h('button', {
         class: 'btn btn-sm btn-icon btn-ghost', dataset: key('delete'),
         title: active ? 'Activate another profile to delete this one' : p.list.length === 1 ? 'The only profile cannot be deleted' : 'Delete',
@@ -469,6 +480,8 @@ function importReview(plan) {
           h('span', {}, keyProblem === 'no-key'
             ? `${plural(toDownload, 'mod')} must be downloaded, and no Nexus API key is set. Import now to enable what you already have; after adding your key in Settings, retry them in Downloads.`
             : `${plural(toDownload, 'mod')} must be downloaded, but your Nexus account is not Premium, so Nexus will refuse the downloads. Get them from their mod pages instead.`)) : null,
+        plan.localCount ? h('div', { class: 'banner banner-info', role: 'status' }, icon('info'),
+          h('span', {}, `The sender also has ${plural(plan.localCount, 'mod')} installed from local files. Codes and profile files can't carry those: ask them for the archives.`)) : null,
         h('label', { class: 'label' }, 'Name', nameBox),
         h('div', { class: 'imp-stats' },
           h('span', {}, h('b', {}, String(count(['installed']))), ' already installed'),
@@ -502,10 +515,53 @@ $('#prof-new').addEventListener('click', async () => {
   const id = await newProfileDialog();
   if (id) setTimeout(() => profFocus(`${id}:switch`));
 });
+/** Import: a pasted share code (or profile JSON), or a .json file. Resolves the plan, or null. */
+function importDialog() {
+  return withModal(() => new Promise(resolve => {
+    const m = $('#modal');
+    m.className = 'modal medium';
+    m.setAttribute('aria-labelledby', 'imp-src-title');
+    const box = h('textarea', { class: 'code-box', rows: '5', spellcheck: 'false', placeholder: 'Paste a profile code (it starts with CMM1-)', 'aria-label': 'Profile code' });
+    const err = h('span', { class: 'left', role: 'alert' });
+    const read = h('button', { class: 'btn btn-primary', disabled: true }, h('span', {}, 'Read code'));
+    let busy = false;
+    box.addEventListener('input', () => { read.disabled = !box.value.trim(); err.textContent = ''; });
+    read.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
+      read.disabled = true;
+      read.firstChild.textContent = 'Reading…';
+      const r = await api.importProfileCode(box.value);
+      busy = false;
+      read.firstChild.textContent = 'Read code';
+      read.disabled = false;
+      if (r.error) { err.textContent = r.error; box.focus(); return; }
+      close(r.ok);
+    });
+    const fromFile = h('button', { class: 'btn foot-left', onclick: async () => {
+      if (busy) return;
+      const plan = await pickProfileFile();
+      if (plan) close(plan);
+    } }, icon('import'), h('span', {}, 'Choose a .json file…'));
+    m.replaceChildren(
+      h('div', { class: 'modal-head' }, h('h3', { id: 'imp-src-title' }, 'Import a profile'), h('div', { class: 'sub' }, 'Someone\'s profile code, or a profile file they sent you')),
+      h('div', { class: 'modal-body' }, box,
+        h('p', { class: 'hint' }, 'Next you see every mod in it and what importing does with each one; nothing changes until you confirm.')),
+      h('div', { class: 'modal-foot' }, fromFile, err, h('button', { class: 'btn', onclick: () => close(null) }, 'Cancel'), read),
+    );
+    // Something code-like on the clipboard is filled in already.
+    navigator.clipboard.readText().then(t => {
+      if (/^\s*CMM1-/.test(t || '') && !box.value) { box.value = t.trim(); read.disabled = false; }
+    }).catch(() => {});
+    const close = v => { if (busy) return; hide(); resolve(v); };
+    const hide = showModal({ focus: 'textarea', onDismiss: () => close(null) });
+  }));
+}
+
 $('#prof-import').addEventListener('click', profGuard(async () => {
-  const plan = await pickProfileFile();
+  const plan = await importDialog();
   if (plan) await importReview(plan);
-}, 'Reading…'));
+}));
 
 pageHooks.profiles = () => renderProfilesPage(true);
 snapshotHooks.push(() => renderProfilesPage());

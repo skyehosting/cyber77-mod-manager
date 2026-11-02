@@ -45,6 +45,7 @@ const STATES = {
   profiles: { all: true, run: "goTo('profiles');" },
   'profile-delete': { only: ['fhd-100'], run: "goTo('profiles'); prof.confirming = 'p3'; renderProfilesPage(true);" },
   'profile-new': { only: ['fhd-100', 'min-window'], run: "goTo('profiles'); newProfileDialog();" },
+  'profile-code': { only: ['fhd-100', 'min-window'], run: "goTo('profiles'); importDialog();" },
   'profile-import': { only: ['fhd-100', 'fhd-150', 'min-window'], run: 'demoImport();' },
   files: { only: ['fhd-100', 'fhd-150', 'qhd-100', '4k-200', 'min-window'], run: "goTo('downloads'); chooseFiles(window.demoPlan);" },
   menu: { only: ['fhd-100', 'min-window'], run: "goTo('mods'); document.querySelector('#mods-more').click();" },

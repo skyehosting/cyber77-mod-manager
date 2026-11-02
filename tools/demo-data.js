@@ -63,9 +63,9 @@
     profiles: {
       active: 'default',
       list: [
-        { id: 'default', name: 'Default', count: 12, created: now - 41 * 86400000 },
-        { id: 'p2', name: 'Photo mode', count: 5, created: now - 12 * 86400000 },
-        { id: 'p3', name: 'Vanilla+', count: 3, created: now - 2 * 86400000 },
+        { id: 'default', name: 'Default', count: 12, created: now - 41 * 86400000, codeTag: '3F9K2A' },
+        { id: 'p2', name: 'Photo mode', count: 5, created: now - 12 * 86400000, codeTag: 'B71E04' },
+        { id: 'p3', name: 'Vanilla+', count: 3, created: now - 2 * 86400000, codeTag: '0C55D9' },
       ],
     },
     vortex: {

@@ -192,3 +192,43 @@ test('two imports waiting for the same download both get the mod', { skip: !has7
   assert.strictEqual(mgr.data.mods['100'].enabled, true, 'enabled in the active (second) profile');
   assert.ok(fs.existsSync(path.join(game, 'archive/pc/mod/shared.archive')));
 });
+
+test('a profile code carries the mods, order, installer choices and name, and changes with them', { skip: !has7z && 'no 7-Zip' }, async () => {
+  const { mgr, installAs } = makeManager();
+  const a = await installAs('Alpha', { 'alpha.archive': 'A' }, 10, 100);
+  await installAs('Beta', { 'beta.archive': 'B' }, 20, 200);
+  await installAs('Local Thing', { 'local.archive': 'L' }, 0, 0);
+  mgr.data.mods[a].fomod = true;
+  mgr.data.mods[a].fomodChoices = { 0: { 0: [1], 1: [0, 2] } }; // step → group → picked options
+
+  const first = mgr.profileCode('default');
+  assert.match(first.code, /^CMM1-[A-Za-z0-9_-]+$/);
+  assert.deepStrictEqual([first.mods, first.local], [2, 1]);
+  assert.strictEqual(mgr.profilesView().list[0].codeTag, first.tag, 'the card shows the current code');
+
+  // The receiver: Nexus knows both files; names come from Nexus since the code has none.
+  const { mgr: other } = makeManager();
+  other.nexus.getFiles = async (_g, modId) => ({ files: [{ file_id: modId * 10, name: `Nexus ${modId}`, file_name: `n${modId}.zip`, category_name: 'MAIN', version: '2.0' }] });
+  const plan = await other.planProfileCode(`  ${first.code.slice(0, 20)}\n${first.code.slice(20)}  `);
+  assert.strictEqual(plan.localCount, 1);
+  const order = mgr.exportProfile('default').mods.filter(m => m.modId).map(m => `Nexus ${m.modId}`);
+  assert.deepStrictEqual(plan.mods.map(m => m.name), order, 'priority order kept');
+  assert.ok(plan.mods.every(m => m.status === 'download'));
+  assert.strictEqual(plan.mods.find(m => m.name === 'Nexus 10').choices, true, 'installer choices travel with the code');
+
+  await mgr.setEnabled([a], false);
+  assert.notStrictEqual(mgr.profileCode('default').code, first.code, 'disabling a mod changes the code');
+  assert.notStrictEqual(mgr.profilesView().list[0].codeTag, first.tag);
+});
+
+test('profile codes: damaged, foreign and pasted-JSON input', async () => {
+  const profileCode = require('../src/core/profileCode');
+  const code = profileCode.encode({ name: 'P', mods: Array.from({ length: 64 }, (_, i) => ({ modId: 1000 + i * 37, fileId: 50000 + i * 911 })) });
+  assert.ok(code.length < 600, `64 mods fit in a short code (${code.length} characters)`);
+  assert.strictEqual(profileCode.decode(code).mods.length, 64);
+  assert.throws(() => profileCode.decode(code.slice(0, -12)), /damaged or incomplete/);
+  assert.throws(() => profileCode.decode('hello'), /start with CMM1-/);
+  const { mgr } = makeManager();
+  await assert.rejects(mgr.planProfileCode('{"format":"something-else","mods":[]}'), /not a Cyber Mod Manager profile/);
+  await assert.rejects(mgr.planProfileCode('   '), /Paste a profile code/);
+});

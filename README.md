@@ -2,9 +2,13 @@
 
 A Nexus Mods downloader and mod manager for Cyberpunk 2077, for Windows.
 
+### [⬇ Download the latest version](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Cyber-Mod-Manager-Setup.exe)
+
+[![Latest release](https://img.shields.io/github/v/release/skyehosting/cyber77-mod-manager?label=latest&style=flat-square)](https://github.com/skyehosting/cyber77-mod-manager/releases/latest) · [All releases](https://github.com/skyehosting/cyber77-mod-manager/releases)
+
 ## Install
 
-Download `Cyber-Mod-Manager-Setup-<version>.exe` from the [latest release](https://github.com/skyehosting/cyber77-mod-manager/releases/latest) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
+Download [`Cyber-Mod-Manager-Setup.exe`](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Cyber-Mod-Manager-Setup.exe) (always the newest version; also on the [releases page](https://github.com/skyehosting/cyber77-mod-manager/releases/latest)) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
 
 The app keeps itself up to date: while it is open it checks for a new version every 2 minutes (Settings → Folders & tools → App updates: any number of minutes, hours or days), downloads it, and restarts to install it once nothing is downloading or installing. **Later** on the notice leaves the update for when you close the app. Your settings, mods and downloads are kept.
 
@@ -54,7 +58,7 @@ The app keeps itself up to date: while it is open it checks for a new version ev
   You tick which requirements to include. Missing ones start ticked.
 - **Updates.** **Check for updates** asks Nexus for each installed mod's files and follows each file's update chain to the newest version. If an author didn't link the new file, it falls back to the newest current file with the same name. Mods with an update get an **Update → version** tag and appear under the **Updates** filter; you can update them all or a selection. An update downloads the new file and installs it in the old version's place, keeping its on/off state, priority and profiles. Files that only the old version had are removed.
 - **Profiles.** A profile is a named set of enabled mods with its own conflict order. The **Profiles** page shows each one as a card. From there you can activate a profile, create one (empty, or copied from what is enabled now), rename, export or delete it. The active profile follows every enable and disable you make. Vortex's profiles are listed below yours, read-only.
-- **Sharing profiles.** On the Profiles page, **Export** saves a profile to a `.cmmprofile.json` file. The file holds that profile's **enabled, installed** mods only (disabled and uninstalled ones are left out), with their exact Nexus file IDs, in priority order. Send it to anyone. They choose **Import from file** and see a review of every mod:
+- **Sharing profiles.** Each profile card has **Copy code**: a share code (`CMM1-…`, a few hundred characters for a big profile) that holds the profile's **enabled, installed** mods with their exact Nexus file IDs, in priority order, and the options picked in FOMOD installers. The code is made from the profile itself, so it changes whenever you enable, disable, reorder or update a mod; the card shows a short tag of the current code. Nothing is uploaded anywhere: the code is the data. Mods installed from local files can't be in a code (they aren't on Nexus); the receiver is told how many there were. The export button (share icon) saves the same profile as a `.cmmprofile.json` file instead. Send either to anyone. They choose **Import**, paste the code (or choose the file) and see a review of every mod:
   - **will enable**: they already have that exact file;
   - **will install**: it is downloaded but not installed;
   - **will download**: the exact file is fetched from Nexus;

@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('api', {
   logs: () => call('logs'),
   logHistory: () => call('logs:history'),
   nxmStatus: () => call('nxm:status'),
+  profileCode: id => call('profiles:code', id),
+  importProfileCode: text => call('profiles:importCode', text),
   updateState: () => call('update:state'),
   checkForUpdate: () => call('update:check'),
   postponeUpdate: () => call('update:postpone'),
