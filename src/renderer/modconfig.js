@@ -7,24 +7,35 @@
  * Every mod's files as a tree: this app's mods and Vortex's (enabled or not) and files no mod
  * manager put in the game folder. Paths start at the game folder. A text file shows a pencil when
  * pointed at; it opens the file in the built-in editor (editor.js).
+ * One row per mod: its copies (this app's, the one Vortex keeps, loose folders of it) are the
+ * row's parts, each shown as its own section when the row is open.
  */
 const cfg = { list: null, filter: 'all', q: '', open: new Set(), files: new Map(), folders: new Map() };
+// open: rows (by key); files and folders: per part (by part key).
 
-const SOURCE_TAG = { vortex: 'Vortex', hand: 'Not from a manager' };
+const SOURCE_TAG = { vortex: 'Vortex', hand: 'Not from a manager' }; // the row's main copy
 
 async function loadConfig() {
   const r = await run(api.cfgList());
   if (!r) return;
   cfg.list = r;
   // Open mods are read again (files may have been added or changed); uninstalled ones just close.
-  for (const k of [...cfg.open]) if (!r.some(m => m.key === k)) { cfg.open.delete(k); cfg.files.delete(k); }
-  await Promise.all([...cfg.open].map(k => loadModFiles(k)));
+  for (const k of [...cfg.open]) if (!r.some(m => m.key === k)) cfg.open.delete(k);
+  cfg.files.clear();
+  await Promise.all(r.filter(m => cfg.open.has(m.key)).map(loadRow));
   renderConfig();
+}
+
+const partsOf = row => row.parts || [row];
+
+/** Every copy of a row's mod. */
+function loadRow(row) {
+  return Promise.all(partsOf(row).filter(p => !cfg.files.has(p.key)).map(p => loadModFiles(p.key)));
 }
 
 async function loadModFiles(key) {
   const r = await run(api.cfgFiles(key));
-  if (!r) { cfg.open.delete(key); return; }
+  if (!r) return;
   cfg.files.set(key, r);
   if (!cfg.folders.has(key)) {
     // Small mods open fully; larger ones show their top folders.
@@ -74,14 +85,27 @@ function shown() {
   return (cfg.list || []).filter(m => {
     if (cfg.filter === 'enabled' && (!m.enabled || m.source === 'hand')) return false;
     if (cfg.filter === 'disabled' && m.enabled) return false;
-    if (cfg.filter === 'vortex' && m.source !== 'vortex') return false;
-    if (cfg.filter === 'hand' && m.source !== 'hand') return false;
-    return !q || `${m.name} ${m.folder || ''}`.toLowerCase().includes(q);
+    if (cfg.filter === 'vortex' && !partsOf(m).some(p => p.source === 'vortex')) return false;
+    if (cfg.filter === 'hand' && !partsOf(m).some(p => p.source === 'hand')) return false;
+    return !q || partsOf(m).some(p => `${p.name} ${p.folder || ''}`.toLowerCase().includes(q));
   });
 }
 
-function fileRow(mod, f, depth) {
-  const open = () => openEditor({ loc: f.loc, mod: mod.name, note: f.note, vortex: mod.source === 'vortex' || !!cfg.files.get(mod.key)?.vortex });
+const partLabel = p => (p.source === 'vortex' ? "Vortex's copy" : p.source === 'hand' ? `Folder not from a manager: ${p.folder}` : 'This app');
+
+/** The same file in the row's other copies (same path from the game folder). */
+function twinsOf(row, part, f) {
+  const out = [];
+  for (const p of partsOf(row)) {
+    if (p.key === part.key) continue;
+    const other = cfg.files.get(p.key)?.files.find(x => x.editable && x.rel.toLowerCase() === f.rel.toLowerCase());
+    if (other) out.push({ loc: other.loc, label: partLabel(p) });
+  }
+  return out;
+}
+
+function fileRow(row, part, f, depth) {
+  const open = () => openEditor({ loc: f.loc, mod: row.name, note: f.note, vortex: part.source === 'vortex' || !!cfg.files.get(part.key)?.vortex, copy: partsOf(row).length > 1 ? partLabel(part) : '', twins: twinsOf(row, part, f) });
   const name = f.rel.split('/').pop();
   return h('div', {
     class: `cfg-file${f.editable ? ' editable' : ''}`, role: 'treeitem', tabindex: '0', style: `--depth:${depth}`, title: f.rel,
@@ -97,8 +121,8 @@ function fileRow(mod, f, depth) {
     : h('span', { class: 'cfg-edit-gap', 'aria-hidden': 'true' }));
 }
 
-function folderEl(mod, node, depth) {
-  const openSet = cfg.folders.get(mod.key);
+function folderEl(row, part, node, depth) {
+  const openSet = cfg.folders.get(part.key);
   const kids = [];
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   for (const d of dirs) {
@@ -108,18 +132,19 @@ function folderEl(mod, node, depth) {
       class: 'cfg-dir', role: 'treeitem', tabindex: '0', 'aria-expanded': String(isOpen), style: `--depth:${depth}`, title: d.path,
       onclick: toggle, onkeydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } },
     }, icon('chevron-right', `cfg-chev${isOpen ? ' open' : ''}`), icon('folder'), h('span', { class: 'cfg-name' }, d.name)));
-    if (isOpen) kids.push(...folderEl(mod, d, depth + 1));
+    if (isOpen) kids.push(...folderEl(row, part, d, depth + 1));
   }
   const files = [...node.files].sort((a, b) => a.rel.localeCompare(b.rel, undefined, { sensitivity: 'base' }));
-  for (const f of files) kids.push(fileRow(mod, f, depth));
+  for (const f of files) kids.push(fileRow(row, part, f, depth));
   return kids;
 }
 
 function renderConfig() {
   const list = shown();
   const all = cfg.list || [];
+  const loose = all.filter(m => m.source === 'hand').length;
   $('#cfg-sub').textContent = all.length
-    ? `${plural(all.filter(m => m.source !== 'hand').length, 'mod')} and ${plural(all.filter(m => m.source === 'hand').length, 'folder')} not from a manager. Point at a text file and click the pencil to edit it.`
+    ? `${plural(all.length - loose, 'mod')}${loose ? ` and ${plural(loose, 'folder')} not from a manager` : ''}. Point at a text file and click the pencil to edit it.`
     : 'Every mod\'s files, enabled or not. Point at a text file and click the pencil to edit it.';
   const box = $('#cfg-list');
   if (!list.length) {
@@ -130,7 +155,7 @@ function renderConfig() {
     const isOpen = cfg.open.has(m.key);
     const toggle = async () => {
       if (isOpen) cfg.open.delete(m.key);
-      else { cfg.open.add(m.key); if (!cfg.files.has(m.key)) await loadModFiles(m.key); }
+      else { cfg.open.add(m.key); await loadRow(m); }
       renderConfig();
     };
     const head = h('div', {
@@ -139,13 +164,26 @@ function renderConfig() {
     },
     icon('chevron-right', `cfg-chev${isOpen ? ' open' : ''}`),
     h('span', { class: 'cfg-mod-name' }, m.name, m.version ? h('span', { class: 'cfg-ver' }, ` v${m.version}`) : null),
-    m.folder ? h('span', { class: 'cfg-folder' }, m.folder) : null,
+    m.folder && partsOf(m).length === 1 ? h('span', { class: 'cfg-folder' }, m.folder) : null,
     SOURCE_TAG[m.source] ? h('span', { class: 'tag' }, SOURCE_TAG[m.source]) : null,
+    m.source !== 'vortex' && partsOf(m).some(p => p.source === 'vortex') ? h('span', { class: 'tag tag-info', title: 'Vortex has a copy of this mod too (shown in its own section)' }, '+ Vortex copy') : null,
+    m.source !== 'hand' && partsOf(m).some(p => p.source === 'hand') ? h('span', { class: 'tag', title: 'Loose files of this mod that no mod manager put there' }, '+ loose files') : null,
     m.source === 'hand' ? null : h('span', { class: `tag ${m.enabled ? 'tag-ok' : 'tag-off'}` }, m.enabled ? 'Enabled' : 'Disabled'),
     h('span', { class: 'cfg-count' }, plural(m.fileCount, 'file')));
-    const files = cfg.files.get(m.key);
+    const parts = partsOf(m);
+    const section = p => {
+      const files = cfg.files.get(p.key);
+      if (!files) return null;
+      return [
+        parts.length > 1 ? h('div', { class: `cfg-part-head ${p.source}` }, icon(p.source === 'vortex' ? 'vortex' : p.source === 'hand' ? 'folder' : 'layers'),
+          h('span', { class: 'cfg-part-name' }, partLabel(p)),
+          p.note ? h('span', { class: 'cfg-note' }, p.note) : null,
+          h('span', { class: 'cfg-count' }, plural(p.fileCount, 'file'))) : null,
+        ...(files.files.length ? folderEl(m, p, buildTree(files.files), 1) : [h('p', { class: 'hint cfg-none' }, 'No files.')]),
+      ];
+    };
     return h('div', { class: `cfg-group${isOpen ? ' open' : ''}` }, head,
-      isOpen && files ? h('div', { class: 'cfg-tree', role: 'group' }, files.files.length ? folderEl(m, buildTree(files.files), 1) : h('p', { class: 'hint cfg-none' }, 'No files.')) : null);
+      isOpen ? h('div', { class: 'cfg-tree', role: 'group' }, parts.map(p => h('div', { class: 'cfg-part' }, section(p)))) : null);
   }));
 }
 
@@ -157,10 +195,12 @@ async function openConfigFor(key) {
   $('#cfg-search').value = '';
   setSegActive('#cfg-filter', 'f', 'all');
   if (!cfg.list) await loadConfig();
-  cfg.open.add(key);
-  await loadModFiles(key);
+  const row = (cfg.list || []).find(m => partsOf(m).some(p => p.key === key));
+  if (!row) return;
+  cfg.open.add(row.key);
+  await loadRow(row);
   renderConfig();
-  $(`#cfg-list [data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'start' });
+  $(`#cfg-list [data-key="${CSS.escape(row.key)}"]`)?.scrollIntoView({ block: 'start' });
 }
 
 $('#cfg-search').addEventListener('input', ev => { cfg.q = ev.target.value; renderConfig(); });

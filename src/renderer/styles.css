@@ -1752,3 +1752,11 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ai-copy:hover { color: var(--text); }
 .ai-copy.done { color: var(--ok); }
 @media (hover: none) { .ai-copy { opacity: 1; } }
+/* Mod config: a mod with several copies shows each as its own section */
+.cfg-part + .cfg-part { margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px dashed var(--line-strong); }
+.cfg-part-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4) var(--sp-1) var(--sp-4); font-size: var(--fs-xs); font-weight: var(--fw-bold); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-2); }
+.cfg-part-head .i { width: 0.95rem; flex: none; color: var(--accent); }
+.cfg-part-head.vortex .i { color: var(--info); }
+.cfg-part-head.hand .i { color: var(--warn); }
+.cfg-part-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-part-head .cfg-note, .cfg-part-head .cfg-count { text-transform: none; letter-spacing: 0; font-weight: var(--fw-regular); }

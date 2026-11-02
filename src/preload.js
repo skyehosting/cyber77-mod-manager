@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
   cfgWrite: (loc, text, opts) => call('cfg:write', loc, text, opts),
   cfgRestore: loc => call('cfg:restore', loc),
   cfgShow: loc => call('cfg:show', loc),
+  cfgTwins: (loc, others) => call('cfg:twins', loc, others),
+  cfgWriteLike: (loc, text) => call('cfg:writeLike', loc, text),
   aiClear: () => call('ai:clear'),
   aiTest: () => call('ai:test'),
   onAi: on('ai'),

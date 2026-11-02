@@ -307,6 +307,12 @@ async function boot() {
     return r;
   });
   handle('cfg:show', loc => shell.showItemInFolder(modConfig.resolve(loc)));
+  handle('cfg:twins', (loc, others) => modConfig.twins(loc, others || []));
+  handle('cfg:writeLike', (loc, text) => {
+    const r = modConfig.writeLike(loc, text);
+    logger.success(`Saved ${loc.rel} (${loc.base === 'vortex' ? "Vortex's copy" : loc.base === 'app' ? 'stored copy' : 'game folder'})`);
+    return r;
+  });
   handle('ai:clear', () => assistant.clear());
   handle('ai:test', () => assistant.test());
   // Links in the assistant's answers open in the user's browser (web pages only).

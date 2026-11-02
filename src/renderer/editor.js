@@ -91,12 +91,22 @@ async function edConfirm(opts) {
 }
 
 /** Open a file: { loc, mod, note, vortex }. */
-async function openEditor({ loc, mod = '', note = '', vortex = false }) {
+/**
+ * Open a file: { loc, mod, note, vortex, copy, twins }. `copy` names which copy of the mod this
+ * is; `twins` are the same file in the mod's other copies ({ loc, label }), offered on save.
+ */
+async function openEditor({ loc, mod = '', note = '', vortex = false, copy = '', twins = [] }) {
   if (ed.file && !(await closeEditor())) return;
   const r = await api.cfgRead(loc);
   if (r.error) { toast(r.error, 'error'); return; }
   const f = r.ok;
-  ed.file = { loc, mod, note, vortex, lang: langOf(loc.rel), ...f };
+  // Which other copies are this very file (hardlinked: saving one saves both) and which are separate.
+  let others = [];
+  if (twins.length) {
+    const st = (await api.cfgTwins(loc, twins.map(t => t.loc))).ok || [];
+    others = twins.map((t, i) => ({ ...t, ...st[i] })).filter(t => t.exists);
+  }
+  ed.file = { loc, mod, note, vortex, copy, twins: others, lang: langOf(loc.rel), ...f };
   ed.saved = f.text;
   ed.opener = document.activeElement;
   buildEditor();
@@ -117,8 +127,12 @@ function buildEditor() {
     readOnly: !!f.readOnly, oninput: onEdit, onscroll: syncScroll, onkeydown: onKey, onclick: showPos, onkeyup: showPos, onselect: showPos,
   });
   ta.value = f.text;
+  const linked = f.twins.filter(t => t.linked).map(t => t.label);
+  const separate = f.twins.filter(t => !t.linked).map(t => t.label);
   const notes = [
     f.note,
+    linked.length ? `${linked.join(' and ')}: the same file on disk (linked), so saving changes it too.` : '',
+    separate.length ? `${separate.join(' and ')} ${separate.length === 1 ? 'has its own copy' : 'have their own copies'} of this file: when you save, you can change ${separate.length === 1 ? 'it' : 'them'} too.` : '',
     f.loc.base !== 'game' ? 'This is the stored copy, not the file in the game folder: changes apply when the mod is enabled.' : '',
     f.vortex && f.loc.base === 'game' ? 'A Vortex mod: this file is shared with Vortex\'s copy, and Vortex may ask about the change when it next deploys.' : '',
     state.gameRunning ? 'The game is running: most mods read their settings when the game starts.' : '',
@@ -141,7 +155,7 @@ function buildEditor() {
       h('span', { class: 'ed-icon' }, icon('file-code')),
       h('div', { class: 'ed-titles' },
         h('h3', { id: 'ed-title' }, name),
-        h('div', { class: 'ed-path', title: f.loc.rel }, [f.loc.rel, f.mod].filter(Boolean).join('  ·  '))),
+        h('div', { class: 'ed-path', title: f.loc.rel }, [f.loc.rel, f.mod, f.copy].filter(Boolean).join('  ·  '))),
       h('div', { class: 'ed-actions' },
         h('button', { class: 'btn btn-sm btn-ghost', title: 'Find in this file (Ctrl+F)', onclick: () => openFind() }, icon('search'), h('span', {}, 'Find')),
         h('button', { class: 'btn btn-sm btn-ghost', id: 'ed-restore', hidden: !f.hasBackup, title: 'Put back the file as it was before you first saved it here', onclick: restoreOriginal }, icon('rotate'), h('span', {}, 'Restore original')),
@@ -372,7 +386,25 @@ async function saveEditor() {
   $('#ed-restore').hidden = false;
   render();
   $('#ed-state').textContent = 'Saved';
-  toast(`Saved ${f.loc.rel.split('/').pop()}`, 'success');
+  const name = f.loc.rel.split('/').pop();
+  // The mod's other copies of this file that are separate files: change them too?
+  const separate = (f.twins || []).filter(t => !t.linked);
+  if (separate.length) {
+    const labels = separate.map(t => t.label).join(' and ');
+    const both = await edConfirm({
+      title: `Save to ${labels} too?`,
+      body: h('p', {}, `${name} is also in ${labels}, as a separate file. Save the same text there, so both copies match? (Otherwise only ${f.copy || 'this copy'} changes.)`),
+      buttons: [{ label: 'Only this copy', value: false, safe: true }, { label: 'Save both', value: true, kind: 'btn-primary' }],
+    });
+    if (both) {
+      const failed = [];
+      for (const t of separate) { const w = await api.cfgWriteLike(t.loc, text); if (w.error) failed.push(`${t.label}: ${w.error}`); }
+      if (failed.length) toast(`Saved ${name} here, but not in ${failed.join('; ')}`, 'error');
+      else toast(`Saved ${name} in ${separate.length + 1} copies`, 'success');
+      return;
+    }
+  }
+  toast(`Saved ${name}`, 'success');
 }
 
 async function reloadEditor() {

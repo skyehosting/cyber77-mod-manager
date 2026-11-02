@@ -20,6 +20,10 @@ const TEXT_EXT = new Set(['.reds', '.lua', '.json', '.yaml', '.yml', '.xl', '.in
 const MAX_OPEN = 5 * 1024 * 1024;
 const READ_ONLY_OVER = 2 * 1024 * 1024;
 
+// Folders that hold many mods' loose files: never joined to a mod by name.
+const GENERIC_ROOTS = new Set(['archive/pc/mod', 'r6/config', 'r6/scripts', 'r6/tweaks', 'red4ext', 'red4ext/plugins', 'bin/x64/plugins', 'bin/x64/plugins/cyber_engine_tweaks', 'mods', 'engine/config', 'engine/config/platform', 'engine/config/platform/pc']);
+const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const extOf = p => path.extname(p).toLowerCase();
 const isTextName = p => TEXT_EXT.has(extOf(p)) || /(^|\/)\.env$/i.test(p);
 
@@ -82,23 +86,88 @@ class ModConfig {
   }
 
   /** Every mod with its state, plus folders of files no mod manager put there. */
+  /**
+   * Every mod once, each with its copies ("parts"): this app's, Vortex's (the copy Vortex keeps
+   * after a move, or the same mod installed there too) and folders no mod manager put there.
+   * Parts belong together when they are linked (moved from Vortex, the same Nexus file) or share
+   * a name ("AiNpcCyberpunkMod" in a CET folder and in a RED4ext folder).
+   */
   list() {
-    const out = [];
+    const parts = [];
+    const appByVortex = new Map(); // vortexId -> app part (moved from Vortex, or the same file)
     for (const m of Object.values(this.manager.data.mods)) {
-      out.push({ key: `app:${m.id}`, name: m.name, version: m.version || '', enabled: !!m.enabled, source: 'app', type: m.type || '', fileCount: m.files.length });
+      const p = { key: `app:${m.id}`, name: m.name, modName: m.modName || '', version: m.version || '', enabled: !!m.enabled, source: 'app', type: m.type || '', fileCount: m.files.length };
+      parts.push(p);
+      if (m.fromVortex) appByVortex.set(m.fromVortex, p);
     }
-    let vortex = [];
-    try { vortex = this.manager.snapshot().vortex?.mods || []; } catch { /* no Vortex */ }
-    for (const v of vortex) out.push({ key: `vx:${v.vortexId}`, name: v.name, version: v.version || '', enabled: !!v.enabled, source: 'vortex', type: v.type || '', fileCount: v.fileCount || 0 });
+    let vx = { mods: [] };
+    try { vx = this.manager.vortex.read(); } catch { /* no Vortex */ }
+    const adopted = this.manager.data.vortexAdopted || {};
+    let twins = {};
+    try { twins = this.manager.vortexTwins(vx); } catch { /* none */ }
+    const appPart = id => parts.find(p => p.key === `app:${id}`);
+    for (const v of vx.mods || []) {
+      const ownId = adopted[v.vortexId] || twins[v.vortexId];
+      const own = appByVortex.get(v.vortexId) || (ownId && appPart(ownId));
+      if (own && !v.fileCount) continue; // nothing left in Vortex's copy
+      parts.push({
+        key: `vx:${v.vortexId}`, name: v.name, modName: v.modName || '', version: v.version || '', enabled: !!v.enabled, source: 'vortex', type: v.type || '', fileCount: v.fileCount || 0,
+        linkedTo: own?.key || '', note: own ? (v.enabled ? 'Also enabled in Vortex' : 'Kept by Vortex, switched off') : '',
+      });
+    }
     try {
-      const groups = new Map();
+      const counts = new Map();
       for (const f of this.unmanaged()) {
         const r = handRoot(f.rel, this.ownerRoot);
-        groups.set(r, (groups.get(r) || 0) + 1);
+        counts.set(r, (counts.get(r) || 0) + 1);
       }
-      for (const [root, n] of groups) out.push({ key: `hand:${root}`, name: root.split('/').pop(), folder: root, enabled: true, source: 'hand', type: '', fileCount: n });
+      for (const [root, n] of counts) parts.push({ key: `hand:${root}`, name: root.split('/').pop(), folder: root, enabled: true, source: 'hand', type: '', fileCount: n });
     } catch { /* no game folder */ }
+
+    // Group: links first, then names.
+    const parent = new Map(parts.map(p => [p.key, p.key]));
+    const find = k => { while (parent.get(k) !== k) k = parent.get(k); return k; };
+    const join = (a, b) => { const x = find(a); const y = find(b); if (x !== y) parent.set(y, x); };
+    for (const p of parts) if (p.linkedTo) join(p.linkedTo, p.key);
+    const byName = new Map();
+    for (const p of parts) {
+      if (p.source === 'hand' && GENERIC_ROOTS.has(p.folder.toLowerCase())) continue;
+      for (const n of new Set([p.name, p.modName].map(norm).filter(n => n.length >= 4))) {
+        if (byName.has(n)) join(byName.get(n), p.key); else byName.set(n, p.key);
+      }
+    }
+    const groups = new Map();
+    for (const p of parts) {
+      const g = find(p.key);
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(p);
+    }
+    const RANK = { app: 0, vortex: 1, hand: 2 };
+    const out = [...groups.values()].map(list => {
+      list.sort((a, b) => RANK[a.source] - RANK[b.source] || a.name.localeCompare(b.name));
+      const main = list[0];
+      return {
+        key: main.key, name: main.name, version: main.version || '', enabled: main.enabled, source: main.source, folder: main.folder, type: main.type,
+        fileCount: list.reduce((n, p) => n + p.fileCount, 0),
+        parts: list.map(({ modName, linkedTo, ...p }) => p),
+      };
+    });
     return out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }
+
+  /** For each other copy of a file: does it exist, and is it the same file on disk (hardlinked)? */
+  twins(loc, others) {
+    const id = l => { const st = fs.statSync(this.resolve(l), { bigint: true }); return `${st.dev}:${st.ino}`; };
+    const mine = id(loc);
+    return others.map(o => {
+      try { return { exists: true, linked: id(o) === mine }; } catch { return { exists: false, linked: false }; }
+    });
+  }
+
+  /** Save text into another copy of a file, in that copy's own line endings and encoding. */
+  writeLike(loc, text) {
+    const cur = this.read(loc);
+    return this.write(loc, text, { mtime: cur.mtime, eol: cur.eol, bom: cur.bom });
   }
 
   /** Game-folder files that neither this app nor Vortex placed, and that are in no mod's own folder. */

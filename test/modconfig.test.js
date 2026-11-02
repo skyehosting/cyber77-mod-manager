@@ -127,6 +127,46 @@ test('mod config lists every mod (and files no manager put there) with each file
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('one row per mod: its own copy, the copy Vortex keeps and loose folders of it are its parts; saving can reach the other copies', () => {
+  const { root, game, staging, manager, config } = fixture();
+  try {
+    // Mod A was moved here from Vortex: Vortex keeps its copy, switched off. One file is the same
+    // file (hardlinked), the other a separate copy.
+    const vxStage = path.join(root, 'Vortex', 'cyberpunk2077', 'mods', 'a-vortex');
+    fs.mkdirSync(path.join(vxStage, 'r6/scripts/A'), { recursive: true });
+    fs.linkSync(path.join(staging, 'a', 'r6/scripts/A/a.reds'), path.join(vxStage, 'r6/scripts/A/a.reds'));
+    put(vxStage, 'bin/x64/plugins/cyber_engine_tweaks/mods/A/init.lua', '-- separate\r\n');
+    manager.data.mods.a.fromVortex = 'a-vortex';
+    manager.vortex.read = () => ({ mods: [
+      { id: 'vx:a-vortex', vortexId: 'a-vortex', name: 'Mod A', enabled: false, fileCount: 2, deployedFiles: [] },
+      { id: 'vx:only', vortexId: 'only', name: 'Only In Vortex', enabled: true, fileCount: 0, deployedFiles: [] },
+    ] });
+    manager.data.vortexAdopted = { 'a-vortex': 'a' };
+    manager.vortexTwins = () => ({});
+    // Loose files named like a mod join it; the shared archive folder never does.
+    put(game, 'r6/scripts/Mod B/extra.reds', '// loose');
+
+    const list = config.list();
+    const a = list.find(m => m.key === 'app:a');
+    assert.deepStrictEqual(a.parts.map(p => [p.key, p.source, p.note || '']), [['app:a', 'app', ''], ['vx:a-vortex', 'vortex', 'Kept by Vortex, switched off']]);
+    assert.strictEqual(a.fileCount, 4, 'both copies counted');
+    const b = list.find(m => m.key === 'app:b');
+    assert.deepStrictEqual(b.parts.map(p => p.key), ['app:b', 'hand:r6/scripts/Mod B'], 'the loose "Mod B" folder is part of Mod B');
+    assert.ok(list.some(m => m.key === 'hand:archive/pc/mod' && m.parts.length === 1), 'a shared folder stays its own row');
+    assert.ok(list.some(m => m.key === 'vx:only'), 'a mod only in Vortex is its own row');
+    assert.ok(!list.some(m => m.key === 'vx:a-vortex' || m.key === 'hand:r6/scripts/Mod B'), 'no second rows');
+
+    // The editor's view of the other copies: one is the same file, one is separate.
+    const vxFiles = config.modFiles('vx:a-vortex').files;
+    const loc = rel => vxFiles.find(f => f.rel === rel).loc;
+    assert.deepStrictEqual(config.twins({ base: 'game', rel: 'r6/scripts/A/a.reds' }, [loc('r6/scripts/A/a.reds')]), [{ exists: true, linked: true }]);
+    assert.deepStrictEqual(config.twins({ base: 'game', rel: 'bin/x64/plugins/cyber_engine_tweaks/mods/A/init.lua' }, [loc('bin/x64/plugins/cyber_engine_tweaks/mods/A/init.lua')]), [{ exists: true, linked: false }]);
+    // "Save both": the separate copy gets the text, in its own line endings.
+    config.writeLike(loc('bin/x64/plugins/cyber_engine_tweaks/mods/A/init.lua'), 'new\ntext\n');
+    assert.strictEqual(fs.readFileSync(path.join(vxStage, 'bin/x64/plugins/cyber_engine_tweaks/mods/A/init.lua'), 'utf8'), 'new\r\ntext\r\n');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('the editor saves in place (hardlinks stay linked), keeps line endings, the original, and refuses stale or outside writes', () => {
   const { root, game, staging, backups, config } = fixture();
   try {
