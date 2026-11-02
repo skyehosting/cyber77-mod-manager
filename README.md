@@ -6,13 +6,17 @@ A small Nexus Mods downloader and mod manager for Cyberpunk 2077 (Electron).
 
 Double-click `Start Cyber Mod Manager.cmd` (or `npm start`). Requires 7-Zip (`C:\Program Files\7-Zip\7z.exe` by default).
 
-1. **Settings** → paste your Nexus API key → **Validate** → **Save**. The game folder is found automatically from Steam.
-2. **Downloads** → paste one or more mod links (`https://www.nexusmods.com/cyberpunk2077/mods/<id>`) → **Download all files**.
-3. **Mods** → select (click, Ctrl-click, Shift-click, Ctrl+A) → Enable / Disable / Prioritize / Reinstall / Uninstall / Delete.
+1. **Settings** → paste your Nexus API key → **Validate** → **Save**. The game folder is found automatically (Steam, GOG, Epic Games, the Xbox app); every install found is listed there to pick from.
+2. **Downloads** → paste one or more mod links (any form: with or without `?tab=…`, `/games/…`, or a `file_id`) → **Choose files** → tick the files you want → **Download**.
+3. **Play** (top of the sidebar) starts the game through its store (Steam, Epic) or directly (GOG, Xbox, other), with `-modded` when REDmods are installed.
+4. **Mods** → select (click, Ctrl-click, Shift-click, Ctrl+A) → Enable / Disable / Prioritize / Reinstall / Uninstall / Delete.
 
 ## What it does
 
-- **Downloads** every file on the mod's Files tab in the categories chosen in Settings (Main, Update, Optional, Misc by default; Old versions/Archived off). It fetches the archive directly through the Premium API, the same file the site's "Manual download" button gives you, not the `nxm://` mod-manager hand-off. Files are organised as `downloads/<game>/<Mod name> (<id>)/<Category>/<file>`. Already-downloaded files are skipped. Downloads run in parallel (4 by default), retry 3 times, and can be cancelled.
+- **Choose files.** Before downloading, a dialog lists every file on the mod's Files tab grouped by category (Main, Updates, Optional, Misc, Old versions, Archived), each with its description, version, size and upload date. Files in the categories chosen in Settings start ticked (Main, Update, Optional, Misc by default). **Select all**, **Select none**, **Suggested** and a tick per category change that. Files already downloaded are marked.
+- **Downloads** the ticked files directly through the Premium API, the same file the site's "Manual download" button gives you. The Downloads page shows each download's progress, speed and time left, and a live **Network** graph (current speed, peak, total this session).
+- **Nexus "Mod Manager Download" buttons** (`nxm://` links) can be handled here: turn on the switch in Settings. Clicking one on nexusmods.com then downloads that file in this app. This works without Premium, because the link carries its own key. Vortex takes these links back each time it starts, unless you turn off "Handle Nexus links" in Vortex's settings.
+- Downloaded files are organised as `downloads/<game>/<Mod name> (<id>)/<Category>/<file>`. Already-downloaded files are skipped. Downloads run in parallel (4 by default), retry 3 times, and can be cancelled.
 - **Installs** by extracting with 7-Zip and placing each file where Cyberpunk expects it:
   - `.archive` / `.xl` → `archive/pc/mod`
   - a folder with `init.lua` → `bin/x64/plugins/cyber_engine_tweaks/mods/<name>`
@@ -36,8 +40,8 @@ Double-click `Start Cyber Mod Manager.cmd` (or `npm start`). Requires 7-Zip (`C:
 
   You tick which requirements to include. Missing ones start ticked.
 - **Updates.** **Check for updates** asks Nexus for each installed mod's files and follows each file's update chain to the newest version. If an author didn't link the new file, it falls back to the newest current file with the same name. Mods with an update get an **Update → version** tag and appear under the **Updates** filter; you can update them all or a selection. An update downloads the new file and installs it in the old version's place, keeping its on/off state, priority and profiles. Files that only the old version had are removed.
-- **Profiles.** A profile is a named set of enabled mods. Use the switcher at the top of the sidebar to change profile, or the people icon to create one (empty, or copied from the current one), rename it, or delete it. The active profile follows every enable and disable you make.
-- **Sharing profiles.** In the Profiles dialog, the share icon exports a profile to a `.cmmprofile.json` file. The file holds that profile's **enabled, installed** mods only (disabled and uninstalled ones are left out), with their exact Nexus file IDs, in priority order. Send it to anyone. They choose **Import from file** and see a review of every mod:
+- **Profiles.** A profile is a named set of enabled mods with its own conflict order. The **Profiles** page shows each one as a card. From there you can activate a profile, create one (empty, or copied from what is enabled now), rename, export or delete it. The active profile follows every enable and disable you make. Vortex's profiles are listed below yours, read-only.
+- **Sharing profiles.** On the Profiles page, **Export** saves a profile to a `.cmmprofile.json` file. The file holds that profile's **enabled, installed** mods only (disabled and uninstalled ones are left out), with their exact Nexus file IDs, in priority order. Send it to anyone. They choose **Import from file** and see a review of every mod:
   - **will enable**: they already have that exact file;
   - **will install**: it is downloaded but not installed;
   - **will download**: the exact file is fetched from Nexus;
@@ -57,6 +61,7 @@ Double-click `Start Cyber Mod Manager.cmd` (or `npm start`). Requires 7-Zip (`C:
   - It detects when the game starts and stops, and notices new crash reports from the game's crash reporter.
   - Errors from a mod's own folder are counted on that mod in the Mods list (filter: **Problems**) and shown in its details panel.
 - The **Console** at the bottom shows the app's own info, warning and error messages, and opens by itself when an error happens. It can be resized. Logs are also written to `%APPDATA%\cyber-mod-manager\logs`.
+- **Export as JSON.** The Game log (what the current filter shows, with the game status and the list of sources) and the Console each have an export button that saves a `.json` file.
 
 ## Display
 
@@ -64,7 +69,12 @@ The window opens at a size based on your screen and remembers where you left it.
 
 ## Living alongside Vortex
 
-Your game is currently also managed by Vortex. Don't enable the same mod in both tools. If this app has to overwrite a file that Vortex deployed, it backs that file up first, and Vortex will then report it as "changed externally". The safest setup is to use one tool for any given mod.
+When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a **Vortex** tag (filter: **Vortex**). Their on/off state is read live from Vortex's deployment record (`<game>\vortex.deployment.json`), and their Nexus IDs, versions and profiles from Vortex's own state snapshots.
+
+- **Enable / disable** a Vortex mod here and Vortex applies it. Vortex locks its database while it runs, so the app closes Vortex gracefully, sets the mod's state with Vortex's own command line (`Vortex.exe --set …`), and reopens Vortex, which then deploys. If Vortex is open, you are asked once first.
+- **Check for updates** includes Vortex mods. **Update** hands the new file to Vortex, which installs it and asks how to replace the old version.
+- Reinstall, uninstall and delete for Vortex mods stay in Vortex.
+- A mod of this app that writes the same file as a Vortex mod gets a **Vortex N** tag in the Conflicts column. Whichever tool deploys last wins that file, so don't enable the same mod in both. If this app has to overwrite a file that Vortex deployed, it backs that file up first.
 
 ## Data
 
@@ -78,4 +88,5 @@ Your game is currently also managed by Vortex. Don't enable the same mod in both
 - the deployment engine;
 - recursive requirement resolution;
 - log parsing and live tailing;
-- a full import → install → enable → conflict → uninstall run against a fake game folder.
+- a full import → install → enable → conflict → uninstall run against a fake game folder;
+- reading Vortex's state, mod link and `nxm://` parsing, the file picker plan, and store detection.

@@ -48,6 +48,9 @@
       <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></symbol>
       <symbol id="i-import" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M8 10l4 4 4-4M12 14V2"/></symbol>
       <symbol id="i-deploy" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4M3.5 18a10 10 0 1 1 17 0"/></symbol>
+      <symbol id="i-vortex" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><circle cx="12" cy="12" r="1.2"/></symbol>
       <symbol id="i-brand" viewBox="0 0 24 24"><path d="M4 4h16v11l-5 5H4Z"/><path d="M9 9h6M9 13h4"/></symbol>
     </defs>
   </svg>
@@ -61,13 +64,10 @@
           <span class="brand-sub">Cyberpunk 2077</span>
         </span>
       </div>
-      <div class="profile" id="profile-box">
-        <label class="profile-label" for="profile-select">Profile</label>
-        <div class="profile-row">
-          <select id="profile-select" title="Switch profile: each profile remembers which mods are enabled"></select>
-          <button class="btn btn-icon btn-ghost" id="profile-manage" title="Manage profiles" aria-label="Manage profiles"><svg class="i"><use href="#i-users"/></svg></button>
-        </div>
-      </div>
+      <button class="play-btn" id="play-btn" title="Launch Cyberpunk 2077">
+        <span class="play-icon" aria-hidden="true"><svg class="i"><use href="#i-play"/></svg></span>
+        <span class="play-text"><span class="play-label" id="play-label">Play</span><span class="play-sub" id="play-sub">Cyberpunk 2077</span></span>
+      </button>
       <nav class="nav" aria-label="Main navigation">
         <button class="nav-item active" data-page="mods" title="Mods">
           <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="count" id="nav-mods-count">0</span>
@@ -78,6 +78,9 @@
         <button class="nav-item" data-page="gamelog" title="Game log">
           <svg class="i"><use href="#i-activity"/></svg><span class="nav-label">Game log</span><span class="count" id="nav-log-count">0</span>
         </button>
+        <button class="nav-item" data-page="profiles" title="Profiles">
+          <svg class="i"><use href="#i-users"/></svg><span class="nav-label">Profiles</span><span class="count" id="nav-prof-count"></span>
+        </button>
         <button class="nav-item" data-page="settings" title="Settings">
           <svg class="i"><use href="#i-sliders"/></svg><span class="nav-label">Settings</span>
         </button>
@@ -85,6 +88,8 @@
       <div class="side-status">
         <div class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span class="status-text" id="st-game">Game folder</span></div>
         <div class="status-row" id="st-key-row"><span class="dot" id="st-key-dot"></span><span class="status-text" id="st-key">API key</span></div>
+        <div class="status-row" id="st-prof-row"><svg class="i status-icon"><use href="#i-users"/></svg><span class="status-text" id="st-prof">Profile</span></div>
+        <div class="status-row" id="st-vx-row" hidden><svg class="i status-icon"><use href="#i-vortex"/></svg><span class="status-text" id="st-vx">Vortex</span></div>
         <div class="status-row status-rate" id="st-rate"></div>
       </div>
     </aside>
@@ -99,10 +104,18 @@
           </div>
           <div class="head-actions">
             <button class="btn btn-primary collapsible" id="mods-update-all" hidden title="Download and install every available update" aria-label="Update all"><svg class="i"><use href="#i-up-circle"/></svg><span>Update all</span></button>
-            <button class="btn collapsible" id="mods-check-updates" title="Ask Nexus for newer versions of your mods" aria-label="Check for updates"><svg class="i"><use href="#i-refresh"/></svg><span>Check for updates</span></button>
+            <button class="btn btn-ghost collapsible" id="mods-check-updates" title="Ask Nexus for newer versions of your mods" aria-label="Check for updates"><svg class="i"><use href="#i-refresh"/></svg><span>Check for updates</span></button>
             <button class="btn collapsible" id="mods-import" title="Install a mod archive (.zip, .7z, .rar) from your computer" aria-label="Install from file"><svg class="i"><use href="#i-file-plus"/></svg><span>Install from file</span></button>
-            <button class="btn collapsible" id="mods-redeploy" title="Re-check every enabled mod's files in the game folder" aria-label="Redeploy"><svg class="i"><use href="#i-deploy"/></svg><span>Redeploy</span></button>
-            <button class="btn btn-ghost-danger collapsible" id="mods-purge" title="Take every mod out of the game folder (keeps them installed)" aria-label="Disable all"><svg class="i"><use href="#i-power"/></svg><span>Disable all</span></button>
+            <div class="menu-wrap">
+              <button class="btn btn-icon" id="mods-more" aria-haspopup="menu" aria-expanded="false" aria-controls="mods-more-menu" title="More actions" aria-label="More actions"><svg class="i"><use href="#i-more"/></svg></button>
+              <div class="menu" id="mods-more-menu" role="menu" hidden>
+                <button class="menu-item" role="menuitem" id="mods-redeploy"><svg class="i"><use href="#i-deploy"/></svg><span><span class="menu-label">Redeploy</span><span class="menu-sub">Re-check every enabled mod's files</span></span></button>
+                <button class="menu-item" role="menuitem" data-open="game"><svg class="i"><use href="#i-folder"/></svg><span><span class="menu-label">Open game folder</span></span></button>
+                <button class="menu-item" role="menuitem" id="mods-open-vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span><span class="menu-label">Open Vortex</span></span></button>
+                <div class="menu-sep" role="separator"></div>
+                <button class="menu-item danger" role="menuitem" id="mods-purge"><svg class="i"><use href="#i-power"/></svg><span><span class="menu-label">Disable all</span><span class="menu-sub">Take this app's mods out of the game</span></span></button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -122,6 +135,7 @@
             <button class="seg-btn" data-f="disabled">Disabled</button>
             <button class="seg-btn" data-f="conflicts">Conflicts</button>
             <button class="seg-btn" data-f="updates">Updates <span class="seg-count seg-count-info" id="mods-upd-count"></span></button>
+            <button class="seg-btn" data-f="vortex" id="mods-filter-vortex" hidden>Vortex <span class="seg-count seg-count-neutral" id="mods-vx-count"></span></button>
             <button class="seg-btn" data-f="problems">Problems <span class="seg-count" id="mods-prob-count" title="Mods with missing files, install warnings or game-log errors"></span></button>
           </div>
           <div class="selbar" id="mods-bulk" hidden>
@@ -176,39 +190,55 @@
         <header class="page-head">
           <div class="page-title">
             <h1 id="h-dl">Downloads</h1>
-            <p class="page-sub" id="dl-sub">Paste a Nexus Mods link to download every file of that mod</p>
+            <p class="page-sub" id="dl-sub">Paste a Nexus Mods link and choose its files</p>
           </div>
           <div class="head-actions">
-            <button class="btn collapsible" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg><span>Open folder</span></button>
+            <button class="btn btn-ghost collapsible" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg><span>Open folder</span></button>
           </div>
         </header>
 
-        <div class="card add-card">
-          <div class="banner banner-warn" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.</span><button class="btn btn-sm" data-goto="settings">Open Settings</button></div>
-          <label for="dl-links" class="label">Nexus Mods links</label>
-          <div class="add-row">
-            <div class="input-icon">
-              <svg class="i"><use href="#i-link"/></svg>
-              <textarea id="dl-links" rows="1" placeholder="https://www.nexusmods.com/cyberpunk2077/mods/107 — one or more links"></textarea>
+        <div class="dl-top">
+          <div class="card add-card">
+            <div class="banner banner-warn" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.</span><button class="btn btn-sm" data-goto="settings">Open Settings</button></div>
+            <label for="dl-links" class="label">Nexus Mods links</label>
+            <div class="add-row">
+              <div class="input-icon">
+                <svg class="i"><use href="#i-link"/></svg>
+                <textarea id="dl-links" rows="1" placeholder="https://www.nexusmods.com/cyberpunk2077/mods/107 — one or more links"></textarea>
+              </div>
+              <button class="btn btn-primary btn-lg" id="dl-go"><svg class="i"><use href="#i-download"/></svg><span>Choose files</span></button>
             </div>
-            <button class="btn btn-primary btn-lg" id="dl-go"><svg class="i"><use href="#i-download"/></svg><span>Download all files</span></button>
+            <p class="hint" id="dl-hint"></p>
+            <p class="hint" id="dl-keys"><kbd>Enter</kbd> opens the file picker · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds another link · <span id="dl-nxm-hint">Nexus "Mod Manager Download" buttons can be sent here (Settings)</span></p>
           </div>
-          <p class="hint" id="dl-hint"></p>
-          <p class="hint" id="dl-keys"><kbd>Enter</kbd> downloads · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds another link · required mods are downloaded too</p>
+          <div class="card net-card" aria-label="Network">
+            <div class="net-head">
+              <h2 class="card-title"><svg class="i"><use href="#i-gauge"/></svg>Network</h2>
+              <span class="net-now" id="net-now">Idle</span>
+            </div>
+            <div class="net-graph-box"><svg class="net-graph" id="net-graph" viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true"><path class="net-area" d=""/><path class="net-line" d=""/></svg></div>
+            <div class="net-stats">
+              <div><span class="stat-label">Downloading</span><b id="net-active">0</b></div>
+              <div><span class="stat-label">Queued</span><b id="net-queued">0</b></div>
+              <div><span class="stat-label">This session</span><b id="net-total">0 B</b></div>
+              <div><span class="stat-label">Peak</span><b id="net-peak">—</b></div>
+            </div>
+          </div>
         </div>
 
-        <div class="section-head">
-          <h2>Queue <span class="section-count" id="dl-queue-count"></span></h2>
-          <button class="btn btn-sm btn-ghost push" id="dl-clear">Clear finished</button>
-        </div>
-        <div id="jobs" class="jobs"></div>
-
-        <div class="section-head" id="dl-libhead">
-          <h2>Library <span class="section-count" id="dl-lib-count"></span></h2>
-          <label class="search search-sm">
+        <div class="toolbar" id="dl-toolbar">
+          <label class="search">
             <svg class="i"><use href="#i-search"/></svg>
             <input id="dl-search" placeholder="Search downloads" type="search" aria-label="Search downloads">
           </label>
+          <div class="seg" id="dl-filter" role="group" aria-label="Filter">
+            <button class="seg-btn active" data-f="all" aria-pressed="true">All</button>
+            <button class="seg-btn" data-f="active">Active <span class="seg-count seg-count-info" id="dl-active-count"></span></button>
+            <button class="seg-btn" data-f="new">Not installed</button>
+            <button class="seg-btn" data-f="installed">Installed</button>
+            <button class="seg-btn" data-f="failed">Failed <span class="seg-count" id="dl-failed-count"></span></button>
+          </div>
+          <button class="btn btn-sm btn-ghost push" id="dl-clear">Clear finished</button>
           <div class="selbar" id="dl-bulk" hidden>
             <span class="sel-count" id="dl-sel-count">0 selected</span>
             <button class="btn btn-primary" data-act="installEnable" title="Install &amp; enable"><svg class="i"><use href="#i-check"/></svg><span>Install &amp; enable</span></button>
@@ -217,19 +247,20 @@
             <button class="btn btn-icon" id="dl-sel-clear" title="Clear selection" aria-label="Clear selection"><svg class="i"><use href="#i-x"/></svg></button>
           </div>
         </div>
-        <div class="table-card table-card-lib" id="dl-card">
-          <table class="grid" id="dl-table" aria-label="Downloaded files">
+        <div class="table-card" id="dl-card">
+          <table class="grid" id="dl-table" aria-label="Downloads">
             <colgroup>
-              <col class="w-check"><col><col class="w-cat col-cat"><col class="w-version"><col class="w-size"><col class="w-status">
+              <col class="w-check"><col><col class="w-cat col-cat"><col class="w-version col-prio"><col class="w-size"><col class="w-progress"><col class="w-actions">
             </colgroup>
             <thead>
               <tr>
                 <th><input type="checkbox" id="dl-all" aria-label="Select all"></th>
                 <th>File</th>
                 <th class="col-cat">Category</th>
-                <th>Version</th>
+                <th class="col-prio">Version</th>
                 <th class="num">Size</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -237,7 +268,7 @@
           <div class="empty" id="dl-empty" hidden>
             <span class="empty-icon"><svg class="i"><use href="#i-download"/></svg></span>
             <p class="empty-title">No downloads yet</p>
-            <p class="empty-text">Paste a mod link above. Every file from its Files tab is downloaded, along with the mods it requires.</p>
+            <p class="empty-text">Paste a mod link above and pick its files. Downloads show their progress here.</p>
           </div>
         </div>
       </section>
@@ -251,6 +282,7 @@
           </div>
           <div class="head-actions">
             <button class="btn collapsible" id="gl-follow" aria-pressed="true" title="Pause or resume live updates" aria-label="Pause live updates"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
+            <button class="btn btn-ghost collapsible" id="gl-export" title="Save the log lines shown (with their sources) as a JSON file" aria-label="Export to JSON"><svg class="i"><use href="#i-share"/></svg><span>Export JSON</span></button>
             <button class="btn collapsible" id="gl-clear" title="Hide everything logged so far" aria-label="Clear view"><svg class="i"><use href="#i-trash"/></svg><span>Clear view</span></button>
           </div>
         </header>
@@ -326,6 +358,26 @@
         </div>
       </section>
 
+      <!-- PROFILES -->
+      <section class="page" id="page-profiles" aria-labelledby="h-prof">
+        <header class="page-head">
+          <div class="page-title">
+            <h1 id="h-prof">Profiles</h1>
+            <p class="page-sub">Each profile remembers which mods are on and which one wins each file conflict</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost collapsible" id="prof-import" title="Set up a profile someone shared with you" aria-label="Import profile"><svg class="i"><use href="#i-import"/></svg><span>Import from file</span></button>
+            <button class="btn btn-primary collapsible" id="prof-new" title="Create a profile" aria-label="New profile"><svg class="i"><use href="#i-plus"/></svg><span>New profile</span></button>
+          </div>
+        </header>
+        <div class="prof-grid" id="prof-grid"></div>
+        <div class="section-head" id="vx-prof-head" hidden>
+          <h2>Vortex profiles</h2>
+          <span class="section-note">Read from Vortex. Switch them in Vortex; their mods appear on the Mods page.</span>
+        </div>
+        <div class="prof-grid" id="vx-prof-grid"></div>
+      </section>
+
       <!-- SETTINGS -->
       <section class="page" id="page-settings" aria-labelledby="h-settings">
         <header class="page-head">
@@ -356,6 +408,8 @@
                 <button type="button" class="btn" id="s-game-detect">Detect</button>
               </div>
               <p class="hint" id="s-game-status"></p>
+              <span class="label">Detected installs</span>
+              <div class="installs" id="s-installs"><span class="hint">Looking for Steam, GOG, Epic Games and Xbox installs…</span></div>
               <label class="label" for="s-deploy">Deploy method</label>
               <select id="s-deploy">
                 <option value="hardlink">Hardlinks — fast, no extra disk space</option>
@@ -393,6 +447,7 @@
               </div>
               <label class="check"><input type="checkbox" id="s-autoenable"><span>Enable mods right after an automatic install</span></label>
               <label class="check"><input type="checkbox" id="s-deps"><span>Download, install and enable required mods (and what they require)</span></label>
+              <label class="check"><input type="checkbox" id="s-nxm"><span>Handle Nexus "Mod Manager Download" buttons<span class="check-sub">Clicking one on nexusmods.com starts the download here. Vortex takes these links back each time it starts unless you turn off "Handle Nexus links" in Vortex's settings.</span></span></label>
             </section>
 
             <section class="card">
@@ -445,6 +500,7 @@
             <button class="seg-btn" data-f="warn">Warnings</button>
             <button class="seg-btn" data-f="error">Errors</button>
           </div>
+          <button class="btn btn-sm btn-icon" id="console-export" title="Export to a JSON file" aria-label="Export activity log to JSON"><svg class="i"><use href="#i-share"/></svg></button>
           <button class="btn btn-sm btn-icon" id="console-copy" title="Copy" aria-label="Copy activity log"><svg class="i"><use href="#i-copy"/></svg></button>
           <button class="btn btn-sm btn-icon" id="console-clear" title="Clear" aria-label="Clear activity log"><svg class="i"><use href="#i-trash"/></svg></button>
         </div>

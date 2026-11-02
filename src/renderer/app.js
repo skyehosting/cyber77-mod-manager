@@ -272,9 +272,16 @@ function rowKeys(ev, sel, id, open, repaint) {
 
 // ---------------------------------------------------------------- mods page
 
+/** This app's mods and Vortex's, in one list. Vortex rows have ids starting with "vx:". */
+function allMods() {
+  const vx = (state.snap.vortex?.mods || []).map(v => ({ ...v, priority: '', warnings: [], vortex: true }));
+  return [...state.snap.mods, ...vx];
+}
+const isVx = id => String(id).startsWith('vx:');
+
 function visibleMods() {
   const q = $('#mods-search').value.trim().toLowerCase();
-  return state.snap.mods.filter(m => {
+  return allMods().filter(m => {
     if (q && !`${m.name} ${m.modName} ${m.type}`.toLowerCase().includes(q)) return false;
     if (state.modFilter === 'enabled') return m.enabled;
     if (state.modFilter === 'disabled') return !m.enabled;
@@ -282,23 +289,32 @@ function visibleMods() {
     if (state.modFilter === 'problems') return hasProblem(m);
     if (state.modFilter === 'updates') return !!state.snap.updates?.[m.id];
     if (state.modFilter === 'repair') return !!m.health;
+    if (state.modFilter === 'vortex') return !!m.vortex;
     return true;
   });
 }
 
 function conflictCell(m, byId) {
   const c = state.snap.conflicts[m.id];
-  if (!c) return h('span', { class: 'muted' }, '—');
+  const vxHits = state.snap.vortex?.overlaps?.[m.id] || [];
+  const vxTag = vxHits.length ? h('button', {
+    class: 'tag tag-warn', title: `Shares files with Vortex mods: ${vxHits.map(id => byId[id]?.name || id.slice(3)).join(', ')}. One app will overwrite the other's files.`,
+    onclick: ev => { ev.stopPropagation(); openDrawer(m.id); },
+  }, `Vortex ${vxHits.length}`) : null;
+  if (!c) return vxTag || h('span', { class: 'muted' }, '—');
   const others = c.with.map(id => byId[id]?.name || id).join(', ');
   const open = ev => { ev.stopPropagation(); openDrawer(m.id, 'conflicts'); };
   return h('span', {},
+    vxTag,
     c.wins ? h('button', { class: 'tag tag-ok', title: `Wins ${plural(c.wins, 'file')} over ${others} — click to review`, onclick: open }, `wins ${c.wins}`) : null,
     c.loses ? h('button', { class: 'tag tag-warn', title: `Loses ${plural(c.loses, 'file')} to ${others} — click to resolve`, onclick: open }, `loses ${c.loses}`) : null);
 }
 
 function paintModSelection() {
   paintSelection($('#mods-table tbody'), state.modSel, $('#mods-all'), visibleMods().map(m => m.id), $('#mods-bulk'), $('#mods-sel-count'), $('#mods-toolbar'));
-  const picked = [...state.modSel].map(id => state.snap.mods.find(m => m.id === id)).filter(Boolean);
+  const picked = [...state.modSel].map(id => allMods().find(m => m.id === id)).filter(Boolean);
+  const onlyVx = picked.length > 0 && picked.every(m => m.vortex);
+  for (const act of ['reinstall', 'uninstall', 'delete']) $(`#mods-bulk [data-act="${act}"]`).hidden = onlyVx;
   $('#mods-bulk-update').hidden = !picked.some(m => state.snap.updates?.[m.id]);
   $('#mods-bulk-repair').hidden = !picked.some(m => m.health);
   const anyOff = picked.some(m => !m.enabled);
@@ -314,7 +330,7 @@ function paintModSelection() {
 const hasProblem = m => !!(m.health || m.warnings?.length || state.modLogProblems[m.id]);
 
 function renderMods() {
-  const all = state.snap.mods;
+  const all = allMods();
   const mods = visibleMods();
   const ids = mods.map(m => m.id);
   for (const id of [...state.modSel]) if (!all.some(m => m.id === id)) state.modSel.delete(id);
@@ -331,13 +347,13 @@ function renderMods() {
     // While the change is applied the switch stays focusable (aria-disabled), so focus isn't lost.
     const switchBtn = h('button', {
       class: `switch${m.enabled ? ' on' : ''}`, role: 'switch', 'aria-checked': m.enabled ? 'true' : 'false',
-      'aria-label': m.name, title: m.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable',
+      'aria-label': m.name, title: m.vortex ? `In Vortex — click to ${m.enabled ? 'disable' : 'enable'} (Vortex closes, applies it and reopens)` : m.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable',
       dataset: { key: `${m.id}:switch` },
       onclick: async ev => {
         ev.stopPropagation();
         if (switchBtn.getAttribute('aria-disabled') === 'true') return;
         switchBtn.setAttribute('aria-disabled', 'true');
-        const ok = await run(m.enabled ? api.disable([m.id]) : api.enable([m.id]));
+        const ok = await setModsEnabled([m.id], !m.enabled);
         if (ok === null) switchBtn.removeAttribute('aria-disabled');
       },
     });
@@ -360,6 +376,7 @@ function renderMods() {
     h('td', {}, h('div', { class: 'cell-name' },
       h('div', { class: 'name-line' },
         h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name),
+        m.vortex ? h('span', { class: 'tag tag-vortex', title: 'Managed by Vortex' }, 'Vortex') : null,
         m.warnings?.length ? tagBtn('tag-warn tag-icon', `${plural(m.warnings.length, 'install warning')} — click to see`, 'warnings', icon('alert'), { 'aria-label': plural(m.warnings.length, 'install warning') }) : null,
         logIssues ? tagBtn('tag-err', 'Errors in this mod\'s game logs — click to see them', 'logs', `${logIssues} log error${logIssues === 1 ? '' : 's'}`) : null,
         m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
@@ -367,9 +384,9 @@ function renderMods() {
       sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
     h('td', { title: m.type }, h('span', { class: 'type-text' }, m.type)),
     h('td', { class: 'dim', title: m.version || '' }, m.version || '—'),
-    h('td', { class: 'dim col-cat', title: m.dependencyOf ? `Installed because ${m.dependencyOf} requires it` : '' }, m.dependencyOf ? 'Dependency' : CAT_LABEL[m.category] || m.category),
+    h('td', { class: 'dim col-cat', title: m.dependencyOf ? `Installed because ${m.dependencyOf} requires it` : '' }, m.vortex ? 'Vortex' : m.dependencyOf ? 'Dependency' : CAT_LABEL[m.category] || m.category),
     h('td', { class: 'num dim col-files' }, m.fileCount),
-    h('td', { class: 'num dim col-prio' }, m.priority),
+    h('td', { class: 'num dim col-prio', title: m.vortex ? 'Vortex orders its own mods' : '' }, m.vortex ? '—' : m.priority),
     h('td', {}, conflictCell(m, byId)));
   })), null);
 
@@ -394,7 +411,13 @@ function renderMods() {
   const broken = all.filter(m => m.health).length;
   const problems = all.filter(hasProblem).length;
   const sub = $('#mods-sub');
-  sub.replaceChildren(all.length ? `${plural(all.length, 'mod')} installed · ${enabled} enabled` : 'Nothing installed yet');
+  const vxCount = all.filter(m => m.vortex).length;
+  const own = all.length - vxCount;
+  sub.replaceChildren(all.length ? `${plural(own, 'mod')} here${vxCount ? '' : ''} · ${enabled} enabled` : 'Nothing installed yet');
+  if (vxCount) sub.append(' · ', h('button', { class: 'link-btn quiet', onclick: () => setModFilter('vortex') }, `${vxCount} in Vortex (${state.snap.vortex.activeProfileName || 'profile'})`));
+  $('#mods-filter-vortex').hidden = !vxCount;
+  $('#mods-vx-count').textContent = vxCount || '';
+  $('#mods-open-vortex').hidden = !state.snap.vortex?.installed;
   const link = (text, f, cls = '') => h('button', { class: `link-btn quiet ${cls}`, onclick: () => setModFilter(f) }, text);
   if (broken) sub.append(' · ', link(`${plural(broken, 'mod')} need${broken === 1 ? 's' : ''} repair`, 'repair', 'warn'));
   if (conflicts) sub.append(' · ', link(`${plural(conflicts, 'mod')} with file conflicts`, 'conflicts'));
@@ -449,12 +472,31 @@ document.addEventListener('keydown', ev => {
   }
 });
 
+/** Enable/disable; Vortex mods are switched by Vortex, which closes and reopens to apply them. */
+let vortexConfirmed = false;
+async function setModsEnabled(ids, enabled) {
+  const vx = ids.filter(isVx);
+  if (vx.length && state.snap.vortex?.running && !vortexConfirmed) {
+    const ok = await confirmBox('Change Vortex mods', `${plural(vx.length, 'Vortex mod')} will be ${enabled ? 'enabled' : 'disabled'}. Vortex has to close for this: it closes, applies the change and reopens, then deploys. Anything in progress in Vortex should finish first.`, `${enabled ? 'Enable' : 'Disable'} and reopen Vortex`);
+    if (!ok) return null;
+    vortexConfirmed = true;
+  }
+  return run(enabled ? api.enable(ids) : api.disable(ids), vx.length ? `Vortex is applying ${plural(vx.length, 'change')}` : null);
+}
+
 async function modAction(act, ids) {
+  // Vortex mods: on/off and updates go through Vortex; the rest is done in Vortex itself.
+  if (ids.some(isVx) && !['enable', 'disable', 'update'].includes(act)) {
+    const own = ids.filter(id => !isVx(id));
+    toast(`Vortex mods are ${act === 'delete' || act === 'uninstall' ? 'removed' : 'changed'} in Vortex; ${own.length ? 'only this app\'s mods were included' : 'nothing to do here'}`);
+    ids = own;
+    if (!ids.length) return null;
+  }
   const n = ids.length;
   const what = plural(n, 'mod');
   switch (act) {
-    case 'enable': return run(api.enable(ids));
-    case 'disable': return run(api.disable(ids));
+    case 'enable': return setModsEnabled(ids, true);
+    case 'disable': return setModsEnabled(ids, false);
     case 'prioritize': return run(api.prioritize(ids), n === 1 ? 'This mod now wins its file conflicts' : `${what} now win their file conflicts`);
     case 'update': {
       const withUpdate = ids.filter(id => state.snap.updates?.[id]);
@@ -490,7 +532,7 @@ $('#mods-import').addEventListener('click', importArchives);
 $('#mods-empty-import').addEventListener('click', importArchives);
 $('#mods-redeploy').addEventListener('click', () => run(api.redeploy(), 'Deployment checked'));
 $('#mods-update-all').addEventListener('click', () => {
-  const ids = Object.keys(state.snap.updates || {}).filter(id => state.snap.mods.some(m => m.id === id));
+  const ids = Object.keys(state.snap.updates || {}).filter(id => allMods().some(m => m.id === id));
   modAction('update', ids);
 });
 $('#mods-check-updates').addEventListener('click', async ev => {
@@ -540,8 +582,9 @@ const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedA
 let drawerSeq = 0;
 
 async function openDrawer(id, focusSection = '') {
-  const m = state.snap.mods.find(x => x.id === id);
+  const m = allMods().find(x => x.id === id);
   if (!m) return;
+  if (m.vortex) { openVortexDrawer(m); return; }
   const seq = ++drawerSeq;
   const wasOpen = !$('#drawer').hidden && state.drawerMod === id;
   if (!wasOpen && $('#drawer').hidden) {
@@ -559,7 +602,7 @@ async function openDrawer(id, focusSection = '') {
   const drawer = $('#drawer');
   const body = $('#drawer-body');
   const keepScroll = wasOpen ? body.scrollTop : 0;
-  const byId = Object.fromEntries(state.snap.mods.map(x => [x.id, x.name]));
+  const byId = Object.fromEntries(allMods().map(x => [x.id, x.name]));
   const kv = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
   const act = (label, name, a, kind = '') => h('button', { class: `btn btn-sm ${kind}`, dataset: { key: `act:${a}` }, onclick: () => modAction(a, [m.id]) }, icon(name), h('span', {}, label));
   const fileList = files || [];
@@ -605,6 +648,47 @@ async function openDrawer(id, focusSection = '') {
   if (!wasOpen && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
 }
 
+/** A Vortex mod: what Vortex knows about it, and what can be done from here. */
+function openVortexDrawer(m) {
+  const drawer = $('#drawer');
+  if (drawer.hidden) { drawerOpener = document.activeElement; drawerOpenerKey = drawerOpener?.closest?.('[data-key]')?.dataset.key || ''; }
+  state.drawerMod = m.id;
+  state.drawerSig = drawerSignature(m);
+  const vx = state.snap.vortex || {};
+  const u = state.snap.updates?.[m.id];
+  const ours = state.snap.mods.filter(o => (vx.overlaps?.[o.id] || []).includes(m.id));
+  const kv = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
+  keepFocus(drawer, () => {
+    $('#drawer-title').textContent = m.name;
+    $('#drawer-sub').textContent = ['Managed by Vortex', m.version ? `v${m.version}` : '', m.author].filter(Boolean).join(' · ');
+    const nexus = $('#drawer-nexus');
+    nexus.hidden = !m.modId;
+    nexus.onclick = () => api.openNexus(m.game, m.modId);
+    $('#drawer-actions').replaceChildren(...[
+      m.enabled
+        ? h('button', { class: 'btn btn-sm', dataset: { key: 'act:disable' }, onclick: () => modAction('disable', [m.id]) }, icon('ban'), h('span', {}, 'Disable in Vortex'))
+        : h('button', { class: 'btn btn-sm btn-primary', dataset: { key: 'act:enable' }, onclick: () => modAction('enable', [m.id]) }, icon('check'), h('span', {}, 'Enable in Vortex')),
+      h('button', { class: 'btn btn-sm', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
+    ]);
+    $('#drawer-body').replaceChildren(...[
+      h('dl', { class: 'kv' },
+        kv('Status', m.enabled ? h('span', { class: 'tag tag-ok' }, 'Deployed by Vortex') : h('span', { class: 'tag' }, 'Disabled in Vortex')),
+        kv('Vortex profile', vx.activeProfileName || '—'),
+        kv('Files in the game', String(m.fileCount)),
+        m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
+        kv('Changes', 'Switching it here closes Vortex, applies the change and reopens Vortex, which then deploys.')),
+      u ? h('h2', { dataset: { section: 'update' } }, 'Update available') : null,
+      u ? h('div', { class: 'notice notice-info' }, icon('up-circle'),
+        h('div', { class: 'notice-text' }, h('div', { class: 'name' }, `${u.name}${u.version ? ` · v${u.version}` : ''}`), h('div', { class: 'subname' }, 'Vortex downloads and installs it, and asks how to replace the old version.')),
+        h('button', { class: 'btn btn-sm btn-primary', onclick: () => modAction('update', [m.id]) }, 'Update in Vortex')) : null,
+      ours.length ? h('h2', {}, `Shares files with this app's mods · ${ours.length}`) : null,
+      ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
+    ].filter(Boolean));
+  }, '#drawer-close');
+  drawer.hidden = false;
+  if (!drawer.contains(document.activeElement)) $('#drawer-close').focus();
+}
+
 /** For each other mod sharing files with this one: who wins, which files, and one-click fixes. */
 function conflictSection(m, conflicts) {
   if (!conflicts.length) return [];
@@ -624,108 +708,172 @@ function conflictSection(m, conflicts) {
 
 $('#drawer-close').addEventListener('click', closeDrawer);
 
-// ---------------------------------------------------------------- downloads page
+/// ---------------------------------------------------------------- downloads page
+/*
+ * One list, like Vortex: downloads in progress at the top with live progress and speed, then every
+ * downloaded archive with whether it is installed. A network panel graphs the total speed.
+ */
 
-function visibleDownloads() {
+const dl = { filter: 'all', speeds: new Array(120).fill(0), sessionBytes: 0, peak: 0, lastReceived: new Map() };
+const ACTIVE = ['queued', 'downloading'];
+
+function dlRows() {
   const q = $('#dl-search').value.trim().toLowerCase();
-  return state.snap.downloads.filter(d => !q || `${d.name} ${d.fileName} ${d.modName}`.toLowerCase().includes(q));
+  const match = (...t) => !q || t.join(' ').toLowerCase().includes(q);
+  const jobs = [...state.jobs.values()].filter(j => j.status !== 'done').sort((a, b) => (ACTIVE.includes(b.status) - ACTIVE.includes(a.status)) || b.id - a.id)
+    .filter(j => match(j.name, j.fileName, j.modName))
+    .map(j => ({ kind: 'job', id: `job:${j.id}`, j }));
+  const recs = state.snap.downloads.filter(d => match(d.name, d.fileName, d.modName))
+    .sort((a, b) => (b.downloadedAt || 0) - (a.downloadedAt || 0))
+    .map(d => ({ kind: 'rec', id: d.key, d }));
+  const f = dl.filter;
+  if (f === 'active') return jobs.filter(r => ACTIVE.includes(r.j.status));
+  if (f === 'failed') return jobs.filter(r => ['error', 'cancelled'].includes(r.j.status));
+  if (f === 'new') return recs.filter(r => !r.d.installed);
+  if (f === 'installed') return recs.filter(r => r.d.installed);
+  return [...jobs, ...recs];
 }
+
+function visibleDownloads() { return dlRows().filter(r => r.kind === 'rec').map(r => r.d); }
 
 function paintDlSelection() {
-  paintSelection($('#dl-table tbody'), state.dlSel, $('#dl-all'), visibleDownloads().map(d => d.key), $('#dl-bulk'), $('#dl-sel-count'), $('#dl-libhead'));
+  paintSelection($('#dl-table tbody'), state.dlSel, $('#dl-all'), visibleDownloads().map(d => d.key), $('#dl-bulk'), $('#dl-sel-count'), $('#dl-toolbar'));
 }
+
+function jobStatusCell(j) {
+  const pct = j.total ? Math.min(100, (j.received / j.total) * 100) : 0;
+  if (j.status === 'downloading') {
+    const eta = j.speed > 0 && j.total ? Math.max(0, (j.total - j.received) / j.speed) : 0;
+    return h('div', { class: 'prog', title: `${fmtSize(j.received)} of ${fmtSize(j.total)}` },
+      h('div', { class: 'bar', role: 'progressbar', 'aria-label': j.name, 'aria-valuenow': String(Math.round(pct)), 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('div', { style: `width:${pct.toFixed(1)}%` })),
+      h('span', { class: 'prog-meta' }, `${Math.floor(pct)}% · ${fmtSize(j.speed)}/s${eta ? ` · ${fmtEta(eta)}` : ''}`));
+  }
+  if (j.status === 'queued') return h('span', { class: 'status' }, 'Queued');
+  if (j.status === 'error') return h('span', { class: 'status status-err', title: j.error }, 'Failed');
+  return h('span', { class: 'status' }, 'Cancelled');
+}
+
+const fmtEta = s => (s < 60 ? `${Math.ceil(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`);
 
 function renderDownloads() {
-  const list = visibleDownloads();
-  const keys = list.map(d => d.key);
+  const rows = dlRows();
+  const keys = rows.filter(r => r.kind === 'rec').map(r => r.d.key);
   for (const k of [...state.dlSel]) if (!state.snap.downloads.some(d => d.key === k)) state.dlSel.delete(k);
-  const groups = new Map();
-  for (const d of list) {
-    if (!groups.has(d.modName)) groups.set(d.modName, []);
-    groups.get(d.modName).push(d);
-  }
-  const rows = [];
-  for (const [name, items] of groups) {
-    const first = items[0];
-    const sub = [plural(items.length, 'file'), first.author ? `by ${first.author}` : '', first.dependencyOf ? `required by ${first.dependencyOf}` : ''].filter(Boolean).join(' · ');
-    rows.push(h('tr', { class: 'group' }, h('td', { colspan: 6, title: name }, name, h('span', { class: 'sub' }, sub))));
-    for (const d of items) {
-      const status = !d.exists ? h('span', { class: 'status status-err', title: 'The archive is no longer on disk' }, 'Missing')
-        : d.installed ? h('span', { class: 'status status-ok' }, 'Installed')
-          : h('span', { class: 'status' }, 'Not installed');
-      rows.push(h('tr', {
-        class: 'row', tabindex: '0', dataset: { id: d.key }, 'aria-selected': 'false', title: 'Double-click or press Enter to install',
-        onclick: ev => {
-          if (ev.target.closest('input,button')) return;
-          clickSelect(state.dlSel, keys, d.key, ev, 'lastDlClick');
-          paintDlSelection();
-        },
-        ondblclick: ev => { if (!ev.target.closest('input,button')) run(api.install([d.key])); },
-        onkeydown: ev => rowKeys(ev, state.dlSel, d.key, () => run(api.install([d.key])), paintDlSelection),
-      },
-      h('td', {}, h('input', {
-        type: 'checkbox', 'aria-label': `Select ${d.name}`, tabindex: '-1',
-        onchange: ev => { if (ev.target.checked) state.dlSel.add(d.key); else state.dlSel.delete(d.key); state.lastDlClick = d.key; paintDlSelection(); },
-      })),
-      h('td', { title: `${d.name}\n${d.fileName}` }, h('div', { class: 'cell-name' }, h('span', { class: 'name' }, d.name), h('span', { class: 'subname' }, d.fileName))),
-      h('td', { class: 'dim col-cat' }, CAT_LABEL[d.category] || d.category),
-      h('td', { class: 'dim', title: d.version || '' }, d.version || '—'),
-      h('td', { class: 'num dim' }, fmtSize(d.size)),
-      h('td', {}, status)));
+  const tbody = $('#dl-table tbody');
+  keepFocus(tbody, () => tbody.replaceChildren(...rows.map(r => {
+    if (r.kind === 'job') {
+      const j = r.j;
+      const sub = [j.modName, j.dependencyOf ? `required by ${j.dependencyOf}` : '', j.forProfiles?.length ? 'for an imported profile' : ''].filter(Boolean).join(' · ');
+      const action = ACTIVE.includes(j.status)
+        ? h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: { key: `job:${j.id}:x` }, title: 'Cancel', 'aria-label': `Cancel ${j.name}`, onclick: () => run(api.cancelJob(j.id)) }, icon('x'))
+        : h('button', { class: 'btn btn-sm', dataset: { key: `job:${j.id}:retry` }, title: j.error || 'Try again', onclick: () => run(api.retryJob(j.id)) }, icon('rotate'), h('span', {}, 'Retry'));
+      return h('tr', { class: `row job-row ${j.status}`, dataset: { job: String(j.id) } },
+        h('td', {}),
+        h('td', { title: `${j.name}\n${j.fileName || ''}` }, h('div', { class: 'cell-name' }, h('span', { class: 'name' }, j.name), h('span', { class: 'subname' }, j.error || sub))),
+        h('td', { class: 'dim col-cat' }, CAT_LABEL[j.category] || j.category || ''),
+        h('td', { class: 'dim col-prio' }, j.version || '—'),
+        h('td', { class: 'num dim' }, fmtSize(j.total)),
+        h('td', { class: 'status-cell' }, jobStatusCell(j)),
+        h('td', { class: 'actions' }, action));
     }
-  }
-  $('#dl-table tbody').replaceChildren(...rows);
+    const d = r.d;
+    const status = !d.exists ? h('span', { class: 'status status-err', title: 'The archive is no longer on disk' }, 'Missing')
+      : d.installed ? h('span', { class: 'status status-ok' }, 'Installed') : h('span', { class: 'status' }, 'Not installed');
+    const sub = [d.modName !== d.name ? d.modName : '', d.dependencyOf ? `required by ${d.dependencyOf}` : '', d.fileName].filter(Boolean).join(' · ');
+    return h('tr', {
+      class: 'row', tabindex: '0', dataset: { id: d.key, key: `${d.key}:row` }, 'aria-selected': 'false', title: d.installed ? '' : 'Double-click or press Enter to install',
+      onclick: ev => {
+        if (ev.target.closest('input,button')) return;
+        clickSelect(state.dlSel, keys, d.key, ev, 'lastDlClick');
+        paintDlSelection();
+      },
+      ondblclick: ev => { if (!ev.target.closest('input,button')) run(api.install([d.key])); },
+      onkeydown: ev => rowKeys(ev, state.dlSel, d.key, () => run(api.install([d.key])), paintDlSelection),
+    },
+    h('td', {}, h('input', {
+      type: 'checkbox', 'aria-label': `Select ${d.name}`, tabindex: '-1',
+      onchange: ev => { if (ev.target.checked) state.dlSel.add(d.key); else state.dlSel.delete(d.key); state.lastDlClick = d.key; paintDlSelection(); },
+    })),
+    h('td', { title: `${d.name}\n${d.fileName}` }, h('div', { class: 'cell-name' }, h('span', { class: 'name' }, d.name), h('span', { class: 'subname' }, sub))),
+    h('td', { class: 'dim col-cat' }, CAT_LABEL[d.category] || d.category),
+    h('td', { class: 'dim col-prio', title: d.version || '' }, d.version || '—'),
+    h('td', { class: 'num dim' }, fmtSize(d.size)),
+    h('td', { class: 'status-cell' }, status),
+    h('td', { class: 'actions' }, !d.installed && d.exists
+      ? h('button', { class: 'btn btn-sm', dataset: { key: `${d.key}:install` }, onclick: () => run(api.install([d.key])) }, icon('package'), h('span', {}, 'Install'))
+      : null));
+  })), null);
+
   const total = state.snap.downloads.length;
   const empty = $('#dl-empty');
-  empty.hidden = list.length > 0;
-  $('#dl-card').classList.toggle('is-empty', list.length === 0);
-  empty.querySelector('.empty-title').textContent = total ? 'No matching downloads' : 'No downloads yet';
-  empty.querySelector('.empty-text').textContent = total
-    ? 'Try another search.'
-    : 'Paste a mod link above. Every file from its Files tab is downloaded, along with the mods it requires.';
-  $('#dl-lib-count').textContent = total ? `· ${total}` : '';
+  empty.hidden = rows.length > 0;
+  $('#dl-card').classList.toggle('is-empty', rows.length === 0);
+  empty.querySelector('.empty-title').textContent = total || state.jobs.size ? 'Nothing here' : 'No downloads yet';
+  empty.querySelector('.empty-text').textContent = total || state.jobs.size
+    ? 'Nothing matches this search or filter.'
+    : 'Paste a mod link above and pick its files. Downloads show their progress here.';
   paintDlSelection();
+  renderDlCounts();
 }
 
-function renderJobs() {
-  const jobs = [...state.jobs.values()].sort((a, b) => b.id - a.id);
-  const active = jobs.filter(j => ['queued', 'downloading'].includes(j.status)).length;
+function renderDlCounts() {
+  const jobs = [...state.jobs.values()];
+  const active = jobs.filter(j => ACTIVE.includes(j.status)).length;
+  const failed = jobs.filter(j => ['error', 'cancelled'].includes(j.status)).length;
+  $('#dl-active-count').textContent = active || '';
+  $('#dl-failed-count').textContent = failed || '';
+  $('#dl-clear').disabled = !jobs.some(j => ['done', 'cancelled', 'error'].includes(j.status));
   const nav = $('#nav-dl-count');
   nav.textContent = active ? `${active}` : (state.snap.downloads.length || '');
   nav.classList.toggle('live', active > 0);
   nav.title = active ? `${active} downloading` : `${state.snap.downloads.length} downloaded`;
-  $('#dl-queue-count').textContent = jobs.length ? `· ${active} active` : '';
-  $('#dl-clear').disabled = !jobs.some(j => ['done', 'cancelled'].includes(j.status));
-  if (!jobs.length) {
-    $('#jobs').replaceChildren(h('div', { class: 'empty-inline' }, 'Nothing downloading'));
-    return;
-  }
-  $('#jobs').replaceChildren(...jobs.map(j => {
-    const pct = j.total ? Math.min(100, (j.received / j.total) * 100) : (j.status === 'done' ? 100 : 0);
-    let meta;
-    if (j.status === 'downloading') meta = `${Math.floor(pct)}% · ${fmtSize(j.speed)}/s`;
-    else if (j.status === 'done') meta = `Done · ${fmtSize(j.total)}`;
-    else if (j.status === 'queued') meta = 'Queued';
-    else if (j.status === 'error') meta = 'Failed';
-    else meta = 'Cancelled';
-    const sub = [j.modName, CAT_LABEL[j.category] || j.category, j.dependencyOf ? `required by ${j.dependencyOf}` : ''].filter(Boolean).join(' · ');
-    let action = h('span');
-    if (['queued', 'downloading'].includes(j.status)) {
-      action = h('button', { class: 'btn btn-sm btn-icon btn-ghost', title: 'Cancel', 'aria-label': `Cancel ${j.name}`, onclick: () => run(api.cancelJob(j.id)) }, icon('x'));
-    } else if (['error', 'cancelled'].includes(j.status)) {
-      action = h('button', { class: 'btn btn-sm btn-icon', title: 'Retry', 'aria-label': `Retry ${j.name}`, onclick: () => run(api.retryJob(j.id)) }, icon('rotate'));
-    }
-    return h('div', { class: `job ${j.status}` },
-      h('div', { class: 'job-main' },
-        h('div', { class: 'name', title: j.name }, j.name),
-        j.error ? h('div', { class: 'job-err', title: j.error }, j.error) : h('div', { class: 'subname', title: sub }, sub)),
-      h('div', { class: 'bar', role: 'progressbar', 'aria-label': j.name, 'aria-valuenow': String(Math.round(pct)), 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('div', { style: `width:${pct.toFixed(1)}%` })),
-      h('div', { class: 'job-meta', title: j.status === 'downloading' ? `${fmtSize(j.received)} of ${fmtSize(j.total)}` : '' }, meta),
-      action);
-  }));
 }
 
+/** Live job updates touch only their own row; a finished job re-renders the list. */
+function updateJobRow(j) {
+  const tr = $(`#dl-table tr[data-job="${j.id}"]`);
+  if (!tr || !ACTIVE.includes(j.status)) { scheduleDlRender(); return; }
+  tr.className = `row job-row ${j.status}`;
+  tr.querySelector('.status-cell').replaceChildren(jobStatusCell(j));
+  tr.querySelector('.num').textContent = fmtSize(j.total);
+}
+const scheduleDlRender = (() => {
+  let t = null;
+  return () => { if (!t) t = setTimeout(() => { t = null; renderDownloads(); }, 150); };
+})();
+
+// The network panel: total speed sampled every second, two minutes of history.
+function sampleNetwork() {
+  const jobs = [...state.jobs.values()];
+  const speed = jobs.filter(j => j.status === 'downloading').reduce((n, j) => n + (j.speed || 0), 0);
+  for (const j of jobs) {
+    const prev = dl.lastReceived.get(j.id) || 0;
+    if (j.received > prev) dl.sessionBytes += j.received - prev;
+    dl.lastReceived.set(j.id, j.received || 0);
+  }
+  dl.speeds.push(speed);
+  dl.speeds.shift();
+  dl.peak = Math.max(dl.peak, speed);
+  const active = jobs.filter(j => j.status === 'downloading').length;
+  $('#net-now').textContent = active ? `${fmtSize(speed)}/s` : 'Idle';
+  $('#net-now').classList.toggle('live', active > 0);
+  $('#net-active').textContent = active;
+  $('#net-queued').textContent = jobs.filter(j => j.status === 'queued').length;
+  $('#net-total').textContent = fmtSize(dl.sessionBytes) === '—' ? '0 B' : fmtSize(dl.sessionBytes);
+  $('#net-peak').textContent = dl.peak ? `${fmtSize(dl.peak)}/s` : '—';
+  const max = Math.max(...dl.speeds, 1);
+  const pts = dl.speeds.map((v, i) => `${i},${(40 - (v / max) * 36).toFixed(2)}`);
+  $('#net-graph .net-line').setAttribute('d', `M${pts.join(' L')}`);
+  $('#net-graph .net-area').setAttribute('d', `M0,40 L${pts.join(' L')} L119,40 Z`);
+}
+setInterval(sampleNetwork, 1000);
+
 $('#dl-search').addEventListener('input', debounce(renderDownloads, 120));
+$$('#dl-filter .seg-btn').forEach(b => b.addEventListener('click', () => {
+  dl.filter = b.dataset.f;
+  setSegActive('#dl-filter', 'f', dl.filter);
+  renderDownloads();
+}));
 $('#dl-all').addEventListener('change', ev => {
   visibleDownloads().forEach(d => (ev.target.checked ? state.dlSel.add(d.key) : state.dlSel.delete(d.key)));
   paintDlSelection();
@@ -747,7 +895,7 @@ $('#dl-go').addEventListener('click', async () => {
   hint.className = 'hint';
   hint.textContent = '';
   try {
-    const r = await downloadLinks(text); // features.js: asks which requirements to include
+    const r = await downloadLinks(text); // features.js: file picker, then requirements
     if (r) {
       const parts = [`${plural(r.queued, 'file')} queued from ${plural(r.mods, 'mod')}`];
       if (r.dependencies) parts.push(`${plural(r.dependencies, 'required mod')} added`);
@@ -757,10 +905,11 @@ $('#dl-go').addEventListener('click', async () => {
       hint.className = r.errors.length ? 'hint bad' : 'hint ok';
       hint.textContent = parts.join(' · ');
       if (!r.errors.length) { linksBox.value = ''; growLinks(); }
+      if (r.queued) { dl.filter = 'all'; setSegActive('#dl-filter', 'f', 'all'); renderDownloads(); }
     }
   } finally {
     btn.disabled = false;
-    label.textContent = 'Download all files';
+    label.textContent = 'Choose files';
   }
 });
 linksBox.addEventListener('keydown', ev => {
@@ -768,8 +917,8 @@ linksBox.addEventListener('keydown', ev => {
 });
 $('#dl-clear').addEventListener('click', async () => {
   await run(api.clearJobs());
-  for (const [id, j] of state.jobs) if (['done', 'cancelled', 'skipped'].includes(j.status)) state.jobs.delete(id);
-  renderJobs();
+  for (const [id, j] of state.jobs) if (['done', 'cancelled', 'skipped', 'error'].includes(j.status)) state.jobs.delete(id);
+  renderDownloads();
 });
 $('#dl-open-folder').addEventListener('click', () => run(api.openPath('downloads')));
 $$('#dl-bulk [data-act]').forEach(b => b.addEventListener('click', async () => {
@@ -794,7 +943,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
 };
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps' };
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', handleNxm: '#s-nxm' };
 
 function readForm() {
   const patch = {};
@@ -835,6 +984,7 @@ async function loadSettings() {
   for (const [k, sel] of Object.entries(checks)) $(sel).checked = !!s[k];
   $$('#s-cats input').forEach(i => { i.checked = s.categories.includes(i.value); });
   renderStatus();
+  renderInstalls();
   updateDirty();
 }
 
@@ -869,6 +1019,7 @@ $('#s-game-browse').addEventListener('click', async () => {
 $('#s-game-detect').addEventListener('click', async () => {
   const s = await run(api.detectGame());
   if (s) await loadSettings();
+  refreshInstalls();
 });
 $('#s-data-browse').addEventListener('click', async () => {
   const p = await run(api.pickFolder('Select a data folder'));
@@ -891,6 +1042,15 @@ function renderStatus() {
   const keyText = state.keyUser ? `${state.keyUser.name}${state.keyUser.isPremium ? ' · Premium' : ''}` : hasKey ? 'API key saved' : 'No API key';
   $('#st-key').textContent = keyText;
   $('#st-key-row').title = keyText;
+  const prof = state.snap.profiles?.list.find(p => p.id === state.snap.profiles.active);
+  $('#st-prof').textContent = prof ? `Profile: ${prof.name}` : 'Profile';
+  $('#st-prof-row').title = prof ? `Active profile: ${prof.name} (${plural(prof.count, 'mod')} enabled)` : '';
+  const vx = state.snap.vortex;
+  $('#st-vx-row').hidden = !vx?.installed;
+  if (vx?.installed) {
+    $('#st-vx').textContent = `Vortex: ${vx.busy ? 'applying…' : vx.running ? 'open' : 'closed'}`;
+    $('#st-vx-row').title = `Vortex profile: ${vx.activeProfileName || '—'} · ${plural(vx.mods.length, 'mod')}`;
+  }
   const r = state.snap.rate || {};
   $('#st-rate').textContent = r.hourly != null ? `API ${r.hourly}/h · ${r.daily}/day left` : '';
   const gs = $('#s-game-status');
@@ -902,6 +1062,85 @@ function renderStatus() {
   $('#dl-keybanner-text').textContent = hasKey
     ? 'Your Nexus account is not Premium, so Nexus will refuse direct download links.'
     : 'Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.';
+}
+
+// ---------------------------------------------------------------- "More" menu
+
+/** A small menu button: click or Enter opens it, arrows move, Esc or a click outside closes it. */
+function menuButton(btnSel, menuSel) {
+  const btn = $(btnSel);
+  const menu = $(menuSel);
+  const items = () => [...menu.querySelectorAll('.menu-item:not([hidden])')];
+  const close = (refocus = false) => {
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    if (refocus) btn.focus();
+  };
+  const open = () => {
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    items()[0]?.focus();
+  };
+  btn.addEventListener('click', () => (menu.hidden ? open() : close()));
+  menu.addEventListener('click', ev => { if (ev.target.closest('.menu-item')) close(); });
+  menu.addEventListener('keydown', ev => {
+    const list = items();
+    const i = list.indexOf(document.activeElement);
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(true); }
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    if (ev.key === 'ArrowUp') { ev.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    if (ev.key === 'Tab') close();
+  });
+  document.addEventListener('mousedown', ev => { if (!menu.hidden && !ev.target.closest('.menu-wrap')) close(); });
+}
+menuButton('#mods-more', '#mods-more-menu');
+$('#mods-open-vortex').addEventListener('click', () => run(api.openVortex()));
+
+// ---------------------------------------------------------------- Play
+
+let installs = [];
+async function refreshInstalls() {
+  installs = (await run(api.gameInstalls())) || [];
+  renderInstalls();
+  renderPlay();
+}
+
+function renderPlay() {
+  const g = state.snap.game || {};
+  const here = installs.find(i => i.path.toLowerCase() === String(g.path || '').toLowerCase());
+  const running = !!state.gameRunning;
+  const btn = $('#play-btn');
+  btn.disabled = !g.valid || running;
+  btn.classList.toggle('running', running);
+  $('#play-label').textContent = running ? 'Running' : 'Play';
+  $('#play-sub').textContent = !g.valid ? 'Set the game folder' : running ? 'Cyberpunk 2077 is open' : `Cyberpunk 2077 · ${here?.label || 'launch'}`;
+  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? 'The game is running' : `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
+}
+$('#play-btn').addEventListener('click', async () => {
+  const btn = $('#play-btn');
+  btn.disabled = true;
+  $('#play-label').textContent = 'Starting…';
+  const r = await run(api.launchGame());
+  if (r) toast(`Starting Cyberpunk 2077 through ${r.via}`, 'success');
+  setTimeout(renderPlay, 4000);
+});
+
+/** Settings: every install found, with its store; one click to use another. */
+function renderInstalls() {
+  const box = $('#s-installs');
+  const current = String(state.settings?.gamePath || '').toLowerCase();
+  if (!installs.length) {
+    box.replaceChildren(h('span', { class: 'hint' }, 'No install found automatically (Steam, GOG, Epic Games, Xbox app). Use Browse to pick the folder.'));
+    return;
+  }
+  box.replaceChildren(...installs.map(i => {
+    const active = i.path.toLowerCase() === current;
+    return h('div', { class: `install${active ? ' active' : ''}` },
+      h('span', { class: 'tag' }, i.label),
+      h('span', { class: 'install-path', title: i.path }, i.path),
+      active ? h('span', { class: 'status status-ok' }, 'In use')
+        : h('button', { type: 'button', class: 'btn btn-sm', onclick: () => { $('#s-game').value = i.path; updateDirty(); } }, 'Use this'));
+  }));
 }
 
 // ---------------------------------------------------------------- activity log (this app's own messages)
@@ -971,6 +1210,10 @@ $('#console-clear').addEventListener('click', () => {
   updateBadges();
   setConsoleFilter(con.filter);
   $('#console-last').textContent = '';
+});
+$('#console-export').addEventListener('click', async () => {
+  const r = await run(api.exportJson('activity'));
+  if (r) toast(`Saved ${plural(r.count, 'line')}`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
 });
 $('#console-copy').addEventListener('click', async () => {
   const text = con.entries.filter(shown).map(e => `[${new Date(e.time).toISOString()}] ${e.level.toUpperCase()} ${e.message}${e.detail ? `\n  ${e.detail}` : ''}`).join('\n');
@@ -1174,23 +1417,22 @@ function applySnapshot(snap) {
   snapshotHooks.forEach(fn => fn(snap));
   renderMods();
   renderDownloads();
-  renderJobs();
   renderStatus();
+  renderPlay();
   if (state.drawerMod) {
-    const m = snap.mods.find(x => x.id === state.drawerMod);
+    const m = allMods().find(x => x.id === state.drawerMod);
     if (!m) closeDrawer();
     else if (drawerSignature(m) !== state.drawerSig) openDrawer(m.id);
   }
 }
 
-let jobRenderPending = false;
 api.onJob(job => {
+  const isNew = !state.jobs.has(job.id);
   state.jobs.set(job.id, job);
-  if (!jobRenderPending) {
-    jobRenderPending = true;
-    requestAnimationFrame(() => { jobRenderPending = false; renderJobs(); });
-  }
+  if (isNew) scheduleDlRender(); else updateJobRow(job);
+  renderDlCounts();
 });
+api.onToast(t => toast(t.text, t.kind || 'info'));
 api.onSnapshot(applySnapshot);
 api.onLog(addLog);
 api.onFomod(enqueueFomod);
@@ -1201,4 +1443,5 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   const snap = await run(api.snapshot());
   if (snap) applySnapshot(snap);
+  refreshInstalls();
 });

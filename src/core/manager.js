@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { pathToFileURL } = require('url');
 const { JsonStore } = require('./jsonStore');
-const { NexusClient, parseModUrl } = require('./nexus');
+const { NexusClient, parseModUrl, parseNxm } = require('./nexus');
 const { Downloader } = require('./downloader');
 const { Installer } = require('./installer');
 const { Deployer } = require('./deployer');
@@ -13,6 +13,7 @@ const { isGameDir } = require('./gameFinder');
 const { sanitizeName } = require('./layout');
 const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
+const { VortexBridge } = require('./vortex');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
 const MAX_PROFILE_MODS = 1000;
@@ -34,6 +35,9 @@ function validChoices(c) {
 const catOf = f => String(f.category_name || f.category || 'MISCELLANEOUS').toUpperCase();
 const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
 /** The parts of a Nexus file record the UI shows. */
+/** Nexus descriptions are BBCode/HTML: keep the words only. */
+const plainText = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/\[\/?[a-z0-9=#*"' -]+\]/gi, '').replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
 const publicFile = f => ({ fileId: f.file_id, name: f.name || f.file_name, fileName: f.file_name, category: catOf(f), version: f.version || f.mod_version || '', size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0 });
 
 const CATEGORY_FOLDERS = {
@@ -60,6 +64,9 @@ class ModManager extends EventEmitter {
     this.plans = new Map();
     this.profileImports = new Map();
     this.ensureProfiles();
+    // CMM_VORTEX_APPDATA points tests (and the screenshot harness) away from the real Vortex.
+    this.vortex = new VortexBridge({ getGameDir: () => this.gameDir(), log, appData: process.env.CMM_VORTEX_APPDATA ?? process.env.APPDATA });
+    this.vortex.on('changed', () => this.emit('changed'));
     this.chain = Promise.resolve();
 
     this.downloader.on('update', job => this.emit('job', job));
@@ -126,6 +133,7 @@ class ModManager extends EventEmitter {
       updates: this.data.updates || {},
       lastUpdateCheck: this.data.lastUpdateCheck || 0,
       profiles: this.profilesView(),
+      vortex: this.vortexView(),
     };
   }
 
@@ -188,9 +196,10 @@ class ModManager extends EventEmitter {
       seen.add(parsed.modId);
       try {
         const info = await this.fetchModInfo(parsed.game, parsed.modId);
-        const files = info.files.filter(f => wanted.has(catOf(f)));
-        this.log.info(`${info.name}: ${files.length} of ${info.files.length} files match the chosen categories`);
-        plan.mods.push({ ...info, files });
+        const linked = parsed.fileId && info.files.some(f => Number(f.file_id) === parsed.fileId) ? parsed.fileId : 0;
+        const files = info.files.filter(f => (linked ? Number(f.file_id) === linked : wanted.has(catOf(f))));
+        this.log.info(`${info.name}: ${info.files.length} files, ${files.length} preselected`);
+        plan.mods.push({ ...info, files, allFiles: info.files });
       } catch (err) {
         plan.errors.push(err.message);
         this.log.error(`Could not read files for ${url}`, err.message);
@@ -203,7 +212,18 @@ class ModManager extends EventEmitter {
     return {
       token: plan.token,
       errors: plan.errors,
-      mods: plan.mods.map(m => ({ modId: m.modId, game: m.game, name: m.name, author: m.author, files: m.files.map(publicFile) })),
+      mods: plan.mods.map(m => {
+        const picked = new Set(m.files.map(f => Number(f.file_id)));
+        return {
+          modId: m.modId, game: m.game, name: m.name, author: m.author, summary: m.summary || '', picture: m.picture,
+          files: m.files.map(publicFile),
+          // Every file, newest first within its category, for the picker.
+          allFiles: [...m.allFiles].sort((a, b) => (b.uploaded_timestamp || 0) - (a.uploaded_timestamp || 0)).map(f => ({
+            ...publicFile(f), uploaded: f.uploaded_timestamp || 0, description: plainText(f.description).slice(0, 600),
+            selected: picked.has(Number(f.file_id)), downloaded: !!this.data.downloads[String(f.file_id)],
+          })),
+        };
+      }),
       deps: plan.deps.map(d => ({ ...d, info: undefined, files: (d.files || []).map(publicFile) })),
     };
   }
@@ -211,7 +231,7 @@ class ModManager extends EventEmitter {
   async fetchModInfo(game, modId) {
     const [mod, files] = await Promise.all([this.nexus.getMod(game, modId), this.nexus.getFiles(game, modId)]);
     if (game !== 'cyberpunk2077') this.log.warn(`${mod.name} is a ${game} mod; it will download, but the installer only knows Cyberpunk 2077 layouts.`);
-    return { game, modId: Number(modId), name: mod.name || `Mod ${modId}`, author: mod.author || '', picture: mod.picture_url || '', files: files.files || [] };
+    return { game, modId: Number(modId), name: mod.name || `Mod ${modId}`, author: mod.author || '', picture: mod.picture_url || '', summary: plainText(mod.summary).slice(0, 300), files: files.files || [] };
   }
 
   /** Breadth-first walk of requirements, recording each one once with its status. */
@@ -263,14 +283,17 @@ class ModManager extends EventEmitter {
    * Download the planned mods plus the requirements the user ticked (by mod id). Requirements that
    * are downloaded or installed-but-disabled are installed/enabled instead of downloaded again.
    */
-  async queuePlan(token, chosenDepIds) {
+  async queuePlan(token, chosenDepIds, chosenFiles = null) {
     const plan = this.plans.get(token);
     if (!plan) throw new Error('That download plan has expired. Paste the links again.');
     this.plans.delete(token);
     const chosen = new Set((chosenDepIds || []).map(Number));
     const summary = { mods: 0, queued: 0, skipped: 0, dependencies: 0, external: plan.deps.filter(d => d.status === 'external').map(d => ({ name: d.name, url: d.url })), errors: [...plan.errors] };
     for (const m of plan.mods) {
-      this.queueFiles(m, m.files, '', summary);
+      // The picker's choice (mod id → file ids) wins over the preselection.
+      const pick = chosenFiles && chosenFiles[m.modId];
+      const files = Array.isArray(pick) ? m.allFiles.filter(f => pick.includes(Number(f.file_id))) : m.files;
+      this.queueFiles(m, files, '', summary);
       summary.mods++;
     }
     for (const d of plan.deps) {
@@ -294,6 +317,23 @@ class ModManager extends EventEmitter {
     if (summary.skipped) this.log.info(`${summary.skipped} file(s) were already downloaded and were skipped`);
     this.emit('changed');
     return summary;
+  }
+
+  /**
+   * A Nexus "Mod Manager Download" link (nxm://…). That one file starts downloading at once and is
+   * installed as the settings say, like any other download.
+   */
+  async handleNxm(url) {
+    const link = parseNxm(url);
+    if (!link) throw new Error(`Not a Nexus download link: ${url}`);
+    const info = await this.fetchModInfo(link.game, link.modId);
+    const f = info.files.find(x => Number(x.file_id) === link.fileId);
+    if (!f) throw new Error(`${info.name}: that file is no longer on Nexus.`);
+    const summary = { mods: 1, queued: 0, skipped: 0, errors: [] };
+    this.queueFiles(info, [f], '', summary, { nxm: { key: link.key, expires: link.expires } });
+    this.log.info(summary.queued ? `Downloading ${f.name || f.file_name} (${info.name}) from a Nexus link` : `${f.file_name} is already downloaded`);
+    this.emit('changed');
+    return { name: info.name, file: f.name || f.file_name, queued: summary.queued };
   }
 
   /** Plan and queue in one go, taking every requirement that is not already covered. */
@@ -613,7 +653,8 @@ class ModManager extends EventEmitter {
    * Results are kept in `updates` (mod id → newer file) until the mod is updated.
    */
   async checkUpdates() {
-    const mods = Object.values(this.data.mods).filter(m => Number(m.modId) > 0 && Number(m.fileId) > 0);
+    const vortexMods = this.vortex.read().mods || [];
+    const mods = [...Object.values(this.data.mods), ...vortexMods].filter(m => Number(m.modId) > 0 && Number(m.fileId) > 0);
     const groups = new Map();
     for (const m of mods) {
       const k = `${m.game}/${m.modId}`;
@@ -632,7 +673,8 @@ class ModManager extends EventEmitter {
           const res = await this.nexus.getFiles(game, modId);
           for (const m of list) {
             const f = findUpdate(res.files || [], res.file_updates || [], m.fileId);
-            if (f && !this.data.mods[String(f.file_id)]) {
+            const haveIt = this.data.mods[String(f?.file_id)] || vortexMods.some(v => v.fileId === Number(f?.file_id));
+            if (f && !haveIt) {
               found[m.id] = {
                 fileId: Number(f.file_id), name: f.name || f.file_name, fileName: f.file_name, category: catOf(f),
                 version: f.version || f.mod_version || '', size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0,
@@ -660,8 +702,22 @@ class ModManager extends EventEmitter {
   async updateMods(ids) {
     const summary = { mods: 0, queued: 0, skipped: 0, errors: [] };
     for (const id of ids) {
-      const m = this.data.mods[id];
       const u = this.data.updates?.[id];
+      if (id.startsWith('vx:') && u) {
+        const v = (this.vortex.read().mods || []).find(x => x.id === id);
+        if (!v) continue;
+        try {
+          const uri = await this.nexus.getDownloadLink(v.game, v.modId, u.fileId);
+          this.vortex.installUrl(uri);
+          this.log.info(`Sent the ${v.name} update (${u.version || u.fileName}) to Vortex to install`);
+          summary.mods++;
+        } catch (err) {
+          summary.errors.push(err.message);
+          this.log.error(`Could not update ${v.name} in Vortex`, err.message);
+        }
+        continue;
+      }
+      const m = this.data.mods[id];
       if (!m || !u) continue;
       const file = { file_id: u.fileId, name: u.name, file_name: u.fileName, category_name: u.category, version: u.version, size_in_bytes: u.size, uploaded_timestamp: u.uploaded };
       this.queueFiles({ game: m.game, modId: m.modId, name: m.modName, author: m.author }, [file], m.dependencyOf || '', summary, { replaces: m.id });
@@ -670,6 +726,47 @@ class ModManager extends EventEmitter {
     this.log.info(`Updating ${plural(summary.mods, 'mod')}`);
     this.emit('changed');
     return summary;
+  }
+
+  // ---------------------------------------------------------------- Vortex, side by side
+
+  /** Vortex's mods for the UI, plus every place where our enabled files and Vortex's files meet. */
+  vortexView() {
+    let data;
+    try { data = this.vortex.read(); } catch (err) { return { installed: true, error: err.message, mods: [] }; }
+    if (!data.installed) return { installed: false, mods: [] };
+    const overlaps = {};
+    for (const m of Object.values(this.data.mods)) {
+      if (!m.enabled) continue;
+      const hit = new Set();
+      for (const f of m.files) { const src = data.deployedPaths.get(f.toLowerCase()); if (src) hit.add(`vx:${src}`); }
+      if (hit.size) overlaps[m.id] = [...hit];
+    }
+    return {
+      installed: true,
+      running: this.vortexRunning,
+      busy: this.vortex.busy,
+      activeProfileName: data.activeProfileName,
+      snapshotTime: data.snapshotTime,
+      deployedAt: data.deployedAt,
+      profiles: data.profiles.map(p => ({ id: p.id, name: p.name, active: p.active, count: p.enabledIds.length })),
+      mods: data.mods.map(({ deployedFiles, ...m }) => m),
+      overlaps,
+    };
+  }
+
+  /** Watch Vortex: its files change when it installs, deploys or switches profiles. */
+  startVortexWatch() {
+    if (!this.vortex.installed) return;
+    let sig = '';
+    const tick = async () => {
+      this.vortexRunning = await this.vortex.isRunning();
+      const d = this.vortex.read();
+      const now = `${this.vortexRunning}|${d.snapshotTime}|${d.deployedAt}|${d.mods.length}`;
+      if (now !== sig) { sig = now; this.emit('changed'); }
+    };
+    tick();
+    this.vortexTimer = setInterval(() => tick().catch(() => {}), 5000);
   }
 
   // ---------------------------------------------------------------- profiles
@@ -705,7 +802,7 @@ class ModManager extends EventEmitter {
     const { active, list } = this.data.profiles;
     return {
       active,
-      list: Object.values(list).sort((a, b) => a.created - b.created).map(p => ({ id: p.id, name: p.name, count: p.enabled.filter(id => this.data.mods[id]).length })),
+      list: Object.values(list).sort((a, b) => a.created - b.created).map(p => ({ id: p.id, name: p.name, created: p.created || 0, count: p.enabled.filter(id => this.data.mods[id]).length })),
     };
   }
 
@@ -998,6 +1095,23 @@ class ModManager extends EventEmitter {
   }
 
   setEnabled(ids, enabled) {
+    const vx = ids.filter(id => String(id).startsWith('vx:'));
+    const ours = ids.filter(id => !String(id).startsWith('vx:'));
+    const vortexDone = vx.length ? this.setVortexEnabled(vx, enabled) : Promise.resolve();
+    if (!ours.length) return vortexDone;
+    return Promise.all([vortexDone, this.setOwnEnabled(ours, enabled)]);
+  }
+
+  /** Vortex mods are switched by Vortex itself (it closes, applies, reopens and deploys). */
+  async setVortexEnabled(ids, enabled) {
+    const all = this.vortex.read().mods || [];
+    const changes = ids.map(id => all.find(m => m.id === id)).filter(m => m && m.enabled !== enabled).map(m => ({ vortexId: m.vortexId, enabled }));
+    if (!changes.length) return;
+    await this.vortex.apply(changes);
+    this.emit('changed');
+  }
+
+  setOwnEnabled(ids, enabled) {
     return this.op(async () => {
       const changed = ids.map(id => this.data.mods[id]).filter(m => m && m.enabled !== enabled);
       for (const m of changed) m.enabled = enabled;

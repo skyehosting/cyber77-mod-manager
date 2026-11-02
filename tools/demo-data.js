@@ -63,10 +63,25 @@
     profiles: {
       active: 'default',
       list: [
-        { id: 'default', name: 'Default', count: 12 },
-        { id: 'p2', name: 'Photo mode', count: 5 },
-        { id: 'p3', name: 'Vanilla+', count: 3 },
+        { id: 'default', name: 'Default', count: 12, created: now - 41 * 86400000 },
+        { id: 'p2', name: 'Photo mode', count: 5, created: now - 12 * 86400000 },
+        { id: 'p3', name: 'Vanilla+', count: 3, created: now - 2 * 86400000 },
       ],
+    },
+    vortex: {
+      installed: true, running: false, busy: false, activeProfileName: '2.5 Singleplayer', snapshotTime: now - 3600000, deployedAt: now - 7200000,
+      profiles: [
+        { id: 'vp1', name: 'Default', active: false, count: 13 },
+        { id: 'vp2', name: '2.5 Singleplayer', active: true, count: 64 },
+        { id: 'vp3', name: 'Multiplayer', active: false, count: 12 },
+      ],
+      mods: [
+        ['vx:a1', 'Ultra Plus', 10490, '5.2.1', 'sammilucia', true, 48],
+        ['vx:a2', 'Nova LUT', 2593, '2.3', 'Lowkey', true, 4],
+        ['vx:a3', 'Weather Probability Rebalance', 9872, '1.6', 'DJ_Kovrik', false, 2],
+        ['vx:a4', 'Enhanced Vehicle System', 6789, '0.9.4', 'Gaia', true, 17],
+      ].map(([id, name, modId, version, author, enabled, fileCount]) => ({ id, vortexId: id.slice(3), source: 'vortex', name, modName: name, modId, game: 'cyberpunk2077', version, author, type: 'Vortex', enabled, fileCount, installedAt: now - 9 * 86400000, category: 'VORTEX' })),
+      overlaps: { m6: ['vx:a3'] },
     },
   };
   window.__demo = { snap };
@@ -110,7 +125,21 @@
   window.demoPlan = {
     token: 'demo',
     errors: [],
-    mods: [{ modId: 790, game: 'cyberpunk2077', name: 'Appearance Menu Mod', author: 'MaximiliumM', files: [{}, {}, {}] }],
+    mods: [{
+      modId: 790, game: 'cyberpunk2077', name: 'Appearance Menu Mod', author: 'MaximiliumM', files: [{}],
+      summary: 'Change NPC appearances, spawn characters and props, build decor scenes and save your favourite looks.',
+      allFiles: [
+        ['Appearance Menu Mod - Main', 'MAIN', '2.12.3', 48_812_544, 6, true, true, 'The main file. Needs Cyber Engine Tweaks, Codeware and ArchiveXL.'],
+        ['AMM Collabs - Decor Pack', 'OPTIONAL', '1.4', 251_658_240, 20, false, false, 'Over 3,000 extra props for decor scenes, made with other modders. Large download.'],
+        ['AMM Custom Appearances Starter', 'OPTIONAL', '1.1', 3_400_000, 34, false, false, 'Example custom appearances you can copy and edit.'],
+        ['AMM - Old Locations Fix', 'MISCELLANEOUS', '1.0', 412_000, 60, false, false, 'Restores the pre-2.0 saved locations list.'],
+        ['Appearance Menu Mod - Main', 'OLD_VERSION', '2.11.0', 47_100_000, 120, false, false, 'For game version 2.02 and earlier.'],
+        ['Appearance Menu Mod - Main', 'OLD_VERSION', '2.10.2', 46_000_000, 190, false, false, ''],
+      ].map(([name, category, version, size, days, selected, downloaded, description], i) => ({
+        fileId: 9100 + i, name, fileName: `${name.replace(/\W+/g, '')}-${version}.zip`, category, version, size,
+        uploaded: Math.floor((now - days * 86400000) / 1000), selected, downloaded, description,
+      })),
+    }],
     deps: [
       { modId: 7780, name: 'Codeware', requiredBy: ['Appearance Menu Mod'], status: 'missing', files: [{ fileName: 'Codeware-7780-1-21-2.zip', size: 2_621_440 }] },
       { modId: 4575, name: 'Input Loader', requiredBy: ['Codeware'], status: 'missing', files: [{ fileName: 'InputLoader-4575-0-2-6.zip', size: 310_000 }] },
@@ -133,11 +162,7 @@
       { name: 'Custom poses (personal)', version: '', status: 'local', detail: 'A local file on the sender\'s PC — ask them for it', size: 0 },
     ],
   });
-  window.demoImport = async () => {
-    openProfiles();
-    await new Promise(r => setTimeout(r, 60));
-    [...document.querySelectorAll('#modal button')].find(b => b.textContent.includes('Import from file'))?.click();
-  };
+  window.demoImport = async () => { goTo('profiles'); importReview(await pickProfileFile()); };
 
   window.resetDemo = () => {
     // Dialogs left open by the previous shot never resolve: drop them from the dialog queue.
@@ -153,7 +178,17 @@
     state.dlSel = new Set();
     applySnapshot(snap);
     state.jobs = new Map(jobs.map(j => [j.id, j]));
-    renderJobs();
+    renderDownloads();
+    installs = [
+      { store: 'steam', label: 'Steam', path: snap.game.path },
+      { store: 'gog', label: 'GOG', path: 'D:\\GOG Games\\Cyberpunk 2077' },
+    ];
+    renderInstalls();
+    renderPlay();
+    prof.editing = null;
+    prof.confirming = null;
+    renderProfilesPage(true);
+    document.querySelector('#mods-more-menu').hidden = true;
     gl.status = snap.gameStatus;
     renderGameStatus();
     document.querySelectorAll('.page').forEach(p => { p.scrollTop = 0; });

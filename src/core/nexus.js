@@ -17,9 +17,24 @@ class NexusError extends Error {
  */
 function parseModUrl(input) {
   const text = String(input || '').trim();
+  // Any Nexus mod page: www./next./no host prefix, /games/, any tab, with or without a scheme.
   const m = text.match(/nexusmods\.com\/(?:games\/)?([a-z0-9_-]+)\/mods\/(\d+)/i);
   if (!m) return null;
-  return { game: m[1].toLowerCase(), modId: Number(m[2]) };
+  // A link to one file (…?tab=files&file_id=123) pre-selects that file.
+  const f = text.match(/[?&](?:file_id|id)=(\d+)/i);
+  return { game: m[1].toLowerCase(), modId: Number(m[2]), fileId: f ? Number(f[1]) : 0 };
+}
+
+/**
+ * A Nexus "Mod Manager Download" link:
+ *   nxm://cyberpunk2077/mods/107/files/123456?key=…&expires=…&user_id=…
+ * The key and expiry let any account (Premium or not) get that one file's download link.
+ */
+function parseNxm(input) {
+  const m = String(input || '').match(/^nxm:\/\/([a-z0-9_-]+)\/mods\/(\d+)\/files\/(\d+)(?:\?(.*))?$/i);
+  if (!m) return null;
+  const q = new URLSearchParams(m[4] || '');
+  return { game: m[1].toLowerCase(), modId: Number(m[2]), fileId: Number(m[3]), key: q.get('key') || '', expires: q.get('expires') || '' };
 }
 
 /** Thin client for the Nexus Mods public v1 API (header auth with `apikey`). */
@@ -105,8 +120,9 @@ class NexusClient {
   }
 
   /** Premium accounts get CDN links straight from the API. Returns the preferred URI. */
-  async getDownloadLink(game, modId, fileId) {
-    const links = await this.request(`/games/${game}/mods/${modId}/files/${fileId}/download_link.json`);
+  async getDownloadLink(game, modId, fileId, { key = '', expires = '' } = {}) {
+    const q = key && expires ? `?key=${encodeURIComponent(key)}&expires=${encodeURIComponent(expires)}` : '';
+    const links = await this.request(`/games/${game}/mods/${modId}/files/${fileId}/download_link.json${q}`);
     if (!Array.isArray(links) || !links.length || !links[0].URI) {
       throw new NexusError('Nexus returned no download link for this file.', 0);
     }
@@ -114,4 +130,4 @@ class NexusClient {
   }
 }
 
-module.exports = { NexusClient, NexusError, parseModUrl };
+module.exports = { NexusClient, NexusError, parseModUrl, parseNxm };

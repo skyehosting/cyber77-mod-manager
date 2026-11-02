@@ -5,7 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen } = requ
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
-const { findCyberpunk, isGameDir } = require('./core/gameFinder');
+const { findCyberpunk, findInstalls, storeOf, isGameDir } = require('./core/gameFinder');
+const { launchGame } = require('./core/launcher');
 const { GameLogMonitor } = require('./core/gameLogs');
 
 let win = null;
@@ -142,6 +143,8 @@ async function boot() {
   manager.on('job', job => send('job', job));
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
+  manager.startVortexWatch();
+  applyNxmSetting();
 
   gameLogs = new GameLogMonitor({
     getGameDir: () => settings.get('gamePath'),
@@ -178,6 +181,7 @@ async function boot() {
     settings.update(patch);
     if (settings.get('dataDir') !== before) logger.warn('Data folder changed. Restart the app to use it.');
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
+    if ('handleNxm' in patch) applyNxmSetting();
     logger.success('Settings saved');
     pushSnapshot();
     return settings.publicView();
@@ -201,7 +205,37 @@ async function boot() {
   });
   handle('links:add', text => manager.addLinks(text));
   handle('links:plan', text => manager.planLinks(text));
-  handle('links:queue', (token, deps) => manager.queuePlan(token, deps));
+  handle('links:queue', (token, deps, files) => manager.queuePlan(token, deps, files));
+  handle('game:installs', () => findInstalls());
+  handle('game:launch', async () => {
+    const dir = settings.get('gamePath');
+    if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    const store = await storeOf(dir);
+    const r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp }, url => shell.openExternal(url));
+    logger.success(`Launching Cyberpunk 2077 through ${r.via}${r.args.length ? ` (${r.args.join(' ')}, for REDmod)` : ''}`);
+    return r;
+  });
+  handle('export:json', async (kind, data) => {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    const r = await dialog.showSaveDialog(win, {
+      title: kind === 'gamelog' ? 'Export game log' : 'Export activity log',
+      defaultPath: path.join(app.getPath('documents'), `cyberpunk-${kind === 'gamelog' ? 'game-log' : 'activity'}-${stamp}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (r.canceled || !r.filePath) return null;
+    const doc = kind === 'gamelog'
+      ? { exportedAt: new Date().toISOString(), game: gameLogs.status(), sources: gameLogs.sources(), filter: data?.filter || null, entries: data?.entries || gameLogs.entries }
+      : { exportedAt: new Date().toISOString(), entries: logger.entries };
+    fs.writeFileSync(r.filePath, JSON.stringify(doc, null, 2));
+    lastExport = r.filePath;
+    logger.success(`Exported ${doc.entries.length} log lines to ${r.filePath}`);
+    return { file: r.filePath, count: doc.entries.length };
+  });
+  handle('vortex:open', () => {
+    const exe = manager.vortex.exePath();
+    if (!exe) throw new Error('Vortex.exe was not found.');
+    require('child_process').spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
+  });
   handle('updates:check', () => manager.checkUpdates());
   handle('updates:apply', ids => manager.updateMods(ids));
   handle('mods:repair', ids => manager.repair(ids));
@@ -289,5 +323,37 @@ async function boot() {
 process.on('uncaughtException', err => logger.error(`Unexpected error: ${err.message}`, err.stack));
 process.on('unhandledRejection', err => logger.error(`Unhandled promise rejection: ${err?.message || err}`, err?.stack));
 
-app.whenReady().then(boot);
+/*
+ * Nexus "Mod Manager Download" links (nxm://). Off by default; when switched on in Settings this app
+ * becomes the handler and a clicked link starts downloading here. Windows hands the link to a new
+ * process, which passes it to the running one and exits (single instance).
+ */
+function applyNxmSetting() {
+  const args = process.defaultApp ? [path.resolve(process.argv[1] || '.')] : [];
+  if (settings.get('handleNxm')) {
+    if (app.setAsDefaultProtocolClient('nxm', process.execPath, args)) logger.info('This app now handles Nexus "Mod Manager Download" links');
+  } else if (app.isDefaultProtocolClient('nxm', process.execPath, args)) {
+    app.removeAsDefaultProtocolClient('nxm', process.execPath, args);
+    logger.info('Nexus "Mod Manager Download" links are no longer handled by this app');
+  }
+}
+
+const pendingNxm = [];
+function handleNxmArgs(argv) {
+  for (const a of argv) {
+    if (!/^nxm:\/\//i.test(a)) continue;
+    if (!manager) { pendingNxm.push(a); continue; }
+    manager.handleNxm(a)
+      .then(r => send('toast', { text: r.queued ? `Downloading ${r.file}` : `${r.file} is already downloaded`, kind: 'success' }))
+      .catch(err => logger.error('Could not start that Nexus download', err.message));
+    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+  }
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => handleNxmArgs(argv));
+  app.whenReady().then(boot).then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); });
+}
 app.on('window-all-closed', () => app.quit());

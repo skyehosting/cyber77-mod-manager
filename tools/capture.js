@@ -42,8 +42,13 @@ const STATES = {
   'drawer-conflicts': { only: ['fhd-100', 'fhd-150', 'min-window'], run: "goTo('mods'); openDrawer('m12', 'conflicts');" },
   'drawer-update': { only: ['fhd-100'], run: "goTo('mods'); openDrawer('m9', 'health');" },
   deps: { only: ['fhd-100', 'fhd-150', 'qhd-100', 'min-window'], run: "goTo('downloads'); chooseRequirements(window.demoPlan);" },
-  profiles: { only: ['fhd-100', 'fhd-150', 'min-window'], run: "goTo('mods'); openProfiles();" },
-  'profile-import': { only: ['fhd-100', 'fhd-150', 'min-window'], run: "goTo('mods'); demoImport();" },
+  profiles: { all: true, run: "goTo('profiles');" },
+  'profile-delete': { only: ['fhd-100'], run: "goTo('profiles'); prof.confirming = 'p3'; renderProfilesPage(true);" },
+  'profile-new': { only: ['fhd-100', 'min-window'], run: "goTo('profiles'); newProfileDialog();" },
+  'profile-import': { only: ['fhd-100', 'fhd-150', 'min-window'], run: 'demoImport();' },
+  files: { only: ['fhd-100', 'fhd-150', 'qhd-100', '4k-200', 'min-window'], run: "goTo('downloads'); chooseFiles(window.demoPlan);" },
+  menu: { only: ['fhd-100', 'min-window'], run: "goTo('mods'); document.querySelector('#mods-more').click();" },
+  'mods-vortex': { only: ['fhd-100'], run: "setModFilter('vortex');" },
   'mods-updates': { only: ['fhd-100'], run: "setModFilter('updates');" },
   fomod: { only: ['fhd-100', 'fhd-150', '4k-200', 'uw-3440', 'sxga-54', 'min-window'], run: 'demoWizard();' },
   confirm: { only: ['fhd-100', 'min-window'], run: "goTo('mods'); confirmBox('Uninstall mods', 'Uninstall 2 mods? Their files leave the game folder. The downloaded archives stay in your library.', 'Uninstall', true);" },
@@ -91,7 +96,7 @@ async function cdpConnect() {
   fs.mkdirSync(OUT, { recursive: true });
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-capture-'));
   const electron = require(path.join(ROOT, 'node_modules', 'electron'));
-  const child = spawn(electron, [ROOT, `--remote-debugging-port=${PORT}`], { env: { ...process.env, CMM_USER_DATA: userData, CMM_CAPTURE: '1' }, stdio: 'ignore' });
+  const child = spawn(electron, [ROOT, `--remote-debugging-port=${PORT}`], { env: { ...process.env, CMM_USER_DATA: userData, CMM_CAPTURE: '1', CMM_VORTEX_APPDATA: '' }, stdio: 'ignore' });
   const shots = [];
   try {
     const { ws, send, evaluate } = await cdpConnect();

@@ -21,6 +21,7 @@ class Settings {
       autoInstall: 'main', // 'off' | 'main' | 'all'
       autoEnable: true,
       installDependencies: true,
+      handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
     });
   }
@@ -62,6 +63,7 @@ class Settings {
     }
     if ('autoEnable' in patch) d.autoEnable = !!patch.autoEnable;
     if ('installDependencies' in patch) d.installDependencies = !!patch.installDependencies;
+    if ('handleNxm' in patch) d.handleNxm = !!patch.handleNxm;
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }

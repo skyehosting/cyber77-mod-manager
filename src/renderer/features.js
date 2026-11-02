@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, icon, run, toast, plural, fmtSize, state, modAction, drawerSections, snapshotHooks, withModal, showModal, keepFocus */
+/* global api, $, h, icon, run, toast, plural, fmtSize, state, modAction, drawerSections, snapshotHooks, withModal, showModal, keepFocus, pageHooks, goTo, setModFilter, CAT_LABEL */
 
 // ---------------------------------------------------------------- mod details: update and health
 
@@ -48,9 +48,8 @@ const DEP_STATUS = {
 const isHttps = url => /^https:\/\//i.test(url || '');
 
 /**
- * Read the links, then — if the mods have requirements — show them as a checklist before anything
- * is downloaded. Requirements that are missing start ticked; ones already covered are shown so the
- * user can see why they are skipped.
+ * Read the links, let the user pick which files to get (grouped by the mod page's categories), then
+ * — if the mods have requirements — show those as a checklist before anything is downloaded.
  */
 async function downloadLinks(text) {
   const plan = await run(api.planLinks(text));
@@ -59,24 +58,143 @@ async function downloadLinks(text) {
     toast(plan.errors[0] || 'No mods found in those links', 'error');
     return { mods: 0, queued: 0, skipped: 0, dependencies: 0, external: [], errors: plan.errors };
   }
+  const files = await chooseFiles(plan);
+  if (files === null) {
+    toast('Download cancelled');
+    return null;
+  }
   let chosen = [];
   if (plan.deps.length) {
-    chosen = await chooseRequirements(plan);
+    chosen = await chooseRequirements(plan, files);
     if (chosen === null) {
       toast('Download cancelled');
       return null;
     }
   }
-  return run(api.queuePlan(plan.token, chosen));
+  return run(api.queuePlan(plan.token, chosen, files));
 }
 
-function chooseRequirements(plan) {
+const FILE_GROUPS = [
+  ['MAIN', 'Main files'], ['UPDATE', 'Updates'], ['OPTIONAL', 'Optional files'],
+  ['MISCELLANEOUS', 'Miscellaneous'], ['OLD_VERSION', 'Old versions'], ['ARCHIVED', 'Archived'],
+];
+const fmtDate = t => (t ? new Date(t * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
+
+/** Every file of every mod, by category, ticked as the mod page suggests. Resolves {modId: [fileIds]} or null. */
+function chooseFiles(plan) {
+  return withModal(() => new Promise(resolve => {
+    const m = $('#modal');
+    m.className = 'modal large';
+    m.setAttribute('aria-labelledby', 'files-title');
+    const boxes = []; // [checkbox, mod, file]
+    const groupBoxes = []; // [checkbox, its file boxes]
+    const modCounts = []; // [element, mod, its file boxes]
+
+    const fileRow = (mod, f) => {
+      const box = h('input', { type: 'checkbox', checked: !!f.selected, 'aria-label': `Download ${f.name}`, onchange: refresh });
+      boxes.push([box, mod, f]);
+      const meta = [f.version ? `v${f.version}` : '', f.size ? fmtSize(f.size) : '', fmtDate(f.uploaded)].filter(Boolean);
+      return { box, el: h('label', { class: 'pick' },
+        h('span', { class: 'pick-check' }, box),
+        h('span', { class: 'pick-main' },
+          h('span', { class: 'pick-name' },
+            h('span', { class: 'name', title: f.fileName }, f.name),
+            f.downloaded ? h('span', { class: 'tag', title: 'Already in your downloads: it is not downloaded again' }, 'Downloaded') : null),
+          f.description ? h('span', { class: 'pick-desc', title: f.description }, f.description) : null),
+        h('span', { class: 'pick-meta' }, meta.map(x => h('span', {}, x)))) };
+    };
+
+    const groupEl = (mod, [cat, label], list) => {
+      const rows = list.map(f => fileRow(mod, f));
+      const mine = rows.map(r => r.box);
+      const all = h('input', { type: 'checkbox', 'aria-label': `All ${label.toLowerCase()} of ${mod.name}`, onchange: ev => { mine.forEach(b => { b.checked = ev.target.checked; }); refresh(); } });
+      groupBoxes.push([all, mine]);
+      const head = h('div', { class: 'pick-group-head' },
+        h('label', { class: 'pick-all' }, all, h('span', {}, label)),
+        h('span', { class: 'count' }, String(list.length)));
+      // Old and archived files stay folded unless one of them is already ticked.
+      const folded = ['OLD_VERSION', 'ARCHIVED'].includes(cat) && !list.some(f => f.selected);
+      if (folded) {
+        return h('details', { class: 'pick-group' },
+          h('summary', {}, h('span', {}, label), h('span', { class: 'count' }, String(list.length))),
+          h('div', { class: 'pick-group-head pick-group-inner' }, h('label', { class: 'pick-all' }, all, h('span', {}, `Select all ${label.toLowerCase()}`))),
+          h('div', { class: 'pick-rows' }, rows.map(r => r.el)));
+      }
+      return h('section', { class: 'pick-group' }, head, h('div', { class: 'pick-rows' }, rows.map(r => r.el)));
+    };
+
+    const modEl = mod => {
+      const start = boxes.length;
+      const known = new Set(FILE_GROUPS.map(([c]) => c));
+      const groups = [...FILE_GROUPS, ...[...new Set(mod.allFiles.map(f => f.category))].filter(c => !known.has(c)).map(c => [c, CAT_LABEL[c] || c])];
+      const els = groups.map(g => [g, mod.allFiles.filter(f => f.category === g[0])]).filter(([, l]) => l.length).map(([g, l]) => groupEl(mod, g, l));
+      const mine = boxes.slice(start).map(([b]) => b);
+      const counter = h('span', { class: 'pick-mod-count' });
+      modCounts.push([counter, mod, mine]);
+      return h('div', { class: 'pick-mod' },
+        h('div', { class: 'pick-mod-head' },
+          h('div', { class: 'pick-mod-title' },
+            h('span', { class: 'name' }, mod.name),
+            h('span', { class: 'subname' }, [mod.author ? `by ${mod.author}` : '', plural(mod.allFiles.length, 'file')].filter(Boolean).join(' · '))),
+          counter),
+        mod.summary ? h('p', { class: 'pick-summary' }, mod.summary) : null,
+        mod.allFiles.length ? els : h('p', { class: 'hint' }, 'This mod has no files to download.'));
+    };
+
+    const countLine = h('span', { class: 'foot-note' });
+    const goBtn = h('button', { class: 'btn btn-primary', onclick: () => close(picked()) });
+    const picked = () => {
+      const out = {};
+      for (const mod of plan.mods) out[mod.modId] = [];
+      for (const [b, mod, f] of boxes) if (b.checked) out[mod.modId].push(Number(f.fileId));
+      return out;
+    };
+    function refresh() {
+      for (const [all, mine] of groupBoxes) {
+        const n = mine.filter(b => b.checked).length;
+        all.checked = n === mine.length;
+        all.indeterminate = n > 0 && n < mine.length;
+      }
+      for (const [el, , mine] of modCounts) el.textContent = `${mine.filter(b => b.checked).length} of ${mine.length} selected`;
+      const ticked = boxes.filter(([b]) => b.checked).map(([, , f]) => f);
+      const size = ticked.filter(f => !f.downloaded).reduce((n, f) => n + (f.size || 0), 0);
+      countLine.textContent = ticked.length ? `${plural(ticked.length, 'file')}${size ? ` · ${fmtSize(size)} to download` : ''}` : 'Nothing selected';
+      goBtn.disabled = !ticked.length;
+      goBtn.textContent = plan.deps.length ? 'Next: requirements' : `Download ${plural(ticked.length, 'file')}`;
+    }
+    const setAll = on => { boxes.forEach(([b]) => { b.checked = on; }); refresh(); };
+    const suggested = () => { boxes.forEach(([b, , f]) => { b.checked = !!f.selected; }); refresh(); };
+
+    const total = plan.mods.reduce((n, x) => n + x.allFiles.length, 0);
+    m.replaceChildren(
+      h('div', { class: 'modal-head' },
+        h('h3', { id: 'files-title' }, 'Choose files'),
+        h('div', { class: 'sub' }, `${plan.mods.length === 1 ? plan.mods[0].name : plural(plan.mods.length, 'mod')} · ${plural(total, 'file')} on Nexus`)),
+      h('div', { class: 'pick-tools' },
+        h('span', { class: 'hint' }, 'Files in the categories chosen in Settings are ticked. Untick what you do not want, or add older versions.'),
+        h('span', { class: 'pick-tools-btns' },
+          h('button', { class: 'link-btn', onclick: () => setAll(true) }, 'Select all'),
+          h('button', { class: 'link-btn', onclick: () => setAll(false) }, 'Select none'),
+          h('button', { class: 'link-btn', onclick: suggested }, 'Suggested'))),
+      h('div', { class: 'modal-body pick-body' }, plan.mods.map(modEl)),
+      h('div', { class: 'modal-foot' },
+        countLine,
+        h('button', { class: 'btn', onclick: () => close(null) }, 'Cancel'),
+        goBtn),
+    );
+    refresh();
+    const close = v => { hide(); resolve(v); };
+    const hide = showModal({ focus: '.btn-primary', onDismiss: () => close(null) });
+  }));
+}
+
+function chooseRequirements(plan, files = null) {
   return withModal(() => new Promise(resolve => {
     const m = $('#modal');
     m.className = 'modal medium';
     m.setAttribute('aria-labelledby', 'deps-title');
     const boxes = [];
-    const fileCount = plan.mods.reduce((n, x) => n + x.files.length, 0);
+    const fileCount = files ? Object.values(files).reduce((n, x) => n + x.length, 0) : plan.mods.reduce((n, x) => n + x.files.length, 0);
     const pickable = plan.deps.filter(d => DEP_STATUS[d.status]?.pick);
 
     const depRow = d => {
@@ -100,7 +218,7 @@ function chooseRequirements(plan) {
     const goBtn = h('button', { class: 'btn btn-primary', onclick: () => close(boxes.filter(([b]) => b.checked).map(([, d]) => d.modId)) });
     function refresh() {
       const ticked = boxes.filter(([b]) => b.checked).map(([, d]) => d);
-      const downloads = plan.mods.length + ticked.filter(d => d.status === 'missing').length;
+      const downloads = (files ? Object.values(files).filter(x => x.length).length : plan.mods.length) + ticked.filter(d => d.status === 'missing').length;
       const enables = ticked.filter(d => d.status !== 'missing').length;
       countLine.textContent = pickable.length ? `${ticked.length} of ${plural(pickable.length, 'requirement')} selected` : 'Every requirement is already covered';
       goBtn.textContent = `Download ${plural(downloads, 'mod')}${enables ? ` · ${enables === 1 ? 'enable 1' : `enable ${enables}`}` : ''}`;
@@ -129,33 +247,8 @@ function chooseRequirements(plan) {
   }));
 }
 
-// ---------------------------------------------------------------- profiles
+// ---------------------------------------------------------------- profiles page
 
-function renderProfiles(p) {
-  if (!p) return;
-  const sel = $('#profile-select');
-  const want = p.list.map(x => `${x.id}:${x.name}:${x.count}`).join('|');
-  if (sel.dataset.sig !== want) {
-    sel.replaceChildren(...p.list.map(x => h('option', { value: x.id }, `${x.name} · ${x.count}`)));
-    sel.dataset.sig = want;
-  }
-  sel.value = p.active;
-  const active = p.list.find(x => x.id === p.active);
-  const btn = $('#profile-manage');
-  btn.title = `Manage profiles (active: ${active?.name || '—'})`;
-  btn.setAttribute('aria-label', `Manage profiles. Active profile: ${active?.name || 'none'}`);
-  btn.dataset.initial = (active?.name || '?').trim().charAt(0).toUpperCase();
-}
-
-$('#profile-select').addEventListener('change', async ev => {
-  const id = ev.target.value;
-  const p = state.snap.profiles?.list.find(x => x.id === id);
-  if (state.gameRunning) toast('The game is running: the new profile takes effect when you restart it');
-  const ok = await run(api.switchProfile(id), p ? `Switched to "${p.name}"` : null);
-  if (ok === null) renderProfiles(state.snap.profiles);
-});
-
-let profilesRedraw = null;
 // A named seam (the screenshot harness supplies a demo plan instead of a file dialog).
 // eslint-disable-next-line no-var
 var pickProfileFile = () => run(api.importProfilePlan());
@@ -169,230 +262,250 @@ const IMPORT_STATUS = {
   unavailable: { label: 'Not available', tag: 'tag-err', ok: false },
 };
 
-function openProfiles() {
+const prof = {
+  editing: null,     // profile id being renamed
+  confirming: null,  // profile id waiting for delete confirmation
+  busy: false,       // a switch/delete/export call is in flight
+  sig: '',
+};
+
+/** One action at a time. The clicked button shows it is working (disabled, aria-busy, its own label). */
+const profGuard = (fn, workingLabel = '') => async ev => {
+  if (prof.busy) return;
+  prof.busy = true;
+  const btn = ev?.currentTarget instanceof HTMLButtonElement ? ev.currentTarget : null;
+  const label = btn?.querySelector('span:last-child') || btn;
+  const old = label?.textContent;
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); if (workingLabel && label) label.textContent = workingLabel; }
+  try { await fn(ev); } finally {
+    prof.busy = false;
+    if (btn && document.contains(btn)) { btn.disabled = false; btn.removeAttribute('aria-busy'); if (workingLabel && label) label.textContent = old; }
+  }
+};
+
+const profFocus = key => $('#prof-grid').querySelector(`[data-key="${key}"]`)?.focus();
+const initialOf = name => (String(name).trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
+const fmtDay = t => (t ? new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
+
+function switchTo(x) {
+  if (state.gameRunning) toast('The game is running: the new profile takes effect when you restart it');
+  return run(api.switchProfile(x.id), `Switched to "${x.name}"`);
+}
+
+function exportProfile(x) {
+  return profGuard(async () => {
+    const r = await run(api.exportProfile(x.id));
+    if (r) toast(`Exported "${x.name}" (${plural(r.count, 'mod')})`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
+  }, 'Exporting…');
+}
+
+function profileCard(x, p) {
+  const active = x.id === p.active;
+  const key = action => ({ key: `${x.id}:${action}` });
+  const head = (...extra) => h('div', { class: 'prof-head' },
+    h('span', { class: 'prof-avatar', 'aria-hidden': 'true' }, initialOf(x.name)),
+    ...extra);
+
+  if (prof.confirming === x.id) {
+    return h('article', { class: 'card prof-card confirming', 'aria-label': `Delete ${x.name}?` },
+      head(h('div', { class: 'prof-title' }, h('span', { class: 'name' }, `Delete "${x.name}"?`))),
+      h('p', { class: 'prof-meta' }, 'Its list of enabled mods and its conflict order are lost. The mods themselves are not touched.'),
+      h('div', { class: 'prof-actions' },
+        h('button', { class: 'btn btn-sm', dataset: key('cancel'), onclick: () => { prof.confirming = null; renderProfilesPage(true); profFocus(`${x.id}:delete`); } }, 'Cancel'),
+        h('button', { class: 'btn btn-sm btn-danger', dataset: key('confirm'), onclick: profGuard(async () => { await run(api.deleteProfile(x.id), `Deleted "${x.name}"`); prof.confirming = null; renderProfilesPage(true); }) }, 'Delete')));
+  }
+
+  let title;
+  if (prof.editing === x.id) {
+    const input = h('input', { type: 'text', value: x.name, 'aria-label': `New name for ${x.name}`, maxlength: '60', dataset: key('name-input') });
+    let done = false;
+    const finish = async save => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      if (prof.editing === x.id) prof.editing = null;
+      if (save && name && name !== x.name) await run(api.renameProfile(x.id, name));
+      if (prof.editing) return; // another rename started meanwhile: leave its input alone
+      renderProfilesPage(true);
+      profFocus(`${x.id}:rename`);
+    };
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    setTimeout(() => { if (document.contains(input)) { input.focus(); input.select(); } });
+    title = h('div', { class: 'prof-title' }, input);
+  } else {
+    title = h('div', { class: 'prof-title' },
+      h('span', { class: 'name', title: x.name }, x.name),
+      active ? h('span', { class: 'tag tag-ok' }, 'Active') : null);
+  }
+
+  return h('article', { class: `card prof-card${active ? ' active' : ''}`, 'aria-label': `${x.name}${active ? ' (active)' : ''}` },
+    head(title,
+      h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('rename'), title: 'Rename', 'aria-label': `Rename ${x.name}`, onclick: () => { prof.editing = x.id; renderProfilesPage(true); } }, icon('edit'))),
+    h('div', { class: 'prof-stats' },
+      h('div', { class: 'prof-stat' }, h('b', {}, String(x.count)), h('span', {}, x.count === 1 ? 'mod enabled' : 'mods enabled')),
+      x.created ? h('div', { class: 'prof-stat' }, h('b', {}, fmtDay(x.created)), h('span', {}, 'created')) : null),
+    h('div', { class: 'prof-actions' },
+      active
+        ? h('span', { class: 'prof-live' }, icon('check'), h('span', {}, 'In use'))
+        : h('button', { class: 'btn btn-sm btn-primary', dataset: key('switch'), onclick: profGuard(() => switchTo(x), 'Switching…') }, icon('play'), h('span', {}, 'Activate')),
+      h('button', { class: 'btn btn-sm', dataset: key('export'), title: 'Save this profile to a file you can send to someone', 'aria-label': `Export ${x.name}`, onclick: exportProfile(x) }, icon('share'), h('span', {}, 'Export')),
+      h('button', {
+        class: 'btn btn-sm btn-icon btn-ghost', dataset: key('delete'),
+        title: active ? 'Activate another profile to delete this one' : p.list.length === 1 ? 'The only profile cannot be deleted' : 'Delete',
+        'aria-label': `Delete ${x.name}`,
+        disabled: active || p.list.length === 1,
+        onclick: () => { prof.confirming = x.id; renderProfilesPage(true); profFocus(`${x.id}:cancel`); },
+      }, icon('trash'))));
+}
+
+function vortexProfileCard(x) {
+  return h('article', { class: `card prof-card prof-vortex${x.active ? ' active' : ''}`, 'aria-label': `Vortex profile ${x.name}${x.active ? ' (active in Vortex)' : ''}` },
+    h('div', { class: 'prof-head' },
+      h('span', { class: 'prof-avatar', 'aria-hidden': 'true' }, icon('vortex')),
+      h('div', { class: 'prof-title' }, h('span', { class: 'name', title: x.name }, x.name), x.active ? h('span', { class: 'tag tag-vortex' }, 'Active in Vortex') : null)),
+    h('div', { class: 'prof-stats' },
+      h('div', { class: 'prof-stat' }, h('b', {}, String(x.count)), h('span', {}, x.count === 1 ? 'mod enabled' : 'mods enabled'))),
+    h('div', { class: 'prof-actions' },
+      x.active
+        ? h('button', { class: 'btn btn-sm', onclick: () => { goTo('mods'); setModFilter('vortex'); } }, h('span', {}, 'Show its mods'))
+        : h('span', { class: 'prof-live muted' }, h('span', {}, 'Switch to it in Vortex'))));
+}
+
+function renderProfilesPage(force = false) {
+  const p = state.snap.profiles;
+  if (!p) return;
+  $('#nav-prof-count').textContent = p.list.length > 1 ? String(p.list.length) : '';
+  const vx = state.snap.vortex;
+  const next = JSON.stringify([p, prof.editing, prof.confirming, vx?.profiles]);
+  // Never throw away a rename in progress.
+  if (!force && (next === prof.sig || prof.editing)) return;
+  prof.sig = next;
+  const grid = $('#prof-grid');
+  keepFocus(grid, () => grid.replaceChildren(...p.list.map(x => profileCard(x, p))), '#prof-new');
+  const vxList = vx?.installed ? vx.profiles || [] : [];
+  $('#vx-prof-head').hidden = !vxList.length;
+  $('#vx-prof-grid').replaceChildren(...vxList.map(vortexProfileCard));
+}
+
+/** New profile: a name, and whether it starts with what is enabled now. */
+function newProfileDialog() {
   return withModal(() => new Promise(resolve => {
     const m = $('#modal');
-    m.className = 'modal medium';
-    m.setAttribute('aria-labelledby', 'prof-title');
-    let view = 'list';      // 'list' | 'import'
-    let importPlan = null;
-    let sig = '';
-    let editing = null;     // profile id being renamed
-    let editToken = 0;      // a newer rename makes an older save's redraw stale
-    let confirming = null;  // profile id waiting for delete confirmation
-    let busy = false;       // a create/delete/import call is in flight
-    let closed = false;     // async work that finishes after closing must not touch #modal
-
-    const list = h('div', { class: 'prof-list' });
-    const nameInput = h('input', { type: 'text', placeholder: 'New profile name', 'aria-label': 'New profile name', maxlength: '60' });
+    m.className = 'modal';
+    m.setAttribute('aria-labelledby', 'np-title');
+    const nameInput = h('input', { type: 'text', placeholder: 'e.g. Photo mode, Vanilla+, Playthrough 2', 'aria-label': 'Profile name', maxlength: '60' });
     const copyBox = h('input', { type: 'checkbox', checked: true });
     const err = h('span', { class: 'left', role: 'alert' });
-    // One action at a time. The clicked button shows it is working (disabled, aria-busy, its own label).
-    const guard = (fn, workingLabel = '') => async ev => {
+    let busy = false;
+    const create = async () => {
       if (busy) return;
-      busy = true;
-      const btn = ev?.currentTarget instanceof HTMLButtonElement ? ev.currentTarget : null;
-      const label = btn?.querySelector('span:last-child') || btn;
-      const old = label?.textContent;
-      if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); if (workingLabel && label) label.textContent = workingLabel; }
-      try { await fn(ev); } finally {
-        busy = false;
-        if (btn && document.contains(btn)) { btn.disabled = false; btn.removeAttribute('aria-busy'); if (workingLabel && label) label.textContent = old; }
-      }
-    };
-
-    const row = (x, p) => {
-      const active = x.id === p.active;
-      const key = action => ({ key: `${x.id}:${action}` });
-      if (confirming === x.id) {
-        return h('div', { class: 'prof prof-confirm' },
-          h('span', { class: 'prof-main' }, h('span', { class: 'name' }, `Delete "${x.name}"?`), h('span', { class: 'subname' }, 'Its list of enabled mods is lost. Mods themselves are not touched.')),
-          h('button', { class: 'btn btn-sm', dataset: key('cancel'), onclick: () => { confirming = null; draw(true); list.querySelector(`[data-key="${x.id}:delete"]`)?.focus(); } }, 'Cancel'),
-          h('button', { class: 'btn btn-sm btn-danger', dataset: key('confirm'), onclick: guard(async () => { await run(api.deleteProfile(x.id), `Deleted "${x.name}"`); confirming = null; draw(true); }) }, 'Delete'));
-      }
-      if (editing === x.id) {
-        const token = ++editToken;
-        const input = h('input', { type: 'text', value: x.name, 'aria-label': `New name for ${x.name}`, maxlength: '60' });
-        let done = false;
-        const finish = async save => {
-          if (done) return;
-          done = true;
-          const name = input.value.trim();
-          if (editing === x.id) editing = null;
-          if (save && name && name !== x.name) await run(api.renameProfile(x.id, name));
-          // Another rename started meanwhile: leave its input alone.
-          if (token !== editToken || editing) return;
-          draw(true);
-          list.querySelector(`[data-key="${x.id}:rename"]`)?.focus();
-        };
-        input.addEventListener('keydown', ev => {
-          if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
-          if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
-        });
-        input.addEventListener('blur', () => finish(!cancelEdit));
-        setTimeout(() => { input.focus(); input.select(); });
-        return h('div', { class: `prof${active ? ' active' : ''}` }, h('span', { class: 'prof-main' }, input));
-      }
-      return h('div', { class: `prof${active ? ' active' : ''}` },
-        h('span', { class: 'prof-main' }, h('span', { class: 'name' }, x.name), h('span', { class: 'subname' }, `${plural(x.count, 'mod')} enabled`)),
-        active ? h('span', { class: 'tag tag-ok' }, 'Active') : h('button', { class: 'btn btn-sm', dataset: key('switch'), onclick: guard(() => run(api.switchProfile(x.id), `Switched to "${x.name}"`)) }, 'Switch'),
-        h('button', { class: 'btn btn-sm', dataset: key('export'), title: 'Save this profile to a file you can send to someone', 'aria-label': `Export ${x.name}`, onclick: guard(async () => { const r = await run(api.exportProfile(x.id)); if (r) toast(`Exported "${x.name}" (${plural(r.count, 'mod')})`, 'success', { label: 'Show in folder', fn: () => api.revealExport() }); }) }, icon('share'), h('span', {}, 'Export')),
-        h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('rename'), title: 'Rename', 'aria-label': `Rename ${x.name}`, onclick: () => { editing = x.id; draw(true); } }, icon('edit')),
-        h('button', {
-          class: 'btn btn-sm btn-icon btn-ghost', dataset: key('delete'),
-          title: active ? 'Switch to another profile to delete this one' : 'Delete', 'aria-label': `Delete ${x.name}`,
-          disabled: active || p.list.length === 1,
-          onclick: () => { confirming = x.id; draw(true); list.querySelector(`[data-key="${x.id}:cancel"]`)?.focus(); },
-        }, icon('trash')));
-    };
-    let cancelEdit = false;
-
-    const create = guard(async () => {
       err.textContent = '';
       const name = nameInput.value.trim();
       if (!name) { err.textContent = 'Give the profile a name.'; nameInput.focus(); return; }
+      busy = true;
       const res = await api.createProfile(name, copyBox.checked);
-      if (res.error) { err.textContent = res.error; return; }
-      nameInput.value = '';
+      busy = false;
+      if (res.error) { err.textContent = res.error; nameInput.focus(); return; }
       toast(`Created "${name}"`, 'success');
-    });
+      close(res.ok);
+    };
     nameInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); create(); } });
-
-    const startImport = guard(async () => {
-      err.textContent = '';
-      const plan = await pickProfileFile();
-      if (!plan) return;
-      if (closed) { api.importProfileCancel(plan.token); return; }
-      importPlan = plan;
-      view = 'import';
-      render();
-    }, 'Reading…');
-    const leaveImport = () => {
-      if (busy) return false;
-      if (importPlan) api.importProfileCancel(importPlan.token);
-      importPlan = null;
-      view = 'list';
-      return true;
-    };
-
-    /** The import review: every mod in the shared profile and what importing does with it. */
-    const importView = () => {
-      const plan = importPlan;
-      const count = s => plan.mods.filter(x => s.includes(x.status)).length;
-      const downloadSize = plan.mods.filter(x => ['download', 'newer'].includes(x.status)).reduce((n, x) => n + (x.size || 0), 0);
-      const toDownload = count(['download', 'newer']);
-      const usable = count(['installed', 'downloaded', 'download', 'newer']);
-      // Downloads need a Premium API key: say so before the user commits.
-      const keyProblem = toDownload && (!state.settings?.hasApiKey ? 'no-key' : state.keyUser && !state.keyUser.isPremium ? 'not-premium' : '');
-      const canGet = toDownload && !keyProblem;
-      const nameBox = h('input', { type: 'text', value: plan.name, 'aria-label': 'Profile name', maxlength: '60' });
-      const apply = guard(async () => {
-        const r = await run(api.importProfileApply(plan.token, nameBox.value.trim() || plan.name));
-        if (!r || closed) return;
-        toast(`Profile "${r.name}" created and active${r.downloading ? ` — downloading ${plural(r.downloading, 'mod')}` : ''}`, 'success');
-        importPlan = null;
-        view = 'list';
-        render();
-      }, 'Importing…');
-      // Problems first: the rows the receiver has to act on are never below the fold.
-      const rank = x => (IMPORT_STATUS[x.status]?.ok ? (x.status === 'newer' ? 1 : 2) : 0);
-      const rows = [...plan.mods].sort((a, b) => rank(a) - rank(b));
-      return {
-        title: 'Import profile',
-        sub: `Shared profile · ${plural(plan.mods.length, 'mod')}`,
-        body: [
-          keyProblem ? h('div', { class: 'banner banner-warn', role: 'status' }, icon('key'),
-            h('span', {}, keyProblem === 'no-key'
-              ? `${plural(toDownload, 'mod')} must be downloaded, and no Nexus API key is set. Import now to enable what you already have; after adding your key in Settings, retry them in Downloads.`
-              : `${plural(toDownload, 'mod')} must be downloaded, but your Nexus account is not Premium, so Nexus will refuse the downloads. Get them from their mod pages instead.`)) : null,
-          h('label', { class: 'label' }, 'Name', nameBox),
-          h('div', { class: 'imp-stats' },
-            h('span', {}, h('b', {}, String(count(['installed']))), ' already installed'),
-            toDownload ? h('span', {}, h('b', {}, String(toDownload)), ` to download${downloadSize ? ` (${fmtSize(downloadSize)})` : ''}`) : null,
-            count(['downloaded']) ? h('span', {}, h('b', {}, String(count(['downloaded']))), ' to install') : null,
-            count(['local', 'unavailable']) ? h('span', {}, h('b', {}, String(count(['local', 'unavailable']))), ' not available') : null),
-          h('div', { class: 'dep-list imp-list' }, rows.map(x => {
-            const st = IMPORT_STATUS[x.status] || { label: x.status, tag: '', ok: false };
-            return h('div', { class: `dep${st.ok ? '' : ' dep-done'}` },
-              h('span', { class: 'dep-check' }, icon(st.ok ? 'check' : 'x')),
-              h('span', { class: 'dep-main' },
-                h('span', { class: 'name' }, x.name),
-                h('span', { class: 'subname', title: x.detail }, [x.version ? `v${x.version}` : '', x.detail, x.fomod ? (x.choices ? "installer: the sharer's choices are filled in" : 'installer: you choose its options') : ''].filter(Boolean).join(' · '))),
-              h('span', { class: `tag ${st.tag}` }, st.label));
-          })),
-          h('p', { class: 'hint imp-hint' }, 'Importing creates this profile and switches to it: only its mods are enabled. Your other profiles keep their own mods and conflict order.'),
-        ],
-        foot: [
-          h('button', { class: 'btn', onclick: () => { if (leaveImport()) render(); } }, 'Back'),
-          h('button', { class: 'btn btn-primary', disabled: !usable, title: usable ? '' : 'None of these mods can be set up here', onclick: apply },
-            h('span', {}, canGet || !toDownload ? 'Import and switch' : 'Import what I have')),
-        ],
-        focus: '.btn-primary',
-      };
-    };
-
-    const listView = () => ({
-      title: 'Profiles',
-      sub: 'Each profile remembers which mods are enabled. Switching applies it to the game folder.',
-      body: [
-        list,
-        h('div', { class: 'prof-new' },
-          h('div', { class: 'field-row' }, nameInput, h('button', { class: 'btn', onclick: create }, icon('plus'), h('span', {}, 'Create'))),
-          h('label', { class: 'check' }, copyBox, h('span', {}, 'Start with the mods enabled now (untick for an empty profile)'))),
-      ],
-      foot: [
-        h('button', { class: 'btn foot-left', onclick: startImport, title: 'Set up a profile someone shared with you' }, icon('import'), h('span', {}, 'Import from file')),
-        h('button', { class: 'btn btn-primary', onclick: () => close() }, 'Done'),
-      ],
-    });
-
-    const render = () => {
-      if (closed) return;
-      const v = view === 'import' ? importView() : listView();
-      m.replaceChildren(
-        h('div', { class: 'modal-head' }, h('h3', { id: 'prof-title' }, v.title), h('div', { class: 'sub' }, v.sub)),
-        h('div', { class: 'modal-body' }, ...v.body),
-        h('div', { class: 'modal-foot' }, err, ...v.foot),
-      );
-      if (view === 'list') draw(true);
-      (m.querySelector(v.focus || '.btn-primary'))?.focus();
-    };
-
-    const draw = (force = false) => {
-      if (closed || view !== 'list') return;
-      const p = state.snap.profiles;
-      const next = JSON.stringify([p, editing, confirming]);
-      if (!force && (next === sig || editing)) return; // never throw away a rename in progress
-      sig = next;
-      keepFocus(list, () => list.replaceChildren(...p.list.map(x => row(x, p))), null);
-    };
-
-    render();
-    profilesRedraw = draw;
-    const close = () => {
-      closed = true;
-      if (importPlan) api.importProfileCancel(importPlan.token);
-      profilesRedraw = null;
-      hide();
-      resolve();
-    };
-    const hide = showModal({
-      focus: '.btn-primary',
-      // Esc (or a click outside) first backs out of a rename, a delete confirmation or the import review.
-      onDismiss: () => {
-        if (editing) { cancelEdit = true; editing = null; draw(true); cancelEdit = false; return; }
-        if (confirming) { confirming = null; draw(true); return; }
-        if (view === 'import') { if (leaveImport()) render(); return; }
-        if (busy) return;
-        close();
-      },
-    });
+    m.replaceChildren(
+      h('div', { class: 'modal-head' }, h('h3', { id: 'np-title' }, 'New profile'), h('div', { class: 'sub' }, 'A separate set of enabled mods and conflict order')),
+      h('div', { class: 'modal-body' },
+        h('label', { class: 'label' }, 'Name', nameInput),
+        h('label', { class: 'check' }, copyBox, h('span', {}, 'Start with the mods enabled now'), h('span', { class: 'check-sub' }, 'Untick for an empty profile. Nothing changes in the game folder until you activate it.'))),
+      h('div', { class: 'modal-foot' }, err,
+        h('button', { class: 'btn', onclick: () => close(null) }, 'Cancel'),
+        h('button', { class: 'btn btn-primary', onclick: create }, 'Create')),
+    );
+    const close = v => { hide(); resolve(v); };
+    const hide = showModal({ focus: 'input[type=text]', onDismiss: () => close(null) });
   }));
 }
 
-$('#profile-manage').addEventListener('click', openProfiles);
+/** The import review: every mod in the shared profile and what importing does with it. */
+function importReview(plan) {
+  return withModal(() => new Promise(resolve => {
+    const m = $('#modal');
+    m.className = 'modal medium';
+    m.setAttribute('aria-labelledby', 'imp-title');
+    let busy = false;
+    let finished = false;
+    const count = s => plan.mods.filter(x => s.includes(x.status)).length;
+    const downloadSize = plan.mods.filter(x => ['download', 'newer'].includes(x.status)).reduce((n, x) => n + (x.size || 0), 0);
+    const toDownload = count(['download', 'newer']);
+    const usable = count(['installed', 'downloaded', 'download', 'newer']);
+    // Downloads need a Premium API key: say so before the user commits.
+    const keyProblem = toDownload && (!state.settings?.hasApiKey ? 'no-key' : state.keyUser && !state.keyUser.isPremium ? 'not-premium' : '');
+    const canGet = toDownload && !keyProblem;
+    const nameBox = h('input', { type: 'text', value: plan.name, 'aria-label': 'Profile name', maxlength: '60' });
+    const label = h('span', {}, canGet || !toDownload ? 'Import and activate' : 'Import what I have');
+    const applyBtn = h('button', { class: 'btn btn-primary', disabled: !usable, title: usable ? '' : 'None of these mods can be set up here' }, label);
+    applyBtn.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
+      applyBtn.disabled = true;
+      applyBtn.setAttribute('aria-busy', 'true');
+      label.textContent = 'Importing…';
+      const r = await run(api.importProfileApply(plan.token, nameBox.value.trim() || plan.name));
+      busy = false;
+      if (!r) { applyBtn.disabled = false; applyBtn.removeAttribute('aria-busy'); label.textContent = 'Import and activate'; return; }
+      finished = true;
+      toast(`Profile "${r.name}" created and active${r.downloading ? ` — downloading ${plural(r.downloading, 'mod')}` : ''}`, 'success');
+      close(r);
+    });
+    // Problems first: the rows the receiver has to act on are never below the fold.
+    const rank = x => (IMPORT_STATUS[x.status]?.ok ? (x.status === 'newer' ? 1 : 2) : 0);
+    const rows = [...plan.mods].sort((a, b) => rank(a) - rank(b));
+    m.replaceChildren(
+      h('div', { class: 'modal-head' }, h('h3', { id: 'imp-title' }, 'Import profile'), h('div', { class: 'sub' }, `Shared profile · ${plural(plan.mods.length, 'mod')}`)),
+      h('div', { class: 'modal-body' },
+        keyProblem ? h('div', { class: 'banner banner-warn', role: 'status' }, icon('key'),
+          h('span', {}, keyProblem === 'no-key'
+            ? `${plural(toDownload, 'mod')} must be downloaded, and no Nexus API key is set. Import now to enable what you already have; after adding your key in Settings, retry them in Downloads.`
+            : `${plural(toDownload, 'mod')} must be downloaded, but your Nexus account is not Premium, so Nexus will refuse the downloads. Get them from their mod pages instead.`)) : null,
+        h('label', { class: 'label' }, 'Name', nameBox),
+        h('div', { class: 'imp-stats' },
+          h('span', {}, h('b', {}, String(count(['installed']))), ' already installed'),
+          toDownload ? h('span', {}, h('b', {}, String(toDownload)), ` to download${downloadSize ? ` (${fmtSize(downloadSize)})` : ''}`) : null,
+          count(['downloaded']) ? h('span', {}, h('b', {}, String(count(['downloaded']))), ' to install') : null,
+          count(['local', 'unavailable']) ? h('span', {}, h('b', {}, String(count(['local', 'unavailable']))), ' not available') : null),
+        h('div', { class: 'dep-list imp-list' }, rows.map(x => {
+          const st = IMPORT_STATUS[x.status] || { label: x.status, tag: '', ok: false };
+          return h('div', { class: `dep${st.ok ? '' : ' dep-done'}` },
+            h('span', { class: 'dep-check' }, icon(st.ok ? 'check' : 'x')),
+            h('span', { class: 'dep-main' },
+              h('span', { class: 'name' }, x.name),
+              h('span', { class: 'subname', title: x.detail }, [x.version ? `v${x.version}` : '', x.detail, x.fomod ? (x.choices ? "installer: the sharer's choices are filled in" : 'installer: you choose its options') : ''].filter(Boolean).join(' · '))),
+            h('span', { class: `tag ${st.tag}` }, st.label));
+        })),
+        h('p', { class: 'hint imp-hint' }, 'Importing creates this profile and activates it: only its mods are enabled. Your other profiles keep their own mods and conflict order.')),
+      h('div', { class: 'modal-foot' },
+        h('button', { class: 'btn', onclick: () => { if (!busy) close(null); } }, 'Cancel'),
+        applyBtn),
+    );
+    const close = v => {
+      if (!finished) api.importProfileCancel(plan.token);
+      hide();
+      resolve(v);
+    };
+    const hide = showModal({ focus: '.btn-primary', onDismiss: () => { if (!busy) close(null); } });
+  }));
+}
 
-snapshotHooks.push(snap => {
-  renderProfiles(snap.profiles);
-  profilesRedraw?.();
+$('#prof-new').addEventListener('click', async () => {
+  const id = await newProfileDialog();
+  if (id) setTimeout(() => profFocus(`${id}:switch`));
 });
+$('#prof-import').addEventListener('click', profGuard(async () => {
+  const plan = await pickProfileFile();
+  if (plan) await importReview(plan);
+}, 'Reading…'));
+
+pageHooks.profiles = () => renderProfilesPage(true);
+snapshotHooks.push(() => renderProfilesPage());

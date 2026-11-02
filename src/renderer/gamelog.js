@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, plural, fmtTime, state, renderMods, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
+/* global api, $, $, h, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
 
 // ---------------------------------------------------------------- game log page
 
@@ -365,6 +365,12 @@ $('#gl-timeline').addEventListener('scroll', ev => { if (atBottom(ev.currentTarg
 $('#gl-stat-err').addEventListener('click', () => { setLevel('error'); setTab('problems'); });
 $('#gl-stat-warn').addEventListener('click', () => { setLevel('warn'); setTab('problems'); });
 $('#gl-stat-src').addEventListener('click', () => setTab('sources'));
+// Export the lines this view shows (its search, level and source), with every log's details.
+$('#gl-export').addEventListener('click', async () => {
+  const entries = gl.entries.filter(glMatches);
+  const r = await run(api.exportJson('gamelog', { entries, filter: { tab: gl.tab, level: gl.level, source: gl.source || null, search: gl.q || null } }));
+  if (r) toast(`Saved ${plural(r.count, 'log line')}`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
+});
 
 pageHooks.gamelog = () => renderView();
 snapshotHooks.push(snap => {
@@ -375,7 +381,7 @@ snapshotHooks.push(snap => {
 // Live batches that arrive before the initial snapshot wait, so lines stay in order and unique.
 let early = [];
 api.onGameLog(batch => { if (early) early.push(...batch); else onBatch(batch); });
-api.onGameStatus(s => { gl.status = s; renderGameStatus(); renderMods(); });
+api.onGameStatus(s => { gl.status = s; renderGameStatus(); renderMods(); renderPlay(); });
 api.onGameLogReset(() => {
   gl.entries = [];
   gl.sources.clear();
