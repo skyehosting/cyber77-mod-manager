@@ -21,13 +21,38 @@ class Downloader extends EventEmitter {
     this.queue = [];
     this.active = 0;
     this.nextId = 1;
+    /*
+     * Free (non-Premium) Nexus accounts get no direct download links. Their files wait ('waiting')
+     * until the user clicks "Slow download" for them on the Nexus site: that gives an nxm:// link
+     * with a one-time key, which provideKey() hands to the waiting file. The click is the user's;
+     * the app never clicks for them (Nexus does not allow automating it).
+     */
+    this.freeAccount = false;
+  }
+
+  /** A one-time key (from a clicked nxm:// link) for a file that waits for one. */
+  provideKey(fileId, nxm) {
+    const job = [...this.jobs.values()].find(j => j.fileId === Number(fileId) && j.status === 'waiting');
+    if (!job) return null;
+    Object.assign(job, { nxm, status: 'queued', error: '', attempts: 0 });
+    this.queue.push(job);
+    this.emit('update', publicJob(job));
+    this.log.info(`Got the download key for ${job.fileName}; downloading`);
+    this.pump();
+    return job;
+  }
+
+  /** Put a file aside until the user clicks its download on Nexus. */
+  wait(job) {
+    Object.assign(job, { status: 'waiting', speed: 0, received: 0, error: '' });
+    this.emit('update', publicJob(job));
   }
 
   list() { return [...this.jobs.values()].map(publicJob); }
 
   enqueue(spec) {
     for (const j of this.jobs.values()) {
-      if (j.fileId === spec.fileId && ['queued', 'downloading'].includes(j.status)) {
+      if (j.fileId === spec.fileId && ['queued', 'downloading', 'waiting'].includes(j.status)) {
         // Already coming: make sure it also lands where this request wants it.
         for (const k of ['fomodChoices', 'replaces', 'dependencyOf']) if (spec[k] && !j[k]) j[k] = spec[k];
         if (spec.forProfiles?.length) j.forProfiles = [...new Set([...(j.forProfiles || []), ...spec.forProfiles])];
@@ -45,7 +70,7 @@ class Downloader extends EventEmitter {
   cancel(id) {
     const job = this.jobs.get(id);
     if (!job) return;
-    if (job.status === 'queued') {
+    if (job.status === 'queued' || job.status === 'waiting') {
       this.queue = this.queue.filter(j => j !== job);
       job.status = 'cancelled';
       this.emit('update', publicJob(job));
@@ -58,6 +83,8 @@ class Downloader extends EventEmitter {
   retry(id) {
     const job = this.jobs.get(id);
     if (!job || !['error', 'cancelled'].includes(job.status)) return;
+    // Without Premium a retry needs a fresh click (a key works once and expires).
+    if (this.freeAccount && !job.nxm?.key) { this.wait(job); return; }
     Object.assign(job, { status: 'queued', error: '', received: 0, attempts: 0, cancelled: false });
     this.queue.push(job);
     this.emit('update', publicJob(job));
@@ -73,6 +100,7 @@ class Downloader extends EventEmitter {
   pump() {
     while (this.active < this.getConcurrency() && this.queue.length) {
       const job = this.queue.shift();
+      if (this.freeAccount && !job.nxm?.key) { this.wait(job); continue; }
       this.active++;
       this.run(job).finally(() => {
         this.active--;
@@ -99,6 +127,17 @@ class Downloader extends EventEmitter {
           this.emit('update', publicJob(job));
           this.log.warn(`Cancelled ${job.fileName}`);
           return;
+        }
+        // Nexus refused a direct link: a free account. This and later files wait for a click.
+        if (err.status === 403 && !job.nxm?.key) {
+          if (!this.freeAccount) this.log.warn('Your Nexus account is not Premium: each file needs one click on "Slow download" on Nexus. The Browse page opens each one for you.');
+          this.freeAccount = true;
+          this.wait(job);
+          return;
+        }
+        // A used or expired one-time key: wait for a new click.
+        if (err.status === 403 || err.status === 410) {
+          if (job.nxm?.key) { job.nxm = null; this.wait(job); return; }
         }
         const fatal = err.status && [401, 403, 404].includes(err.status);
         if (fatal || job.attempts >= MAX_ATTEMPTS) {

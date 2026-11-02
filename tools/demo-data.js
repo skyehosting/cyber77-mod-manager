@@ -46,8 +46,9 @@
   const jobs = [
     { id: 9, name: 'Night City Interactions - Voice Pack', modName: 'Night City Interactions', category: 'OPTIONAL', status: 'downloading', received: 612_000_000, total: 1_480_000_000, speed: 38_400_000 },
     { id: 8, name: 'Night City Interactions - Core', modName: 'Night City Interactions', category: 'MAIN', status: 'downloading', received: 51_000_000, total: 64_000_000, speed: 27_100_000 },
+    { id: 10, name: 'Mod Settings - Main', modName: 'Mod Settings', game: 'cyberpunk2077', modId: 4885, fileId: 99001, category: 'MAIN', status: 'waiting', received: 0, total: 900_000, speed: 0, dependencyOf: 'Night City Interactions' },
     { id: 7, name: 'Virtual Atelier', modName: 'Virtual Atelier', category: 'MAIN', status: 'queued', received: 0, total: 3_100_000, speed: 0, dependencyOf: 'Night City Interactions' },
-    { id: 6, name: 'Mod Settings', modName: 'Mod Settings', category: 'MAIN', status: 'error', received: 0, total: 900_000, speed: 0, error: 'Forbidden (403). Direct API download links need a Premium account.' },
+    { id: 6, name: 'Mod Settings', modName: 'Mod Settings', category: 'MAIN', status: 'error', received: 0, total: 900_000, speed: 0, error: 'Forbidden (403). Without Premium, Nexus gives a download only after a click on \"Slow download\".' },
     { id: 5, name: 'ArchiveXL', modName: 'ArchiveXL', category: 'MAIN', status: 'done', received: 1_843_200, total: 1_843_200, speed: 0 },
   ];
   const snap = {
@@ -97,7 +98,7 @@
     ['success', 'Downloaded ArchiveXL-4198-1-28-6.zip (ArchiveXL)'],
     ['success', 'Installed ArchiveXL as RED4ext + Redscript (9 files)'],
     ['warn', 'Rain Overhaul - Heavy: "Heavy/rain.archive" and "Light/rain.archive" both install to archive/pc/mod/rain.archive; kept the first.'],
-    ['error', 'Download failed: Mod Settings (Mod Settings)', 'Forbidden (403). Direct API download links need a Premium account.'],
+    ['error', 'Download failed: Mod Settings (Mod Settings)', 'Forbidden (403). Without Premium, Nexus gives a download only after a click on \"Slow download\".'],
   ];
   logs.forEach(([level, message, detail], i) => addLog({ time: now - (logs.length - i) * 7000, level, message, detail }));
 

@@ -70,7 +70,7 @@ class NexusClient {
       try { msg = (await res.json()).message || ''; } catch { /* body not JSON */ }
       const hints = {
         401: 'API key rejected (401). Check the key on the Settings page.',
-        403: 'Forbidden (403). Direct API download links need a Premium account.',
+        403: 'Forbidden (403). Without Premium, Nexus gives a download only after a click on "Slow download".',
         404: 'Not found (404). Check the mod link.',
         429: 'Rate limit reached (429). Nexus allows 20,000 requests a day / 500 an hour after that.',
       };

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   postponeUpdate: () => call('update:postpone'),
   installUpdate: () => call('update:install'),
   onUpdate: on('update'),
+  onKeyUser: on('key-user'),
   setNxm: on => call('nxm:set', on),
   getSettings: () => call('settings:get'),
   setSettings: patch => call('settings:set', patch),

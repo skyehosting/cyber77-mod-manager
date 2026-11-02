@@ -182,3 +182,21 @@ test('the nxm handler is named from its registered command', () => {
   assert.strictEqual(describe(String.raw`C:\Users\x\Desktop\DMM.exe "%1"`, own), 'DMM');
   assert.strictEqual(describe('', own), '');
 });
+
+test('a clicked "Slow download" (nxm link) continues the file that waits for it', async () => {
+  const { root, game } = fakeGame();
+  const settings = new Settings(path.join(root, 'ud'), null);
+  settings.update({ gamePath: game });
+  const mgr = new ModManager({ settings, log: quiet });
+  mgr.nexus.getDownloadLink = async () => { throw Object.assign(new Error('stop here'), { status: 404 }); };
+  mgr.downloader.freeAccount = true;
+  const job = mgr.downloader.enqueue({ game: 'cyberpunk2077', modId: 5, fileId: 11, name: 'Optional', modName: 'Picker Mod', fileName: 'opt.zip', dest: path.join(root, 'opt.zip') });
+  assert.strictEqual(job.status, 'waiting');
+  let fetched = false;
+  mgr.nexus.getMod = async () => { fetched = true; return {}; };
+  const r = await mgr.handleNxm('nxm://cyberpunk2077/mods/5/files/11?key=k2&expires=9');
+  assert.deepStrictEqual([r.resumed, r.file], [true, 'Optional']);
+  assert.deepStrictEqual(job.nxm, { key: 'k2', expires: '9' });
+  assert.strictEqual(fetched, false, 'no second download is made for it');
+  assert.strictEqual(mgr.downloader.jobs.size, 1);
+});

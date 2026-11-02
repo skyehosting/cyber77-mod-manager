@@ -809,7 +809,8 @@ $('#drawer-close').addEventListener('click', closeDrawer);
  */
 
 const dl = { filter: 'all', speeds: new Array(120).fill(0), sessionBytes: 0, peak: 0, lastReceived: new Map() };
-const ACTIVE = ['queued', 'downloading'];
+// 'waiting': a free account's file, waiting for its "Slow download" click on Nexus.
+const ACTIVE = ['queued', 'downloading', 'waiting'];
 
 function dlRows() {
   const q = $('#dl-search').value.trim().toLowerCase();
@@ -843,6 +844,11 @@ function jobStatusCell(j) {
       h('span', { class: 'prog-meta' }, `${Math.floor(pct)}% · ${fmtSize(j.speed)}/s${eta ? ` · ${fmtEta(eta)}` : ''}`));
   }
   if (j.status === 'queued') return h('span', { class: 'status' }, 'Queued');
+  if (j.status === 'waiting') {
+    return h('span', { class: 'status-wait' },
+      h('span', { class: 'status status-warn', title: 'A free Nexus account downloads each file after one click on "Slow download" on Nexus' }, 'Needs a click'),
+      h('button', { class: 'btn btn-sm btn-primary', dataset: { key: `job:${j.id}:get` }, title: 'Open its Nexus download page', onclick: () => startFreeDownloads(j.id) }, 'Get'));
+  }
   if (j.status === 'error') return h('span', { class: 'status status-err', title: j.error }, 'Failed');
   return h('span', { class: 'status' }, 'Cancelled');
 }
@@ -1076,6 +1082,8 @@ function renderUpdate(st) {
   if (upd.restartAt && !upd.postponed) updTick = setInterval(text, 1000);
 }
 api.onUpdate(renderUpdate);
+// The account type, checked when the app starts.
+api.onKeyUser(u => { state.keyUser = u; renderStatus(); });
 api.updateState().then(r => r.ok && renderUpdate(r.ok));
 $('#update-later').addEventListener('click', () => run(api.postponeUpdate()));
 $('#update-now').addEventListener('click', () => run(api.installUpdate()));
@@ -1181,7 +1189,7 @@ $('#s-validate').addEventListener('click', async () => {
     status.textContent = r.error;
   } else {
     status.className = r.ok.isPremium ? 'hint ok' : 'hint bad';
-    status.textContent = `Signed in as ${r.ok.name} — ${r.ok.isPremium ? 'Premium: direct downloads enabled' : 'not Premium: Nexus will refuse download links'}`;
+    status.textContent = `Signed in as ${r.ok.name} — ${r.ok.isPremium ? 'Premium: direct downloads' : 'free account: one click on "Slow download" per file, then the download continues here'}`;
     state.keyUser = r.ok;
   }
   await loadSettings();
@@ -1233,9 +1241,12 @@ function renderStatus() {
   // Downloads can't work without a key: say so before the user tries.
   const banner = $('#dl-keybanner');
   banner.hidden = !s || (hasKey && (!state.keyUser || state.keyUser.isPremium));
+  banner.classList.toggle('banner-info', !!hasKey);
+  banner.classList.toggle('banner-warn', !hasKey);
   $('#dl-keybanner-text').textContent = hasKey
-    ? 'Your Nexus account is not Premium, so Nexus will refuse direct download links.'
-    : 'Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.';
+    ? 'Free Nexus account: each file downloads after one click on "Slow download" on Nexus. The app opens each file\'s page in Browse in turn; the download continues here.'
+    : 'Add your Nexus Mods API key in Settings before downloading.';
+  $('#dl-keybanner [data-goto]').hidden = !!hasKey;
 }
 
 // ---------------------------------------------------------------- "More" menu

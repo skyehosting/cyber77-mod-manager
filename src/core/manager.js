@@ -192,7 +192,8 @@ class ModManager extends EventEmitter {
   async validateKey() {
     const user = await this.nexus.validate();
     this.log.success(`API key valid: ${user.name}${user.is_premium ? ' (Premium)' : ' (not Premium)'}`);
-    if (!user.is_premium) this.log.warn('Direct downloads through the API need Nexus Premium; without it Nexus refuses download links (403).');
+    this.downloader.freeAccount = !user.is_premium;
+    if (!user.is_premium) this.log.info('Free Nexus account: each file is downloaded after one click on "Slow download" on Nexus (the Browse page opens each one).');
     return { name: user.name, isPremium: !!user.is_premium, isSupporter: !!user.is_supporter, avatar: user.profile_url || '' };
   }
 
@@ -350,6 +351,9 @@ class ModManager extends EventEmitter {
   async handleNxm(url) {
     const link = parseNxm(url);
     if (!link) throw new Error(`Not a Nexus download link: ${url}`);
+    // A file this app is already waiting for (a free account's click): it starts now.
+    const waiting = this.downloader.provideKey(link.fileId, { key: link.key, expires: link.expires });
+    if (waiting) return { name: waiting.modName, file: waiting.name || waiting.fileName, queued: 1, resumed: true };
     const info = await this.fetchModInfo(link.game, link.modId);
     const f = info.files.find(x => Number(x.file_id) === link.fileId);
     if (!f) throw new Error(`${info.name}: that file is no longer on Nexus.`);

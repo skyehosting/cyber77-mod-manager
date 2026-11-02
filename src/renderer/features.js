@@ -451,8 +451,9 @@ function importReview(plan) {
     const downloadSize = plan.mods.filter(x => ['download', 'newer'].includes(x.status)).reduce((n, x) => n + (x.size || 0), 0);
     const toDownload = count(['download', 'newer']);
     const usable = count(['installed', 'downloaded', 'download', 'newer']);
-    // Downloads need a Premium API key: say so before the user commits.
-    const keyProblem = toDownload && (!state.settings?.hasApiKey ? 'no-key' : state.keyUser && !state.keyUser.isPremium ? 'not-premium' : '');
+    // Downloads need an API key (and, without Premium, a click per file): say so before the user commits.
+    const keyProblem = toDownload && (!state.settings?.hasApiKey ? 'no-key' : '');
+    const freeAccount = toDownload && state.keyUser && !state.keyUser.isPremium;
     const canGet = toDownload && !keyProblem;
     const nameBox = h('input', { type: 'text', value: plan.name, 'aria-label': 'Profile name', maxlength: '60' });
     const label = h('span', {}, canGet || !toDownload ? 'Import and activate' : 'Import what I have');
@@ -477,9 +478,9 @@ function importReview(plan) {
       h('div', { class: 'modal-head' }, h('h3', { id: 'imp-title' }, 'Import profile'), h('div', { class: 'sub' }, `Shared profile · ${plural(plan.mods.length, 'mod')}`)),
       h('div', { class: 'modal-body' },
         keyProblem ? h('div', { class: 'banner banner-warn', role: 'status' }, icon('key'),
-          h('span', {}, keyProblem === 'no-key'
-            ? `${plural(toDownload, 'mod')} must be downloaded, and no Nexus API key is set. Import now to enable what you already have; after adding your key in Settings, retry them in Downloads.`
-            : `${plural(toDownload, 'mod')} must be downloaded, but your Nexus account is not Premium, so Nexus will refuse the downloads. Get them from their mod pages instead.`)) : null,
+          h('span', {}, `${plural(toDownload, 'mod')} must be downloaded, and no Nexus API key is set. Import now to enable what you already have; after adding your key in Settings, retry them in Downloads.`)) : null,
+        freeAccount ? h('div', { class: 'banner banner-info', role: 'status' }, icon('info'),
+          h('span', {}, `Free Nexus account: each of the ${plural(toDownload, 'file')} to download needs one click on "Slow download". After importing, the app opens each file's page in turn.`)) : null,
         plan.localCount ? h('div', { class: 'banner banner-info', role: 'status' }, icon('info'),
           h('span', {}, `The sender also has ${plural(plan.localCount, 'mod')} installed from local files. Codes and profile files can't carry those: ask them for the archives.`)) : null,
         h('label', { class: 'label' }, 'Name', nameBox),

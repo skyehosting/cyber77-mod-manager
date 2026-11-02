@@ -1381,8 +1381,7 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .detail-thumb[hidden] { display: none; }
 .detail-title { flex: 1 1 16rem; min-width: 0; }
 .detail-title h1 { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.detail-tabs { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
-.detail-load { color: var(--muted); font-size: var(--fs-sm); }
+.detail-load { margin-top: 0.15rem; color: var(--muted); font-size: var(--fs-xs); }
 .detail-view { flex: 1; min-height: 12rem; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: #101010; }
 .nexus-view { display: flex; width: 100%; height: 100%; border: 0; }
 
@@ -1407,8 +1406,12 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .update-bar .btn { flex: none; }
 
 /* The sign-in page: no mod tabs and no Download button. */
-.browse-detail.is-page #bd-tabs, .browse-detail.is-page #bd-download { display: none; }
+.browse-detail.is-page #bd-download { display: none; }
 
 /* ================================================================== profile share codes */
 .code-tag { font-family: var(--mono); letter-spacing: 0.06em; }
 .code-box { width: 100%; min-height: 7rem; resize: vertical; font: var(--fs-sm)/1.45 var(--mono); word-break: break-all; }
+
+/* ================================================================== free accounts */
+.status-wait { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.status-warn { color: var(--warn); }

@@ -1,5 +1,6 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, plural, state, store, debounce, pageHooks, snapshotHooks, setSegActive, downloadLinks, goTo */
+/* global api, $, $, h, icon, run, toast, plural, state, store, debounce, pageHooks, snapshotHooks, setSegActive, downloadLinks, goTo */
+/* exported startFreeDownloads */
 
 // ---------------------------------------------------------------- Browse Nexus
 
@@ -19,7 +20,6 @@ const br = {
   seq: 0,          // a newer search makes an older answer stale
   loaded: false,   // the first search runs when the page is first opened
   mod: null,       // the mod open in the page view
-  tab: 'description',
 };
 
 /** Mod ids this app or Vortex already has, to mark them in the results. */
@@ -92,11 +92,8 @@ async function quickDownload(modId) {
 
 let view = null; // the <webview>, made once and reused
 
-function showTab(tab, pageUrl = '') {
-  br.tab = tab;
-  setSegActive('#bd-tabs', 'tab', tab);
-  $$('#bd-tabs .seg-btn').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab ? 'true' : 'false'));
-  const url = pageUrl || modPage(br.mod.modId, tab);
+/** Show a Nexus page in the page view (its own tabs take it from there). */
+function showPage(url) {
   if (!view) {
     view = document.createElement('webview');
     view.className = 'nexus-view';
@@ -118,23 +115,73 @@ function showTab(tab, pageUrl = '') {
   }
 }
 
-/** The page view without a mod: Nexus's own sign-in page. The login stays for these pages. */
+/** The page view without mod tabs: a single Nexus page (sign-in, a file's download page). */
 const SIGN_IN = 'https://users.nexusmods.com/auth/sign_in';
-function openLogin() {
+function openPage({ title, meta, url, thumb = '' }) {
   br.mod = null;
+  br.pageUrl = url;
   $('#browse-list').hidden = true;
   $('#browse-detail').hidden = false;
   $('#browse-detail').classList.add('is-page');
-  $('#bd-name').textContent = 'Nexus Mods account';
-  $('#bd-meta').textContent = 'Sign in once: the pages shown in Browse remember it. Downloading in this app only needs your API key.';
-  $('#bd-thumb').hidden = true;
-  showTab('description', SIGN_IN);
+  $('#bd-name').textContent = title;
+  $('#bd-meta').textContent = meta;
+  $('#bd-thumb').hidden = !thumb;
+  if (thumb) $('#bd-thumb').src = thumb;
+  showPage(url);
+}
+function openLogin() {
+  free.active = false;
+  openPage({ title: 'Nexus Mods account', meta: 'Sign in once: the pages shown in Browse remember it. Downloading in this app only needs your API key.', url: SIGN_IN });
   $('#bd-back').focus();
 }
 $('#browse-login').addEventListener('click', openLogin);
 
+// ---------------------------------------------------------------- free accounts: one click per file
+
+/*
+ * Without Premium, Nexus gives a download only after the user clicks "Slow download" on the file's
+ * page. Files that need it wait in Downloads. This opens their pages one after another: the user
+ * clicks, Nexus hands over a one-time nxm:// key, the download continues in the app, and the next
+ * waiting file opens by itself. The app never clicks for the user: Nexus does not allow that.
+ */
+const free = { active: false, jobId: 0, startSoon: 0 };
+const waitingJobs = () => [...state.jobs.values()].filter(j => j.status === 'waiting').sort((a, b) => a.id - b.id);
+
+function startFreeDownloads(preferId = 0) {
+  const list = waitingJobs();
+  const j = list.find(x => x.id === preferId) || list[0];
+  if (!j) {
+    if (free.active) {
+      free.active = false;
+      toast('Every file has started downloading', 'success', { label: 'Show', fn: () => goTo('downloads') });
+      if ($('#browse-detail').classList.contains('is-free')) closeMod();
+    }
+    return;
+  }
+  free.active = true;
+  free.jobId = j.id;
+  goTo('browse');
+  $('#browse-detail').classList.add('is-free');
+  openPage({
+    title: `Download ${j.name}`,
+    meta: `${j.modName ? `${j.modName} · ` : ''}Free account: click "Slow download" below (sign in to Nexus first if it asks). The download continues in the app${list.length > 1 ? `, then the next file opens · ${list.length - 1} more after this one` : ''}.`,
+    url: `https://www.nexusmods.com/${j.game || GAME}/mods/${j.modId}?tab=files&file_id=${j.fileId}&nmm=1`,
+  });
+}
+
+api.onJob(j => {
+  // This file got its key: on to the next one.
+  if (free.active && j.id === free.jobId && j.status !== 'waiting') { setTimeout(() => startFreeDownloads(), 600); return; }
+  // New files to click for (a download, an update, an import): open the first one.
+  if (j.status === 'waiting' && !free.active) {
+    clearTimeout(free.startSoon);
+    free.startSoon = setTimeout(() => { if (!free.active) startFreeDownloads(); }, 400);
+  }
+});
+
 function openMod(m) {
-  $('#browse-detail').classList.remove('is-page');
+  $('#browse-detail').classList.remove('is-page', 'is-free');
+  free.active = false;
   br.mod = m;
   $('#browse-list').hidden = true;
   $('#browse-detail').hidden = false;
@@ -144,13 +191,15 @@ function openMod(m) {
   const thumb = $('#bd-thumb');
   thumb.hidden = !m.thumbnail;
   if (m.thumbnail) thumb.src = m.thumbnail;
-  showTab('description');
+  showPage(modPage(m.modId));
   $('#bd-back').focus();
 }
 
 function closeMod() {
   $('#browse-detail').hidden = true;
-  $('#browse-detail').classList.remove('is-page');
+  $('#browse-detail').classList.remove('is-page', 'is-free');
+  // Leaving the page view pauses the click-through; waiting files keep their Get button.
+  free.active = false;
   $('#browse-list').hidden = false;
   const card = br.mod && $(`#browse-grid [data-id="${br.mod.modId}"] .mod-card-hit`);
   br.mod = null;
@@ -159,10 +208,10 @@ function closeMod() {
 
 $('#bd-back').addEventListener('click', closeMod);
 $('#bd-download').addEventListener('click', () => br.mod && quickDownload(br.mod.modId));
-$('#bd-external').addEventListener('click', () => api.openNexusPage(br.mod ? modPage(br.mod.modId, br.tab) : SIGN_IN));
-$('#bd-tabs').addEventListener('click', ev => {
-  const b = ev.target.closest('.seg-btn');
-  if (b && br.mod) showTab(b.dataset.tab);
+$('#bd-external').addEventListener('click', () => {
+  let here = '';
+  try { here = view?.getURL() || ''; } catch { /* not loaded yet */ }
+  api.openNexusPage(here || (br.mod ? modPage(br.mod.modId) : br.pageUrl || SIGN_IN));
 });
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && !$('#browse-detail').hidden && $('#page-browse').classList.contains('active') && $('#modal-back').hidden) closeMod();

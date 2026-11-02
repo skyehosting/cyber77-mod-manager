@@ -162,6 +162,9 @@ async function boot() {
   });
   updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
   updater.start();
+  if (settings.apiKey) {
+    manager.validateKey().then(u => send('key-user', u)).catch(err => logger.warn('Could not check the Nexus API key', err.message));
+  }
   applyAdBlock();
 
   gameLogs = new GameLogMonitor({
@@ -454,6 +457,17 @@ function guardWebviews() {
       return { action: 'deny' };
     });
   });
+  const nexusSession = session.fromPartition(NEXUS_PARTITION);
+  nexusSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    if (permission === 'openExternal') {
+      const url = String(details?.externalURL || '');
+      if (/^nxm:\/\//i.test(url)) handleNxmArgs([url]);
+      else if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      callback(false);
+      return;
+    }
+    callback(permission === 'fullscreen');
+  });
   // A "Manual download" clicked in the page: this app downloads it instead, with the file picker.
   session.fromPartition(NEXUS_PARTITION).on('will-download', (ev, item) => {
     ev.preventDefault();
@@ -506,7 +520,7 @@ function handleNxmArgs(argv) {
     if (!/^nxm:\/\//i.test(a)) continue;
     if (!manager) { pendingNxm.push(a); continue; }
     manager.handleNxm(a)
-      .then(r => send('toast', { text: r.queued ? `Downloading ${r.file}` : `${r.file} is already downloaded`, kind: 'success' }))
+      .then(r => send('toast', { text: r.resumed ? `Downloading ${r.file}` : r.queued ? `Downloading ${r.file}` : `${r.file} is already downloaded`, kind: 'success' }))
       .catch(err => logger.error('Could not start that Nexus download', err.message));
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
   }
