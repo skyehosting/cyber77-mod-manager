@@ -1454,3 +1454,10 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .lo-moves { display: flex; gap: 0.15rem; flex: none; opacity: 0; transition: opacity .12s; }
 .lo-row:hover .lo-moves, .lo-row:focus-within .lo-moves { opacity: 1; }
 .lo-hint { margin-top: var(--sp-3); }
+
+/* ================================================================== Mods sort */
+.sort-pick { display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex: none; }
+.sort-label { color: var(--muted); font-size: var(--fs-sm); }
+.sort-pick select { height: var(--control-h); width: auto; font-size: var(--fs-sm); }
+.toolbar.selecting > .sort-pick { display: none; }
+@container (max-width: 62rem) { .sort-label { display: none; } .sort-pick select { max-width: 7rem; } #mods-toolbar .search { width: 9rem; } }

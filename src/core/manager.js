@@ -559,7 +559,7 @@ class ModManager extends EventEmitter {
       id, key: rec.key, name: rec.name, modName: rec.modName, modId: rec.modId, fileId: rec.fileId,
       game: rec.game, version: rec.version, category: rec.category, author: rec.author,
       type: plan.type, files, skipped: plan.skipped.length, warnings: plan.warnings,
-      enabled: false, priority: old?.priority ?? this.data.nextPriority++, installedAt: Date.now(),
+      enabled: false, priority: old?.priority ?? this.data.nextPriority++, installedAt: Date.now(), enabledAt: Date.now(),
       fomod: !!selections, fomodChoices: selections || undefined, dependencyOf: rec.dependencyOf || old?.dependencyOf || '',
     };
     this.data.mods[id] = mod;
@@ -919,7 +919,9 @@ class ModManager extends EventEmitter {
     const clash = (data.mods || []).filter(v => v.enabled && twins[v.vortexId] && this.data.mods[twins[v.vortexId]]?.enabled && (!ids || ids.includes(twins[v.vortexId])));
     if (!clash.length) return { switched: 0 };
     if (!allowClose && await this.vortex.isRunning()) return { switched: 0, waiting: clash.length };
-    await this.vortex.apply(clash.map(v => ({ vortexId: v.vortexId, enabled: false })));
+    const changes = clash.map(v => ({ vortexId: v.vortexId, enabled: false }));
+    await this.vortex.apply(changes);
+    this.noteVortexToggles(changes);
     this.log.info(`Switched off Vortex's copy of ${nameList(clash)}: ${clash.length === 1 ? 'it is' : 'they are'} enabled in this app`);
     this.emit('changed');
     return { switched: clash.length };
@@ -1035,7 +1037,7 @@ class ModManager extends EventEmitter {
       snapshotTime: data.snapshotTime,
       deployedAt: data.deployedAt,
       profiles: data.profiles.map(p => ({ id: p.id, name: p.name, active: p.active, count: p.enabledIds.length })),
-      mods: vxMods.map(({ deployedFiles, ...m }) => m),
+      mods: vxMods.map(({ deployedFiles, ...m }) => ({ ...m, ...(this.data.vortexToggled?.[m.vortexId] || {}) })),
       adopted: Object.keys(adopted).length,
       twins: twinOf,
       overlaps,
@@ -1455,13 +1457,26 @@ class ModManager extends EventEmitter {
     const changes = ids.map(id => all.find(m => m.id === id)).filter(m => m && m.enabled !== enabled).map(m => ({ vortexId: m.vortexId, enabled }));
     if (!changes.length) return;
     await this.vortex.apply(changes);
+    this.noteVortexToggles(changes);
     this.emit('changed');
+  }
+
+  /** Vortex keeps no such times: switches made from here are remembered here. */
+  noteVortexToggles(changes) {
+    this.data.vortexToggled ||= {};
+    const now = Date.now();
+    for (const c of changes) {
+      const t = (this.data.vortexToggled[c.vortexId] ||= {});
+      t[c.enabled ? 'enabledAt' : 'disabledAt'] = now;
+    }
+    this.library.save();
   }
 
   setOwnEnabled(ids, enabled) {
     return this.op(async () => {
       const changed = ids.map(id => this.data.mods[id]).filter(m => m && m.enabled !== enabled);
-      for (const m of changed) m.enabled = enabled;
+      const now = Date.now();
+      for (const m of changed) { m.enabled = enabled; m[enabled ? 'enabledAt' : 'disabledAt'] = now; }
       try {
         this.deploy();
       } catch (err) {

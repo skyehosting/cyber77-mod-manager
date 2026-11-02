@@ -140,3 +140,16 @@ test('a clash left from before waits while Vortex is open, and is settled once i
   assert.deepStrictEqual(await mgr.switchOffVortexTwins(null, { allowClose: false }), { switched: 1 });
   assert.ok(cli.flat().some(a => a.includes('alpha.enabled=false')));
 });
+
+test('enabling and disabling remembers when (for sorting by recent changes)', async () => {
+  const { mgr } = setup();
+  mgr.data.mods.m = { id: 'm', key: 'm', name: 'Mine', modId: 1, fileId: 1, files: [], enabled: false, priority: 1 };
+  const t0 = Date.now();
+  await mgr.setEnabled(['m'], true);
+  assert.ok(mgr.data.mods.m.enabledAt >= t0);
+  await mgr.setEnabled(['m'], false);
+  assert.ok(mgr.data.mods.m.disabledAt >= mgr.data.mods.m.enabledAt);
+  await mgr.setEnabled(['vx:alpha'], false); // a Vortex mod switched from here
+  const alpha = mgr.vortexView().mods.find(v => v.vortexId === 'alpha');
+  assert.ok(alpha.disabledAt >= t0, 'Vortex keeps no such times: this app remembers its own switches');
+});

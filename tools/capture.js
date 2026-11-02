@@ -54,6 +54,7 @@ const STATES = {
   'browse-detail': { only: ['fhd-100', 'min-window'], run: 'demoBrowse(); openMod(br.result.mods[1]);', wait: 4000 },
   'gamelog-manager': { only: ['fhd-100', 'min-window'], run: "goTo('gamelog'); setTab('manager');" },
   loadorder: { only: ['fhd-100', 'min-window'], run: "goTo('loadorder');", wait: 1500 },
+  'mods-sorted': { only: ['fhd-100', 'min-window'], run: "goTo('mods'); state.modSort = 'installed'; document.querySelector('#mods-sort').value = 'installed'; renderMods();" },
   drop: { only: ['fhd-100'], run: "goTo('mods'); document.querySelector('#drop-zone').hidden = false;" },
   'mods-updates': { only: ['fhd-100'], run: "setModFilter('updates');" },
   fomod: { only: ['fhd-100', 'fhd-150', '4k-200', 'uw-3440', 'sxga-54', 'min-window'], run: 'demoWizard();' },

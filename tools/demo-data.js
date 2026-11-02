@@ -199,6 +199,8 @@
     modalChain = Promise.resolve();
     modalClose = null;
     state.modFilter = 'all';
+    state.modSort = 'az';
+    document.querySelector('#mods-sort').value = 'az';
     setSegActive('#mods-filter', 'f', 'all');
     document.querySelector('#modal-back').hidden = true;
     document.querySelector('#drawer').hidden = true;

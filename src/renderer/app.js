@@ -321,8 +321,29 @@ function visibleMods() {
     if (state.modFilter === 'repair') return !!m.health;
     if (state.modFilter === 'vortex') return !!m.vortex;
     return true;
-  }).sort(byName);
+  }).sort(SORTS[state.modSort] || byName);
 }
+
+// The Mods list order (kept between sessions). The "recent" ones put the latest first and
+// show when it happened under each name.
+const SORTS = {
+  az: (a, b) => byName(a, b),
+  za: (a, b) => byName(b, a),
+  installed: (a, b) => (b.installedAt || 0) - (a.installedAt || 0) || byName(a, b),
+  enabled: (a, b) => (b.enabledAt || 0) - (a.enabledAt || 0) || byName(a, b),
+  disabled: (a, b) => (b.disabledAt || 0) - (a.disabledAt || 0) || byName(a, b),
+  priority: (a, b) => (Number(b.priority) || -1) - (Number(a.priority) || -1) || byName(a, b),
+};
+const SORT_TIME = { installed: ['installedAt', 'installed'], enabled: ['enabledAt', 'enabled'], disabled: ['disabledAt', 'disabled'] };
+state.modSort = store.get('modSort', 'az');
+const ago = t => {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)} d ago`;
+  return new Date(t).toLocaleDateString();
+};
 
 // A to Z, ignoring case and accents, with numbers in number order (Mod 2 before Mod 10).
 const nameOrder = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
@@ -402,7 +423,9 @@ function renderMods() {
         if (ok === null) switchBtn.removeAttribute('aria-disabled');
       },
     });
-    const sub = m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ');
+    const when = SORT_TIME[state.modSort];
+    const stamp = when && m[when[0]] ? `${when[1]} ${ago(m[when[0]])}` : when ? `not ${when[1]} since this was recorded` : '';
+    const sub = [stamp, m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
     return h('tr', {
       class: 'row', tabindex: '0', dataset: { id: m.id, key: `${m.id}:row` }, 'aria-selected': 'false',
       onclick: ev => {
@@ -503,6 +526,12 @@ function setModFilter(f) {
 }
 
 $('#mods-search').addEventListener('input', debounce(renderMods, 120));
+$('#mods-sort').value = state.modSort;
+$('#mods-sort').addEventListener('change', ev => {
+  state.modSort = ev.target.value;
+  store.set('modSort', state.modSort);
+  renderMods();
+});
 $$('#mods-filter .seg-btn').forEach(b => b.addEventListener('click', () => setModFilter(b.dataset.f)));
 $('#mods-all').addEventListener('change', ev => {
   visibleMods().forEach(m => (ev.target.checked ? state.modSel.add(m.id) : state.modSel.delete(m.id)));

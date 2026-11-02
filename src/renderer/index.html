@@ -152,6 +152,17 @@
             <button class="seg-btn" data-f="vortex" id="mods-filter-vortex" hidden>Vortex <span class="seg-count seg-count-neutral" id="mods-vx-count"></span></button>
             <button class="seg-btn" data-f="problems">Problems <span class="seg-count" id="mods-prob-count" title="Mods with missing files, install warnings or game-log errors"></span></button>
           </div>
+          <label class="sort-pick" title="Sort the list (the recent ones show when each change happened)">
+            <span class="sort-label">Sort</span>
+            <select id="mods-sort" aria-label="Sort mods">
+              <option value="az">A to Z</option>
+              <option value="za">Z to A</option>
+              <option value="installed" title="Recently installed or updated">Recently installed</option>
+              <option value="enabled">Recently enabled</option>
+              <option value="disabled">Recently disabled</option>
+              <option value="priority" title="Priority: the mod that wins file conflicts first">Priority</option>
+            </select>
+          </label>
           <div class="selbar" id="mods-bulk" hidden>
             <span class="sel-count" id="mods-sel-count">0 selected</span>
             <button class="btn btn-primary" data-act="enable" id="mods-bulk-enable" title="Enable"><svg class="i"><use href="#i-check"/></svg><span>Enable</span></button>
