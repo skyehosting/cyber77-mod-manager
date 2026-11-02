@@ -168,17 +168,6 @@ async function boot() {
   });
   updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
   updater.start();
-  // The AI assistant: read tools see everything; changes only through approved proposals.
-  const tools = makeTools({
-    manager, gameLogs, logger, web: new WebReader(),
-    allMods: () => {
-      const snap = manager.snapshot();
-      return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
-    },
-    deployRedmods: () => runRedmodDeploy(settings.get('gamePath'), true),
-  });
-  assistant = new Assistant({ settings, tools, file: path.join(app.getPath('userData'), 'ai-chat.json') });
-  assistant.on('event', e => send('ai', e));
   if (settings.apiKey) {
     manager.validateKey().then(u => send('key-user', u)).catch(err => logger.warn('Could not check the Nexus API key', err.message));
   }
@@ -197,6 +186,17 @@ async function boot() {
   gameLogs.on('reset', () => send('gamelog-reset'));
   gameLogs.start();
   app.on('before-quit', () => gameLogs.stop());
+  // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
+  const tools = makeTools({
+    manager, gameLogs, logger, web: new WebReader(),
+    allMods: () => {
+      const snap = manager.snapshot();
+      return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
+    },
+    deployRedmods: () => runRedmodDeploy(settings.get('gamePath'), true),
+  });
+  assistant = new Assistant({ settings, tools, file: path.join(app.getPath('userData'), 'ai-chat.json') });
+  assistant.on('event', e => send('ai', e));
 
   handle('snapshot', () => ({ ...manager.snapshot(), gameStatus: gameLogs.status() }));
   handle('logs', () => logger.entries);

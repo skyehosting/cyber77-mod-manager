@@ -200,3 +200,12 @@ test('over HTTP: an OpenAI-style endpoint, a tool round trip, the key in the hea
     server.close();
   }
 });
+
+test('main builds the AI tools only after the game-log monitor exists', () => {
+  // The tools keep the monitor they were given; built earlier, every log tool read null.
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const created = src.indexOf('gameLogs = new GameLogMonitor(');
+  const tools = src.indexOf('makeTools({');
+  assert.ok(created > 0 && tools > 0);
+  assert.ok(created < tools, 'makeTools must come after gameLogs is created');
+});
