@@ -20,6 +20,7 @@ class Settings {
       categories: ['MAIN', 'UPDATE', 'OPTIONAL', 'MISCELLANEOUS'],
       autoInstall: 'main', // 'off' | 'main' | 'all'
       autoEnable: true,
+      installDependencies: true,
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
     });
   }
@@ -60,6 +61,7 @@ class Settings {
       if (typeof patch[k] === 'string') d[k] = patch[k].trim();
     }
     if ('autoEnable' in patch) d.autoEnable = !!patch.autoEnable;
+    if ('installDependencies' in patch) d.installDependencies = !!patch.installDependencies;
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }

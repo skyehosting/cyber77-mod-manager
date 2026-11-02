@@ -27,7 +27,12 @@ class Downloader extends EventEmitter {
 
   enqueue(spec) {
     for (const j of this.jobs.values()) {
-      if (j.fileId === spec.fileId && ['queued', 'downloading'].includes(j.status)) return j;
+      if (j.fileId === spec.fileId && ['queued', 'downloading'].includes(j.status)) {
+        // Already coming: make sure it also lands where this request wants it.
+        for (const k of ['fomodChoices', 'replaces', 'dependencyOf']) if (spec[k] && !j[k]) j[k] = spec[k];
+        if (spec.forProfiles?.length) j.forProfiles = [...new Set([...(j.forProfiles || []), ...spec.forProfiles])];
+        return j;
+      }
     }
     const job = { ...spec, id: this.nextId++, status: 'queued', received: 0, total: spec.size || 0, speed: 0, error: '', attempts: 0 };
     this.jobs.set(job.id, job);

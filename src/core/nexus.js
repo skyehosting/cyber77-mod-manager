@@ -1,5 +1,6 @@
 'use strict';
 const API = 'https://api.nexusmods.com/v1';
+const GRAPHQL = 'https://api.nexusmods.com/v2/graphql';
 const APP_NAME = 'CyberModManager';
 const APP_VERSION = '1.0.0';
 
@@ -68,6 +69,40 @@ class NexusClient {
   getMod(game, modId) { return this.request(`/games/${game}/mods/${modId}.json`); }
 
   getFiles(game, modId) { return this.request(`/games/${game}/mods/${modId}/files.json`); }
+
+  /**
+   * Nexus requirements of a mod, from the v2 GraphQL API (v1 has no requirements endpoint).
+   * Returns [{ modId, modName, gameId, url, notes, external }] plus the mod's own gameId.
+   */
+  async getRequirements(game, modId) {
+    const query = `query($ids: [CompositeDomainWithIdInput!]!) {
+      legacyModsByDomain(ids: $ids) { nodes { modId gameId modRequirements {
+        nexusRequirements { nodes { modId modName gameId url notes externalRequirement } } } } } }`;
+    let res;
+    try {
+      res = await fetch(GRAPHQL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: this.getKey(), 'Application-Name': APP_NAME, 'Application-Version': APP_VERSION },
+        body: JSON.stringify({ query, variables: { ids: [{ gameDomain: game, modId: Number(modId) }] } }),
+      });
+    } catch (err) {
+      throw new NexusError(`Network error reading requirements: ${err.message}`, 0);
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.errors?.length) {
+      throw new NexusError(`Could not read requirements (${res.status}): ${body.errors?.[0]?.message || res.statusText}`, res.status);
+    }
+    const node = body.data?.legacyModsByDomain?.nodes?.[0];
+    if (!node) return { gameId: null, requirements: [] };
+    const reqs = node.modRequirements?.nexusRequirements?.nodes || [];
+    return {
+      gameId: String(node.gameId),
+      requirements: reqs.map(r => ({
+        modId: Number(r.modId), modName: r.modName, gameId: String(r.gameId),
+        url: r.url || '', notes: r.notes || '', external: !!r.externalRequirement,
+      })),
+    };
+  }
 
   /** Premium accounts get CDN links straight from the API. Returns the preferred URI. */
   async getDownloadLink(game, modId, fileId) {

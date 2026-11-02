@@ -2,124 +2,231 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:;">
   <title>Cyber Mod Manager</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app">
+  <!-- Icon set (24×24 stroke icons), used with <svg class="i"><use href="#i-name"/></svg> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 16 10 5 10-5"/><path d="m2 12 10 5 10-5"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4.2-4.2"/></symbol>
+      <symbol id="i-file-plus" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 3v6h-6"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L21 9"/></symbol>
+      <symbol id="i-power" viewBox="0 0 24 24"><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/><path d="M12 2v10"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+      <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 3v6h6"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L3 9"/></symbol>
+      <symbol id="i-minus-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2Z"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 9-9M16 6l3 3M14 8l2 2"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8Z"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+      <symbol id="i-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m16 12-4-4-4 4M12 16V8"/></symbol>
+      <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 22V4M4 4h13l-2.5 4L17 12H4"/></symbol>
+      <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13"/></symbol>
+      <symbol id="i-import" viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M8 10l4 4 4-4M12 14V2"/></symbol>
+      <symbol id="i-deploy" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></symbol>
+      <symbol id="i-brand" viewBox="0 0 24 24"><path d="M4 4h16v11l-5 5H4Z"/><path d="M9 9h6M9 13h4"/></symbol>
+    </defs>
+  </svg>
+
+  <div class="shell" id="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">CMM</div>
-        <div>
-          <div class="brand-name">Cyber Mod Manager</div>
-          <div class="brand-sub">Cyberpunk 2077 · Nexus Mods</div>
+        <span class="brand-mark" aria-hidden="true"><svg class="i"><use href="#i-brand"/></svg></span>
+        <span class="brand-text">
+          <span class="brand-name">Cyber Mod Manager</span>
+          <span class="brand-sub">Cyberpunk 2077</span>
+        </span>
+      </div>
+      <div class="profile" id="profile-box">
+        <label class="profile-label" for="profile-select">Profile</label>
+        <div class="profile-row">
+          <select id="profile-select" title="Switch profile: each profile remembers which mods are enabled"></select>
+          <button class="btn btn-icon btn-ghost" id="profile-manage" title="Manage profiles" aria-label="Manage profiles"><svg class="i"><use href="#i-users"/></svg></button>
         </div>
       </div>
-      <nav>
-        <button class="nav-item active" data-page="mods">Mods <span class="count" id="nav-mods-count">0</span></button>
-        <button class="nav-item" data-page="downloads">Downloads <span class="count" id="nav-dl-count">0</span></button>
-        <button class="nav-item" data-page="settings">Settings</button>
+      <nav class="nav" aria-label="Main navigation">
+        <button class="nav-item active" data-page="mods" title="Mods">
+          <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="count" id="nav-mods-count">0</span>
+        </button>
+        <button class="nav-item" data-page="downloads" title="Downloads">
+          <svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span><span class="count" id="nav-dl-count">0</span>
+        </button>
+        <button class="nav-item" data-page="gamelog" title="Game log">
+          <svg class="i"><use href="#i-activity"/></svg><span class="nav-label">Game log</span><span class="count" id="nav-log-count">0</span>
+        </button>
+        <button class="nav-item" data-page="settings" title="Settings">
+          <svg class="i"><use href="#i-sliders"/></svg><span class="nav-label">Settings</span>
+        </button>
       </nav>
       <div class="side-status">
-        <div class="status-row"><span class="dot" id="st-game-dot"></span><span id="st-game">Game folder</span></div>
-        <div class="status-row"><span class="dot" id="st-key-dot"></span><span id="st-key">API key</span></div>
-        <div class="status-row muted" id="st-rate"></div>
+        <div class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span class="status-text" id="st-game">Game folder</span></div>
+        <div class="status-row" id="st-key-row"><span class="dot" id="st-key-dot"></span><span class="status-text" id="st-key">API key</span></div>
+        <div class="status-row status-rate" id="st-rate"></div>
       </div>
     </aside>
 
     <main class="main">
       <!-- MODS -->
-      <section class="page active" id="page-mods">
+      <section class="page active" id="page-mods" aria-labelledby="h-mods">
         <header class="page-head">
-          <h1>Mods</h1>
+          <div class="page-title">
+            <h1 id="h-mods">Mods</h1>
+            <p class="page-sub" id="mods-sub">Nothing installed yet</p>
+          </div>
           <div class="head-actions">
-            <button class="btn" id="mods-import">Install from file…</button>
-            <button class="btn" id="mods-redeploy" title="Re-check every enabled mod's files in the game folder">Redeploy</button>
-            <button class="btn danger-ghost" id="mods-purge" title="Take every mod out of the game folder (keeps them installed)">Disable all</button>
+            <button class="btn btn-primary collapsible" id="mods-update-all" hidden title="Download and install every available update" aria-label="Update all"><svg class="i"><use href="#i-up-circle"/></svg><span>Update all</span></button>
+            <button class="btn collapsible" id="mods-check-updates" title="Ask Nexus for newer versions of your mods" aria-label="Check for updates"><svg class="i"><use href="#i-refresh"/></svg><span>Check for updates</span></button>
+            <button class="btn collapsible" id="mods-import" title="Install a mod archive (.zip, .7z, .rar) from your computer" aria-label="Install from file"><svg class="i"><use href="#i-file-plus"/></svg><span>Install from file</span></button>
+            <button class="btn collapsible" id="mods-redeploy" title="Re-check every enabled mod's files in the game folder" aria-label="Redeploy"><svg class="i"><use href="#i-deploy"/></svg><span>Redeploy</span></button>
+            <button class="btn btn-ghost-danger collapsible" id="mods-purge" title="Take every mod out of the game folder (keeps them installed)" aria-label="Disable all"><svg class="i"><use href="#i-power"/></svg><span>Disable all</span></button>
           </div>
         </header>
-        <div class="toolbar">
-          <input class="search" id="mods-search" placeholder="Search mods…" type="search">
-          <div class="seg" id="mods-filter">
-            <button class="seg-btn active" data-f="all">All</button>
+
+        <div class="banner banner-warn" id="mods-running" hidden role="status">
+          <svg class="i"><use href="#i-alert"/></svg>
+          <span>Cyberpunk 2077 is running. Changes to mods take effect the next time you start the game, and files the game has open can't be replaced.</span>
+        </div>
+
+        <div class="toolbar" id="mods-toolbar">
+          <label class="search">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="mods-search" placeholder="Search mods" type="search" aria-label="Search mods">
+          </label>
+          <div class="seg" id="mods-filter" role="group" aria-label="Filter">
+            <button class="seg-btn active" data-f="all" aria-pressed="true">All</button>
             <button class="seg-btn" data-f="enabled">Enabled</button>
             <button class="seg-btn" data-f="disabled">Disabled</button>
             <button class="seg-btn" data-f="conflicts">Conflicts</button>
+            <button class="seg-btn" data-f="updates">Updates <span class="seg-count seg-count-info" id="mods-upd-count"></span></button>
+            <button class="seg-btn" data-f="problems">Problems <span class="seg-count" id="mods-prob-count" title="Mods with missing files, install warnings or game-log errors"></span></button>
           </div>
-          <div class="spacer"></div>
-          <div class="bulk" id="mods-bulk">
+          <div class="selbar" id="mods-bulk" hidden>
             <span class="sel-count" id="mods-sel-count">0 selected</span>
-            <button class="btn primary" data-act="enable">Enable</button>
-            <button class="btn" data-act="disable">Disable</button>
-            <button class="btn" data-act="prioritize" title="Selected mods win file conflicts">Prioritize</button>
-            <button class="btn" data-act="reinstall">Reinstall</button>
-            <button class="btn" data-act="uninstall">Uninstall</button>
-            <button class="btn danger" data-act="delete" title="Uninstall and delete the downloaded archive">Delete</button>
+            <button class="btn btn-primary" data-act="enable" id="mods-bulk-enable" title="Enable"><svg class="i"><use href="#i-check"/></svg><span>Enable</span></button>
+            <button class="btn" data-act="disable" id="mods-bulk-disable" title="Disable"><svg class="i"><use href="#i-ban"/></svg><span>Disable</span></button>
+            <button class="btn" data-act="update" id="mods-bulk-update" title="Download and install the newer versions"><svg class="i"><use href="#i-up-circle"/></svg><span>Update</span></button>
+            <button class="btn" data-act="repair" id="mods-bulk-repair" hidden title="Put back missing or replaced files"><svg class="i"><use href="#i-wrench"/></svg><span>Repair</span></button>
+            <button class="btn" data-act="prioritize" id="mods-bulk-win" title="Selected mods win every file conflict (moves them to the top priority)"><svg class="i"><use href="#i-flag"/></svg><span>Win conflicts</span></button>
+            <button class="btn" data-act="reinstall" title="Reinstall"><svg class="i"><use href="#i-rotate"/></svg><span>Reinstall</span></button>
+            <button class="btn" data-act="uninstall" title="Uninstall (keeps the downloaded archive)"><svg class="i"><use href="#i-minus-circle"/></svg><span>Uninstall</span></button>
+            <button class="btn btn-danger" data-act="delete" title="Uninstall and delete the downloaded archive"><svg class="i"><use href="#i-trash"/></svg><span>Delete</span></button>
+            <button class="btn btn-icon" id="mods-sel-clear" title="Clear selection" aria-label="Clear selection"><svg class="i"><use href="#i-x"/></svg></button>
           </div>
         </div>
-        <div class="table-wrap">
-          <table class="grid" id="mods-table">
+
+        <div class="table-card" id="mods-card">
+          <table class="grid" id="mods-table" aria-label="Installed mods">
+            <colgroup>
+              <col class="w-check"><col class="w-toggle"><col class="w-name"><col class="w-type"><col class="w-version">
+              <col class="w-cat col-cat"><col class="w-num col-files"><col class="w-num col-prio"><col class="w-conflict">
+            </colgroup>
             <thead>
               <tr>
-                <th class="c-check"><input type="checkbox" id="mods-all"></th>
-                <th class="c-toggle">On</th>
+                <th><input type="checkbox" id="mods-all" aria-label="Select all"></th>
+                <th>On</th>
                 <th>Name</th>
                 <th>Type</th>
                 <th>Version</th>
-                <th>Category</th>
-                <th class="num">Files</th>
-                <th class="num" title="Higher wins file conflicts">Priority</th>
+                <th class="col-cat">Category</th>
+                <th class="num col-files">Files</th>
+                <th class="num col-prio" title="Higher wins file conflicts">Priority</th>
                 <th>Conflicts</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
-          <div class="empty" id="mods-empty">No mods installed yet. Add a Nexus link on the Downloads page, or install an archive from a file.</div>
+          <div class="empty" id="mods-empty" hidden>
+            <span class="empty-icon"><svg class="i"><use href="#i-package"/></svg></span>
+            <p class="empty-title" id="mods-empty-title">No mods installed</p>
+            <p class="empty-text" id="mods-empty-text">Download mods from Nexus, or install an archive you already have.</p>
+            <div class="empty-actions" id="mods-empty-actions">
+              <button class="btn btn-primary" data-goto="downloads"><svg class="i"><use href="#i-download"/></svg><span>Go to Downloads</span></button>
+              <button class="btn" id="mods-empty-import"><svg class="i"><use href="#i-file-plus"/></svg><span>Install from file</span></button>
+            </div>
+          </div>
         </div>
       </section>
 
       <!-- DOWNLOADS -->
-      <section class="page" id="page-downloads">
+      <section class="page" id="page-downloads" aria-labelledby="h-dl">
         <header class="page-head">
-          <h1>Downloads</h1>
+          <div class="page-title">
+            <h1 id="h-dl">Downloads</h1>
+            <p class="page-sub" id="dl-sub">Paste a Nexus Mods link to download every file of that mod</p>
+          </div>
           <div class="head-actions">
-            <button class="btn" id="dl-open-folder">Open downloads folder</button>
+            <button class="btn collapsible" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg><span>Open folder</span></button>
           </div>
         </header>
+
         <div class="card add-card">
+          <div class="banner banner-warn" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.</span><button class="btn btn-sm" data-goto="settings">Open Settings</button></div>
           <label for="dl-links" class="label">Nexus Mods links</label>
           <div class="add-row">
-            <textarea id="dl-links" rows="2" placeholder="https://www.nexusmods.com/cyberpunk2077/mods/107?tab=files   (one or more, separated by spaces or new lines)"></textarea>
-            <button class="btn primary big" id="dl-go">Download all files</button>
+            <div class="input-icon">
+              <svg class="i"><use href="#i-link"/></svg>
+              <textarea id="dl-links" rows="1" placeholder="https://www.nexusmods.com/cyberpunk2077/mods/107 — one or more links"></textarea>
+            </div>
+            <button class="btn btn-primary btn-lg" id="dl-go"><svg class="i"><use href="#i-download"/></svg><span>Download all files</span></button>
           </div>
-          <div class="hint" id="dl-hint"></div>
+          <p class="hint" id="dl-hint"></p>
+          <p class="hint" id="dl-keys"><kbd>Enter</kbd> downloads · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds another link · required mods are downloaded too</p>
         </div>
 
-        <div class="section-title">
-          <h2>Queue</h2>
-          <button class="btn small" id="dl-clear">Clear finished</button>
+        <div class="section-head">
+          <h2>Queue <span class="section-count" id="dl-queue-count"></span></h2>
+          <button class="btn btn-sm btn-ghost push" id="dl-clear">Clear finished</button>
         </div>
-        <div id="jobs" class="jobs"><div class="empty small">Nothing downloading.</div></div>
+        <div id="jobs" class="jobs"></div>
 
-        <div class="section-title">
-          <h2>Library</h2>
-          <input class="search" id="dl-search" placeholder="Search downloads…" type="search">
-          <div class="spacer"></div>
-          <div class="bulk" id="dl-bulk">
+        <div class="section-head" id="dl-libhead">
+          <h2>Library <span class="section-count" id="dl-lib-count"></span></h2>
+          <label class="search search-sm">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="dl-search" placeholder="Search downloads" type="search" aria-label="Search downloads">
+          </label>
+          <div class="selbar" id="dl-bulk" hidden>
             <span class="sel-count" id="dl-sel-count">0 selected</span>
-            <button class="btn primary" data-act="installEnable">Install &amp; enable</button>
-            <button class="btn" data-act="install">Install</button>
-            <button class="btn danger" data-act="delete">Delete</button>
+            <button class="btn btn-primary" data-act="installEnable" title="Install &amp; enable"><svg class="i"><use href="#i-check"/></svg><span>Install &amp; enable</span></button>
+            <button class="btn" data-act="install" title="Install"><svg class="i"><use href="#i-package"/></svg><span>Install</span></button>
+            <button class="btn btn-danger" data-act="delete" title="Delete"><svg class="i"><use href="#i-trash"/></svg><span>Delete</span></button>
+            <button class="btn btn-icon" id="dl-sel-clear" title="Clear selection" aria-label="Clear selection"><svg class="i"><use href="#i-x"/></svg></button>
           </div>
         </div>
-        <div class="table-wrap">
-          <table class="grid" id="dl-table">
+        <div class="table-card table-card-lib" id="dl-card">
+          <table class="grid" id="dl-table" aria-label="Downloaded files">
+            <colgroup>
+              <col class="w-check"><col><col class="w-cat col-cat"><col class="w-version"><col class="w-size"><col class="w-status">
+            </colgroup>
             <thead>
               <tr>
-                <th class="c-check"><input type="checkbox" id="dl-all"></th>
+                <th><input type="checkbox" id="dl-all" aria-label="Select all"></th>
                 <th>File</th>
-                <th>Category</th>
+                <th class="col-cat">Category</th>
                 <th>Version</th>
                 <th class="num">Size</th>
                 <th>Status</th>
@@ -127,138 +234,249 @@
             </thead>
             <tbody></tbody>
           </table>
-          <div class="empty" id="dl-empty">No downloads yet.</div>
+          <div class="empty" id="dl-empty" hidden>
+            <span class="empty-icon"><svg class="i"><use href="#i-download"/></svg></span>
+            <p class="empty-title">No downloads yet</p>
+            <p class="empty-text">Paste a mod link above. Every file from its Files tab is downloaded, along with the mods it requires.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- GAME LOG -->
+      <section class="page" id="page-gamelog" aria-labelledby="h-gamelog">
+        <header class="page-head">
+          <div class="page-title">
+            <h1 id="h-gamelog">Game log</h1>
+            <p class="page-sub">Every log your game and its mods write, merged live: CET, RED4ext, redscript, ArchiveXL, TweakXL, Codeware and more</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn collapsible" id="gl-follow" aria-pressed="true" title="Pause or resume live updates" aria-label="Pause live updates"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
+            <button class="btn collapsible" id="gl-clear" title="Hide everything logged so far" aria-label="Clear view"><svg class="i"><use href="#i-trash"/></svg><span>Clear view</span></button>
+          </div>
+        </header>
+
+        <div class="stat-row">
+          <div class="stat" id="gl-stat-game">
+            <span class="stat-icon"><svg class="i"><use href="#i-monitor"/></svg></span>
+            <span class="stat-body"><span class="stat-value"><span class="dot" aria-hidden="true"></span><span id="gl-game">Not running</span></span><span class="stat-label" id="gl-game-sub">Cyberpunk 2077</span></span>
+          </div>
+          <button class="stat stat-btn" id="gl-stat-err" data-level="error">
+            <span class="stat-icon"><svg class="i"><use href="#i-alert"/></svg></span>
+            <span class="stat-body"><span class="stat-value" id="gl-errs">0</span><span class="stat-label">Errors</span></span>
+          </button>
+          <button class="stat stat-btn" id="gl-stat-warn" data-level="warn">
+            <span class="stat-icon"><svg class="i"><use href="#i-alert"/></svg></span>
+            <span class="stat-body"><span class="stat-value" id="gl-warns">0</span><span class="stat-label">Warnings</span></span>
+          </button>
+          <button class="stat stat-btn" id="gl-stat-src" data-tab="sources">
+            <span class="stat-icon"><svg class="i"><use href="#i-file"/></svg></span>
+            <span class="stat-body"><span class="stat-value" id="gl-srcs">0</span><span class="stat-label">Logs followed</span></span>
+          </button>
+        </div>
+
+        <div class="toolbar">
+          <div class="seg" id="gl-tabs" role="tablist" aria-label="View">
+            <button class="seg-btn active" data-tab="timeline" role="tab" id="tab-timeline" aria-selected="true" aria-controls="gl-timeline">Timeline</button>
+            <button class="seg-btn" data-tab="problems" role="tab" id="tab-problems" aria-selected="false" aria-controls="gl-problems" tabindex="-1">Problems <span class="seg-count seg-count-neutral" id="gl-prob-count" title="Distinct problems: repeats of the same error or warning count once"></span></button>
+            <button class="seg-btn" data-tab="sources" role="tab" id="tab-sources" aria-selected="false" aria-controls="gl-sources" tabindex="-1">Sources</button>
+          </div>
+          <label class="search">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="gl-search" placeholder="Search logs" type="search" aria-label="Search logs">
+          </label>
+          <div class="seg" id="gl-level" role="group" aria-label="Level">
+            <button class="seg-btn active" data-level="all" aria-pressed="true">All</button>
+            <button class="seg-btn" data-level="warn">Warnings</button>
+            <button class="seg-btn" data-level="error">Errors</button>
+          </div>
+          <select id="gl-source" class="select-inline" aria-label="Source">
+            <option value="">All sources</option>
+          </select>
+        </div>
+
+        <div class="table-card gl-view" id="gl-timeline" role="tabpanel" aria-labelledby="tab-timeline" tabindex="0">
+          <div class="loglist" id="gl-list"></div>
+          <div class="empty" id="gl-empty" hidden>
+            <span class="empty-icon"><svg class="i"><use href="#i-activity"/></svg></span>
+            <p class="empty-title" id="gl-empty-title">No log lines yet</p>
+            <p class="empty-text" id="gl-empty-text">Start the game: new lines from every mod's log appear here as they are written.</p>
+          </div>
+          <button class="jump" id="gl-jump" hidden><svg class="i"><use href="#i-chevron"/></svg><span>New lines</span></button>
+        </div>
+
+        <div class="table-card gl-view" id="gl-problems" role="tabpanel" aria-labelledby="tab-problems" hidden>
+          <table class="grid">
+            <colgroup><col class="w-count"><col class="w-level"><col class="w-source"><col class="w-mod col-cat"><col><col class="w-when"></colgroup>
+            <thead><tr><th class="num">Count</th><th>Level</th><th>Log</th><th class="col-cat">Mod</th><th>Message</th><th>Last seen</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="gl-prob-empty" hidden>
+            <span class="empty-icon"><svg class="i"><use href="#i-check"/></svg></span>
+            <p class="empty-title">No problems</p>
+            <p class="empty-text">No errors or warnings match these filters.</p>
+          </div>
+        </div>
+
+        <div class="table-card gl-view" id="gl-sources" role="tabpanel" aria-labelledby="tab-sources" hidden>
+          <table class="grid">
+            <colgroup><col><col class="w-file"><col class="w-num"><col class="w-num"><col class="w-when"><col class="w-actions"></colgroup>
+            <thead><tr><th>Source</th><th>File</th><th class="num">Errors</th><th class="num">Warnings</th><th>Last write</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </section>
 
       <!-- SETTINGS -->
-      <section class="page" id="page-settings">
-        <header class="page-head"><h1>Settings</h1></header>
+      <section class="page" id="page-settings" aria-labelledby="h-settings">
+        <header class="page-head">
+          <div class="page-title">
+            <h1 id="h-settings">Settings</h1>
+            <p class="page-sub">Your Nexus account, the game folder and how mods are downloaded</p>
+          </div>
+        </header>
         <form id="settings-form" class="settings" autocomplete="off">
-          <div class="card">
-            <h2>Nexus Mods</h2>
-            <label class="label" for="s-apikey">Personal API key</label>
-            <div class="field-row">
-              <input id="s-apikey" type="password" placeholder="Paste your key from nexusmods.com → Site preferences → API keys" spellcheck="false">
-              <button type="button" class="btn" id="s-validate">Validate</button>
-            </div>
-            <div class="hint" id="s-key-status"></div>
-            <p class="hint">Find it at <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">next.nexusmods.com/settings/api-keys</a>. The key is stored encrypted with Windows' data protection and never shown again.</p>
-          </div>
-
-          <div class="card">
-            <h2>Game</h2>
-            <label class="label" for="s-game">Cyberpunk 2077 folder</label>
-            <div class="field-row">
-              <input id="s-game" type="text" spellcheck="false">
-              <button type="button" class="btn" id="s-game-browse">Browse…</button>
-              <button type="button" class="btn" id="s-game-detect">Detect</button>
-            </div>
-            <div class="hint" id="s-game-status"></div>
-            <label class="label" for="s-deploy">Deploy method</label>
-            <select id="s-deploy">
-              <option value="hardlink">Hardlinks (fast, no extra disk space — needs the data folder on the game's drive)</option>
-              <option value="copy">Copy files</option>
-            </select>
-          </div>
-
-          <div class="card">
-            <h2>Downloading</h2>
-            <label class="label">File categories to download</label>
-            <div class="chips" id="s-cats">
-              <label class="chip"><input type="checkbox" value="MAIN">Main</label>
-              <label class="chip"><input type="checkbox" value="UPDATE">Update</label>
-              <label class="chip"><input type="checkbox" value="OPTIONAL">Optional</label>
-              <label class="chip"><input type="checkbox" value="MISCELLANEOUS">Miscellaneous</label>
-              <label class="chip"><input type="checkbox" value="OLD_VERSION">Old versions</label>
-              <label class="chip"><input type="checkbox" value="ARCHIVED">Archived</label>
-            </div>
-            <div class="grid2">
-              <div>
-                <label class="label" for="s-conc">Parallel downloads</label>
-                <input id="s-conc" type="number" min="1" max="10">
+          <div class="settings-grid">
+            <section class="card">
+              <h2 class="card-title"><svg class="i"><use href="#i-key"/></svg>Nexus Mods account</h2>
+              <label class="label" for="s-apikey">Personal API key</label>
+              <div class="field-row">
+                <input id="s-apikey" type="password" spellcheck="false">
+                <button type="button" class="btn" id="s-validate">Validate</button>
               </div>
-              <div>
-                <label class="label" for="s-auto">After a download finishes</label>
-                <select id="s-auto">
-                  <option value="main">Install Main files automatically</option>
-                  <option value="all">Install every file automatically</option>
-                  <option value="off">Don't install automatically</option>
-                </select>
-              </div>
-            </div>
-            <label class="check"><input type="checkbox" id="s-autoenable"> Enable mods right after an automatic install</label>
-          </div>
+              <p class="hint" id="s-key-status"></p>
+              <p class="hint">Get it from <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">nexusmods.com → API keys</a>. It is stored encrypted and never shown again.</p>
+            </section>
 
-          <div class="card">
-            <h2>Folders &amp; tools</h2>
-            <label class="label" for="s-data">Data folder (downloads, staging, backups)</label>
-            <div class="field-row">
-              <input id="s-data" type="text" spellcheck="false">
-              <button type="button" class="btn" id="s-data-browse">Browse…</button>
-            </div>
-            <div class="hint">Changing it takes effect after a restart. Existing downloads are not moved.</div>
-            <label class="label" for="s-7z">7-Zip (7z.exe) — extracts .zip, .7z and .rar</label>
-            <div class="field-row">
-              <input id="s-7z" type="text" spellcheck="false">
-              <button type="button" class="btn" id="s-7z-browse">Browse…</button>
-            </div>
-            <div class="folder-links">
-              <button type="button" class="btn small" data-open="game">Game folder</button>
-              <button type="button" class="btn small" data-open="downloads">Downloads</button>
-              <button type="button" class="btn small" data-open="staging">Staging</button>
-              <button type="button" class="btn small" data-open="backups">Backups</button>
-              <button type="button" class="btn small" data-open="logs">Logs</button>
-            </div>
+            <section class="card">
+              <h2 class="card-title"><svg class="i"><use href="#i-monitor"/></svg>Game</h2>
+              <label class="label" for="s-game">Cyberpunk 2077 folder</label>
+              <div class="field-row">
+                <input id="s-game" class="path" type="text" spellcheck="false">
+                <button type="button" class="btn" id="s-game-browse">Browse</button>
+                <button type="button" class="btn" id="s-game-detect">Detect</button>
+              </div>
+              <p class="hint" id="s-game-status"></p>
+              <label class="label" for="s-deploy">Deploy method</label>
+              <select id="s-deploy">
+                <option value="hardlink">Hardlinks — fast, no extra disk space</option>
+                <option value="copy">Copy files</option>
+              </select>
+              <p class="hint">Hardlinks need the data folder on the same drive as the game.</p>
+            </section>
+
+            <section class="card">
+              <h2 class="card-title"><svg class="i"><use href="#i-download"/></svg>Downloading</h2>
+              <fieldset class="plain">
+              <legend class="label">File categories to download</legend>
+              <div class="chips" id="s-cats">
+                <label class="chip"><input type="checkbox" value="MAIN"><span>Main</span></label>
+                <label class="chip"><input type="checkbox" value="UPDATE"><span>Update</span></label>
+                <label class="chip"><input type="checkbox" value="OPTIONAL"><span>Optional</span></label>
+                <label class="chip"><input type="checkbox" value="MISCELLANEOUS"><span>Miscellaneous</span></label>
+                <label class="chip"><input type="checkbox" value="OLD_VERSION"><span>Old versions</span></label>
+                <label class="chip"><input type="checkbox" value="ARCHIVED"><span>Archived</span></label>
+              </div>
+              </fieldset>
+              <div class="field-grid">
+                <div>
+                  <label class="label" for="s-conc">Parallel downloads</label>
+                  <input id="s-conc" type="number" min="1" max="10">
+                </div>
+                <div>
+                  <label class="label" for="s-auto">When a download finishes</label>
+                  <select id="s-auto">
+                    <option value="main">Install Main files</option>
+                    <option value="all">Install every file</option>
+                    <option value="off">Don't install</option>
+                  </select>
+                </div>
+              </div>
+              <label class="check"><input type="checkbox" id="s-autoenable"><span>Enable mods right after an automatic install</span></label>
+              <label class="check"><input type="checkbox" id="s-deps"><span>Download, install and enable required mods (and what they require)</span></label>
+            </section>
+
+            <section class="card">
+              <h2 class="card-title"><svg class="i"><use href="#i-folder"/></svg>Folders &amp; tools</h2>
+              <label class="label" for="s-data">Data folder (downloads, staging, backups)</label>
+              <div class="field-row">
+                <input id="s-data" class="path" type="text" spellcheck="false">
+                <button type="button" class="btn" id="s-data-browse">Browse</button>
+              </div>
+              <p class="hint">Takes effect after a restart. Existing downloads are not moved.</p>
+              <label class="label" for="s-7z">7-Zip program (7z.exe)</label>
+              <div class="field-row">
+                <input id="s-7z" class="path" type="text" spellcheck="false">
+                <button type="button" class="btn" id="s-7z-browse">Browse</button>
+              </div>
+              <span class="label">Open folder</span>
+              <div class="folder-links">
+                <button type="button" class="btn btn-sm" data-open="game">Game</button>
+                <button type="button" class="btn btn-sm" data-open="downloads">Downloads</button>
+                <button type="button" class="btn btn-sm" data-open="staging">Staging</button>
+                <button type="button" class="btn btn-sm" data-open="backups">Backups</button>
+                <button type="button" class="btn btn-sm" data-open="logs">Logs</button>
+              </div>
+            </section>
           </div>
 
           <div class="save-bar">
-            <button type="submit" class="btn primary big">Save settings</button>
+            <span class="save-state" id="save-state"></span>
+            <button type="button" class="btn" id="s-revert" disabled>Revert</button>
+            <button type="submit" class="btn btn-primary" id="s-save" disabled>Save changes</button>
           </div>
         </form>
       </section>
     </main>
-  </div>
 
-  <!-- CONSOLE -->
-  <div class="console" id="console">
-    <div class="console-head" id="console-head">
-      <button class="console-toggle" id="console-toggle">Console</button>
-      <span class="badge err" id="console-errs" hidden>0</span>
-      <span class="badge warn" id="console-warns" hidden>0</span>
-      <span class="console-last" id="console-last"></span>
-      <div class="spacer"></div>
-      <div class="seg small" id="console-filter">
-        <button class="seg-btn active" data-f="all">All</button>
-        <button class="seg-btn" data-f="warn">Warnings</button>
-        <button class="seg-btn" data-f="error">Errors</button>
+    <!-- CONSOLE -->
+    <section class="console" id="console" aria-label="Activity">
+      <div class="console-resize" id="console-resize" title="Drag to resize"></div>
+      <div class="console-head">
+        <button class="console-toggle" id="console-toggle" aria-expanded="false" aria-controls="console-body" title="This app's own messages: downloads, installs, errors">
+          <svg class="i chevron"><use href="#i-chevron"/></svg>
+          <svg class="i"><use href="#i-terminal"/></svg>
+          <span>Activity</span>
+        </button>
+        <button class="badge badge-err" id="console-errs" hidden title="Show errors"></button>
+        <span class="console-last" id="console-last"></span>
+        <div class="console-tools">
+          <div class="seg seg-sm" id="console-filter" role="group" aria-label="Console filter">
+            <button class="seg-btn active" data-f="all" aria-pressed="true">All</button>
+            <button class="seg-btn" data-f="warn">Warnings</button>
+            <button class="seg-btn" data-f="error">Errors</button>
+          </div>
+          <button class="btn btn-sm btn-icon" id="console-copy" title="Copy" aria-label="Copy activity log"><svg class="i"><use href="#i-copy"/></svg></button>
+          <button class="btn btn-sm btn-icon" id="console-clear" title="Clear" aria-label="Clear activity log"><svg class="i"><use href="#i-trash"/></svg></button>
+        </div>
       </div>
-      <button class="btn small" id="console-copy">Copy</button>
-      <button class="btn small" id="console-clear">Clear</button>
-    </div>
-    <div class="console-body" id="console-body"></div>
+      <div class="console-body" id="console-body" role="log" aria-live="polite"></div>
+    </section>
   </div>
 
   <!-- DRAWER: mod details -->
-  <div class="drawer" id="drawer" hidden>
+  <aside class="drawer" id="drawer" hidden role="dialog" aria-labelledby="drawer-title">
     <div class="drawer-head">
-      <div>
-        <div class="drawer-title" id="drawer-title"></div>
+      <div class="drawer-heading">
+        <h2 class="drawer-title" id="drawer-title"></h2>
         <div class="drawer-sub" id="drawer-sub"></div>
       </div>
-      <button class="btn small" id="drawer-close">Close</button>
+      <button class="btn btn-icon btn-ghost" id="drawer-nexus" hidden title="Open the mod page on Nexus Mods" aria-label="Open on Nexus Mods"><svg class="i"><use href="#i-external"/></svg></button>
+      <button class="btn btn-icon" id="drawer-close" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
+    <div class="drawer-actions" id="drawer-actions"></div>
     <div class="drawer-body" id="drawer-body"></div>
-  </div>
+  </aside>
 
   <!-- MODAL -->
   <div class="modal-back" id="modal-back" hidden>
-    <div class="modal" id="modal"></div>
+    <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
   </div>
 
-  <div class="toasts" id="toasts"></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script src="../shared/fomod.js"></script>
   <script src="app.js"></script>
+  <script src="gamelog.js"></script>
+  <script src="features.js"></script>
 </body>
 </html>

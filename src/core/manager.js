@@ -11,6 +11,30 @@ const { Installer } = require('./installer');
 const { Deployer } = require('./deployer');
 const { isGameDir } = require('./gameFinder');
 const { sanitizeName } = require('./layout');
+const { ownerRoot } = require('./gameLogs');
+const { findUpdate } = require('./updates');
+
+const PROFILE_FORMAT = 'cyber-mod-manager-profile';
+const MAX_PROFILE_MODS = 1000;
+
+/** FOMOD choices from a shared file: { step: { group: [optionIndex] } } with small integers only. */
+function validChoices(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  const out = {};
+  for (const [s, groups] of Object.entries(c).slice(0, 50)) {
+    if (!/^\d{1,3}$/.test(s) || !groups || typeof groups !== 'object' || Array.isArray(groups)) return null;
+    out[s] = {};
+    for (const [g, picks] of Object.entries(groups).slice(0, 50)) {
+      if (!/^\d{1,3}$/.test(g) || !Array.isArray(picks)) return null;
+      out[s][g] = picks.filter(n => Number.isInteger(n) && n >= 0 && n < 500).slice(0, 100);
+    }
+  }
+  return out;
+}
+const catOf = f => String(f.category_name || f.category || 'MISCELLANEOUS').toUpperCase();
+const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
+/** The parts of a Nexus file record the UI shows. */
+const publicFile = f => ({ fileId: f.file_id, name: f.name || f.file_name, fileName: f.file_name, category: catOf(f), version: f.version || f.mod_version || '', size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0 });
 
 const CATEGORY_FOLDERS = {
   MAIN: 'Main', UPDATE: 'Update', OPTIONAL: 'Optional', OLD_VERSION: 'Old versions',
@@ -33,6 +57,9 @@ class ModManager extends EventEmitter {
     this.installer = new Installer({ getSevenZip: () => settings.get('sevenZipPath'), tempDir: () => settings.tempDir, log });
     this.deployer = new Deployer({ manifestFile: path.join(dataDir, 'deployment.json'), backupDir: settings.backupDir, log });
     this.pendingFomod = new Map();
+    this.plans = new Map();
+    this.profileImports = new Map();
+    this.ensureProfiles();
     this.chain = Promise.resolve();
 
     this.downloader.on('update', job => this.emit('job', job));
@@ -43,10 +70,11 @@ class ModManager extends EventEmitter {
   get data() { return this.library.data; }
 
   /** Run state-changing work one at a time. */
-  op(fn) {
+  op(fn, { quiet = false } = {}) {
     const run = this.chain.then(fn);
     this.chain = run.catch(() => {});
-    return run.finally(() => this.emit('changed'));
+    // Quiet work (the background health check) announces its own changes, if any.
+    return quiet ? run : run.finally(() => this.emit('changed'));
   }
 
   gameDir() {
@@ -84,14 +112,40 @@ class ModManager extends EventEmitter {
       .sort((a, b) => (a.modName.localeCompare(b.modName)) || (a.category.localeCompare(b.category)) || a.name.localeCompare(b.name));
     const game = this.gameDir();
     return {
-      mods: mods.map(m => ({ ...m, fileCount: m.files.length, files: undefined })),
+      mods: mods.map(m => ({
+        ...m, fileCount: m.files.length, files: undefined,
+        // Folders this mod owns (red4ext/plugins/X, CET mods/X, mods/X): links game-log problems to it.
+        roots: [...new Set(m.files.map(ownerRoot).filter(Boolean))],
+      })),
       downloads,
       jobs: this.downloader.list(),
       conflicts,
       game: { path: game, valid: isGameDir(game) },
       rate: this.nexus.rate,
       pendingFomod: [...this.pendingFomod.keys()],
+      updates: this.data.updates || {},
+      lastUpdateCheck: this.data.lastUpdateCheck || 0,
+      profiles: this.profilesView(),
     };
+  }
+
+  /**
+   * File conflicts between this mod and every other enabled mod: for each other mod, the shared
+   * files and which mod's copy is in the game. The higher priority wins.
+   */
+  conflictDetails(id) {
+    const mod = this.data.mods[id];
+    if (!mod) return [];
+    const mine = new Set(mod.files.map(f => f.toLowerCase()));
+    const out = [];
+    for (const other of Object.values(this.data.mods)) {
+      if (other.id === id || !other.enabled) continue;
+      const shared = other.files.filter(f => mine.has(f.toLowerCase()));
+      if (!shared.length) continue;
+      const weWin = mod.priority > other.priority;
+      out.push({ id: other.id, name: other.name, priority: other.priority, weWin, files: shared.sort() });
+    }
+    return out.sort((a, b) => b.files.length - a.files.length);
   }
 
   modFiles(id) {
@@ -110,57 +164,183 @@ class ModManager extends EventEmitter {
     return { name: user.name, isPremium: !!user.is_premium, isSupporter: !!user.is_supporter, avatar: user.profile_url || '' };
   }
 
-  /** Queue every file (of the chosen categories) from each mod link. */
-  async addLinks(text) {
+  /**
+   * Read each mod link and walk its Nexus requirements (and theirs), without downloading anything.
+   * Returns a plan the UI shows as a checklist:
+   *   mods: the linked mods and the files that will be downloaded
+   *   deps: every requirement with its status — missing | downloaded | disabled | installed |
+   *         in-game (installed by another tool) | queued | external (not on Nexus)
+   */
+  async planLinks(text) {
     const urls = String(text).split(/[\s,]+/).filter(Boolean);
-    const summary = { mods: 0, queued: 0, skipped: 0, errors: [] };
     if (!urls.length) throw new Error('Paste at least one Nexus Mods link.');
+    const plan = { token: crypto.randomBytes(6).toString('hex'), mods: [], deps: [], errors: [] };
     const wanted = new Set(this.settings.get('categories'));
+    const seen = new Set();
     for (const url of urls) {
       const parsed = parseModUrl(url);
       if (!parsed) {
-        summary.errors.push(`Not a Nexus mod link: ${url}`);
+        plan.errors.push(`Not a Nexus mod link: ${url}`);
         this.log.error(`Not a Nexus mod link: ${url}`, 'Expected https://www.nexusmods.com/<game>/mods/<id>');
         continue;
       }
+      if (seen.has(parsed.modId)) continue;
+      seen.add(parsed.modId);
       try {
-        const [mod, files] = await Promise.all([
-          this.nexus.getMod(parsed.game, parsed.modId),
-          this.nexus.getFiles(parsed.game, parsed.modId),
-        ]);
-        const modName = mod.name || `Mod ${parsed.modId}`;
-        if (parsed.game !== 'cyberpunk2077') this.log.warn(`${modName} is a ${parsed.game} mod; it will download, but the installer only knows Cyberpunk 2077 layouts.`);
-        const list = (files.files || []).filter(f => wanted.has(String(f.category_name || 'MISCELLANEOUS').toUpperCase()));
-        this.log.info(`${modName}: ${list.length} of ${(files.files || []).length} files match the chosen categories`);
-        summary.mods++;
-        for (const f of list) {
-          const key = String(f.file_id);
-          const category = String(f.category_name || 'MISCELLANEOUS').toUpperCase();
-          const dest = path.join(
-            this.settings.downloadsDir, parsed.game, `${sanitizeName(modName)} (${parsed.modId})`,
-            CATEGORY_FOLDERS[category] || sanitizeName(category), sanitizeName(f.file_name || `${key}.zip`),
-          );
-          const known = this.data.downloads[key];
-          if (known && fs.existsSync(known.path)) {
-            summary.skipped++;
-            continue;
-          }
-          this.downloader.enqueue({
-            key, game: parsed.game, modId: parsed.modId, modName, fileId: f.file_id,
-            name: f.name || f.file_name, fileName: f.file_name, version: f.version || f.mod_version || '',
-            category, size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0, uploaded: f.uploaded_timestamp || 0,
-            author: mod.author || '', picture: mod.picture_url || '', dest,
-          });
-          summary.queued++;
-        }
+        const info = await this.fetchModInfo(parsed.game, parsed.modId);
+        const files = info.files.filter(f => wanted.has(catOf(f)));
+        this.log.info(`${info.name}: ${files.length} of ${info.files.length} files match the chosen categories`);
+        plan.mods.push({ ...info, files });
       } catch (err) {
-        summary.errors.push(err.message);
+        plan.errors.push(err.message);
         this.log.error(`Could not read files for ${url}`, err.message);
       }
     }
+    if (this.settings.get('installDependencies')) {
+      for (const m of plan.mods) await this.collectRequirements(m, plan, seen);
+    }
+    this.plans.set(plan.token, plan);
+    return {
+      token: plan.token,
+      errors: plan.errors,
+      mods: plan.mods.map(m => ({ modId: m.modId, game: m.game, name: m.name, author: m.author, files: m.files.map(publicFile) })),
+      deps: plan.deps.map(d => ({ ...d, info: undefined, files: (d.files || []).map(publicFile) })),
+    };
+  }
+
+  async fetchModInfo(game, modId) {
+    const [mod, files] = await Promise.all([this.nexus.getMod(game, modId), this.nexus.getFiles(game, modId)]);
+    if (game !== 'cyberpunk2077') this.log.warn(`${mod.name} is a ${game} mod; it will download, but the installer only knows Cyberpunk 2077 layouts.`);
+    return { game, modId: Number(modId), name: mod.name || `Mod ${modId}`, author: mod.author || '', picture: mod.picture_url || '', files: files.files || [] };
+  }
+
+  /** Breadth-first walk of requirements, recording each one once with its status. */
+  async collectRequirements(root, plan, seen) {
+    const queue = [{ modId: root.modId, name: root.name, game: root.game }];
+    while (queue.length) {
+      const cur = queue.shift();
+      let info;
+      try {
+        info = await this.nexus.getRequirements(cur.game, cur.modId);
+      } catch (err) {
+        this.log.warn(`Could not check what ${cur.name} requires`, err.message);
+        continue;
+      }
+      for (const req of info.requirements) {
+        const existing = plan.deps.find(d => (req.external ? d.name === req.modName : d.modId === req.modId));
+        if (existing) { if (!existing.requiredBy.includes(cur.name)) existing.requiredBy.push(cur.name); continue; }
+        if (req.external) {
+          plan.deps.push({ modId: 0, game: cur.game, name: req.modName, requiredBy: [cur.name], status: 'external', detail: req.url || 'Not hosted on Nexus', url: req.url });
+          continue;
+        }
+        if (!req.modId || seen.has(req.modId)) continue;
+        if (info.gameId && req.gameId && req.gameId !== info.gameId) {
+          this.log.warn(`${cur.name} requires ${req.modName} from another game; skipped.`);
+          continue;
+        }
+        seen.add(req.modId);
+        const st = this.dependencyStatus(req);
+        const dep = { modId: req.modId, game: cur.game, name: req.modName, requiredBy: [cur.name], status: st.status, detail: st.reason || '', notes: req.notes || '' };
+        if (st.status === 'missing') {
+          try {
+            const mi = await this.fetchModInfo(cur.game, req.modId);
+            dep.files = pickMainFiles(mi.files, catOf);
+            dep.info = mi;
+            dep.author = mi.author;
+          } catch (err) {
+            dep.status = 'error';
+            dep.detail = err.message;
+          }
+        }
+        plan.deps.push(dep);
+        // Only requirements we would add can bring in further requirements.
+        if (['missing', 'downloaded', 'disabled'].includes(dep.status)) queue.push({ modId: req.modId, name: req.modName, game: cur.game });
+      }
+    }
+  }
+
+  /**
+   * Download the planned mods plus the requirements the user ticked (by mod id). Requirements that
+   * are downloaded or installed-but-disabled are installed/enabled instead of downloaded again.
+   */
+  async queuePlan(token, chosenDepIds) {
+    const plan = this.plans.get(token);
+    if (!plan) throw new Error('That download plan has expired. Paste the links again.');
+    this.plans.delete(token);
+    const chosen = new Set((chosenDepIds || []).map(Number));
+    const summary = { mods: 0, queued: 0, skipped: 0, dependencies: 0, external: plan.deps.filter(d => d.status === 'external').map(d => ({ name: d.name, url: d.url })), errors: [...plan.errors] };
+    for (const m of plan.mods) {
+      this.queueFiles(m, m.files, '', summary);
+      summary.mods++;
+    }
+    for (const d of plan.deps) {
+      if (!chosen.has(d.modId)) continue;
+      const by = d.requiredBy[0];
+      try {
+        const st = this.dependencyStatus(d);
+        if (st.status === 'disabled') { await this.setEnabled(st.enable, true); summary.dependencies++; continue; }
+        if (st.status === 'downloaded') { await this.install(st.install, { auto: true, forceEnable: true }); summary.dependencies++; continue; }
+        if (st.status === 'missing' && d.info) {
+          this.log.info(`Requirement ${d.name} (needed by ${d.requiredBy.join(', ')}): queuing ${d.files.map(f => f.file_name).join(', ') || 'nothing — it has no current files'}`);
+          this.queueFiles(d.info, d.files, by, summary);
+          summary.dependencies++;
+        }
+      } catch (err) {
+        summary.errors.push(err.message);
+        this.log.error(`Could not add requirement ${d.name}`, err.message);
+      }
+    }
+    for (const d of plan.deps) if (d.status === 'external') this.log.warn(`${d.requiredBy[0]} requires ${d.name}, which is not on Nexus (${d.url || 'see the mod page'}). Install it yourself.`);
     if (summary.skipped) this.log.info(`${summary.skipped} file(s) were already downloaded and were skipped`);
     this.emit('changed');
     return summary;
+  }
+
+  /** Plan and queue in one go, taking every requirement that is not already covered. */
+  async addLinks(text) {
+    const plan = await this.planLinks(text);
+    return this.queuePlan(plan.token, plan.deps.filter(d => ['missing', 'downloaded', 'disabled'].includes(d.status)).map(d => d.modId));
+  }
+
+  /** Queue files of one mod. `dependencyOf` names the mod that needs it ('' for a linked mod). */
+  queueFiles(mod, files, dependencyOf, summary, extra = {}) {
+    for (const f of files) {
+      const key = String(f.file_id);
+      const category = catOf(f);
+      const known = this.data.downloads[key];
+      if (known && fs.existsSync(known.path) && !extra.replaces) {
+        summary.skipped++;
+        continue;
+      }
+      const dest = path.join(
+        this.settings.downloadsDir, mod.game, `${sanitizeName(mod.name)} (${mod.modId})`,
+        CATEGORY_FOLDERS[category] || sanitizeName(category), sanitizeName(f.file_name || `${key}.zip`),
+      );
+      this.downloader.enqueue({
+        key, game: mod.game, modId: mod.modId, modName: mod.name, fileId: f.file_id,
+        name: f.name || f.file_name, fileName: f.file_name, version: f.version || f.mod_version || '',
+        category, size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0, uploaded: f.uploaded_timestamp || 0,
+        author: mod.author || '', picture: mod.picture || '', dest, dependencyOf: dependencyOf || '',
+        requestedBy: this.data.profiles?.active || '', ...extra,
+      });
+      summary.queued++;
+    }
+  }
+
+  /** Is a required mod already taken care of? */
+  dependencyStatus(req) {
+    const modId = Number(req.modId);
+    const mods = Object.values(this.data.mods).filter(m => Number(m.modId) === modId);
+    if (mods.some(m => m.enabled)) return { status: 'installed', done: true, reason: 'Installed and enabled' };
+    if (mods.length) return { status: 'disabled', enable: mods.map(m => m.id), reason: 'Installed but disabled — will be enabled' };
+    if (this.downloader.list().some(j => Number(j.modId) === modId && ['queued', 'downloading'].includes(j.status))) {
+      return { status: 'queued', done: true, reason: 'Already downloading' };
+    }
+    const outside = foundInGame(this.settings.get('gamePath'), { modId, modName: req.modName || req.name });
+    if (outside) return { status: 'in-game', done: true, reason: `Already in the game folder (${outside}), installed by another tool` };
+    const downloaded = Object.values(this.data.downloads).filter(d => Number(d.modId) === modId && fs.existsSync(d.path));
+    if (downloaded.length) return { status: 'downloaded', install: pickMainFiles(downloaded, d => d.category).map(d => d.key), reason: 'Downloaded — will be installed' };
+    return { status: 'missing', reason: 'Not installed' };
   }
 
   onDownloaded(job) {
@@ -169,10 +349,21 @@ class ModManager extends EventEmitter {
         key: job.key, game: job.game, modId: job.modId, modName: job.modName, fileId: job.fileId,
         name: job.name, fileName: job.fileName, version: job.version, category: job.category,
         size: job.total, uploaded: job.uploaded, author: job.author, picture: job.picture,
-        path: job.dest, downloadedAt: Date.now(),
+        path: job.dest, downloadedAt: Date.now(), dependencyOf: job.dependencyOf || '',
       };
       this.library.save();
     }).then(() => {
+      // An update always installs, taking the old version's place.
+      if (job.replaces) return this.install([job.key], { auto: true, replaces: job.replaces, forProfiles: job.forProfiles || [] });
+      // Part of one or more imported profiles: always install, into each of them.
+      if (job.forProfiles?.length) {
+        // If it was first queued as a requirement for another profile, that profile gets it too.
+        const targets = job.requestedBy && job.dependencyOf ? [...job.forProfiles, job.requestedBy] : job.forProfiles;
+        return this.install([job.key], { forProfiles: targets, fomodChoices: job.fomodChoices ? { [job.key]: job.fomodChoices } : null });
+      }
+      if (job.dependencyOf && this.settings.get('installDependencies')) {
+        return this.install([job.key], { auto: true, forceEnable: true });
+      }
       const mode = this.settings.get('autoInstall');
       if (mode === 'all' || (mode === 'main' && job.category === 'MAIN')) {
         return this.install([job.key], { auto: true });
@@ -207,14 +398,15 @@ class ModManager extends EventEmitter {
   // ---------------------------------------------------------------- installing
 
   /** Install downloaded archives. FOMOD archives pause for the wizard (a 'fomod' event). */
-  install(keys, { auto = false } = {}) {
+  install(keys, { auto = false, forceEnable = false, replaces = '', forProfiles = [], fomodChoices = null } = {}) {
     return this.op(async () => {
       const results = [];
       for (const key of keys) {
         const rec = this.data.downloads[key];
         if (!rec) continue;
         try {
-          results.push(await this.installOne(rec, auto));
+          const choices = fomodChoices && typeof fomodChoices === 'object' && !Array.isArray(fomodChoices) ? (fomodChoices[key] || null) : null;
+          results.push(await this.installOne(rec, { auto: auto || forceEnable, forceEnable, replaces, forProfiles, fomodChoices: choices }));
         } catch (err) {
           this.log.error(`Install failed: ${rec.name}`, err);
           results.push({ key, error: err.message });
@@ -224,20 +416,21 @@ class ModManager extends EventEmitter {
     });
   }
 
-  async installOne(rec, auto) {
+  async installOne(rec, opts) {
     if (!fs.existsSync(rec.path)) throw new Error(`Archive is missing: ${rec.path}`);
     this.log.info(`Installing ${rec.name}…`);
     const session = await this.installer.prepare(rec.path);
     if (session.fomod) {
       const states = this.installer.fileStates(session, this.settings.get('gamePath'));
       const imageBase = pathToFileURL(path.join(session.extractDir, session.fomod.basePath || '.') + path.sep).href;
-      this.pendingFomod.set(session.token, { session, rec, auto, states });
+      this.pendingFomod.set(session.token, { session, rec, opts, states });
       this.log.info(`${rec.name} has a FOMOD installer; choose its options in the wizard.`);
-      this.emit('fomod', { token: session.token, name: rec.name, modName: rec.modName, config: session.fomod.config, fileStates: states, imageBase });
+      // A shared profile carries the sender's choices: the wizard opens with them filled in.
+      this.emit('fomod', { token: session.token, name: rec.name, modName: rec.modName, config: session.fomod.config, fileStates: states, imageBase, preset: opts.fomodChoices || null });
       return { key: rec.key, fomod: session.token };
     }
     try {
-      return this.finishInstall(rec, session, null, null, auto);
+      return this.finishInstall(rec, session, null, null, opts);
     } finally {
       this.installer.release(session.token);
     }
@@ -249,7 +442,7 @@ class ModManager extends EventEmitter {
       if (!pending) throw new Error('That installer session has expired.');
       this.pendingFomod.delete(token);
       try {
-        return this.finishInstall(pending.rec, pending.session, selections, pending.states, pending.auto);
+        return this.finishInstall(pending.rec, pending.session, selections, pending.states, pending.opts);
       } catch (err) {
         this.log.error(`Install failed: ${pending.rec.name}`, err);
         throw err;
@@ -268,13 +461,15 @@ class ModManager extends EventEmitter {
     this.emit('changed');
   }
 
-  finishInstall(rec, session, selections, states, auto) {
+  finishInstall(rec, session, selections, states, { auto = false, forceEnable = false, replaces = '', forProfiles = [] } = {}) {
     const plan = this.installer.plan(session, rec.modName, selections, states);
     if (!plan.mappings.length) {
       throw new Error(`Nothing in ${rec.fileName} looks like a Cyberpunk 2077 mod (${session.files.length} files, none in a known place).`);
     }
     const id = rec.key;
-    const old = this.data.mods[id];
+    // An update takes over the previous version's place: its priority, on/off state and profiles.
+    const prev = replaces && replaces !== id ? this.data.mods[replaces] : null;
+    const old = this.data.mods[id] || (prev ? { priority: prev.priority, enabled: false, dependencyOf: prev.dependencyOf } : null);
     const stagingDir = path.join(this.settings.stagingDir, id);
     if (old?.enabled) {
       old.enabled = false;
@@ -287,16 +482,498 @@ class ModManager extends EventEmitter {
       game: rec.game, version: rec.version, category: rec.category, author: rec.author,
       type: plan.type, files, skipped: plan.skipped.length, warnings: plan.warnings,
       enabled: false, priority: old?.priority ?? this.data.nextPriority++, installedAt: Date.now(),
-      fomod: !!selections,
+      fomod: !!selections, fomodChoices: selections || undefined, dependencyOf: rec.dependencyOf || old?.dependencyOf || '',
     };
     this.data.mods[id] = mod;
     this.library.save();
+    if (prev) {
+      // Swap old for new in one deployment, so the game never sees both or neither.
+      mod.enabled = prev.enabled;
+      delete this.data.mods[prev.id];
+      delete this.data.updates?.[prev.id];
+      for (const p of Object.values(this.data.profiles?.list || {})) {
+        p.enabled = p.enabled.map(x => (x === prev.id ? id : x));
+        if (p.priorities && prev.id in p.priorities) { p.priorities[id] = p.priorities[prev.id]; delete p.priorities[prev.id]; }
+      }
+      // An update an import was also waiting for joins that import's profiles too.
+      const act = this.joinProfiles(mod, forProfiles);
+      if (act) { mod.enabled = true; this.applyProfilePriorities(act); }
+      this.deploy();
+      fs.rmSync(path.join(this.settings.stagingDir, prev.id), { recursive: true, force: true });
+      this.log.success(`Updated ${rec.modName}: ${prev.version || prev.name} → ${rec.version || rec.name}`);
+      return { key: rec.key, id, type: plan.type, updated: prev.id };
+    }
     this.log.success(`Installed ${rec.name} as ${plan.type} (${files.length} files${plan.skipped.length ? `, ${plan.skipped.length} skipped` : ''})`);
-    if ((auto && this.settings.get('autoEnable')) || old?.enabled) {
+    if (forProfiles.length) {
+      // An imported profile's mod: it belongs to each profile waiting for it, in that sender's order.
+      const act = this.joinProfiles(mod, forProfiles);
+      if (act) {
+        mod.enabled = true;
+        this.applyProfilePriorities(act);
+        this.deploy();
+      } else if (old?.enabled) {
+        // Reinstalled while the active profile uses it: keep it on there.
+        mod.enabled = true;
+        this.deploy();
+      } else {
+        // None of them is active: only their own remembered order changes; the game folder is untouched.
+        this.library.save();
+      }
+      return { key: rec.key, id, type: plan.type };
+    }
+    if (forceEnable || (auto && this.settings.get('autoEnable')) || old?.enabled) {
       mod.enabled = true;
       this.deploy();
     }
     return { key: rec.key, id, type: plan.type };
+  }
+
+  // ---------------------------------------------------------------- health: mods changed outside the app
+
+  /**
+   * Check every enabled mod's files in the game folder. A mod whose files were all deleted by hand
+   * is marked disabled (its originals restored, if we had backed any up); a mod with some files
+   * missing or replaced gets a `health` note so the UI can offer a repair.
+   * Returns the names of mods that were switched off.
+   */
+  verifyDeployment() {
+    const game = this.gameDir();
+    if (!isGameDir(game)) return [];
+    const removed = [];
+    let changed = false;
+    for (const m of Object.values(this.data.mods)) {
+      if (!m.enabled) { if (m.health) { delete m.health; changed = true; } continue; }
+      let owned = 0;
+      let missing = 0;
+      let replaced = 0;
+      const gone = [];
+      for (const f of m.files) {
+        const key = f.toLowerCase();
+        const entry = this.deployer.deployed[key];
+        if (!entry || entry.owner !== m.id) continue;
+        owned++;
+        const st = this.deployer.fileState(game, entry);
+        if (st === 'missing') { missing++; gone.push(key); } else if (st === 'changed') replaced++;
+      }
+      if (owned && missing === owned) {
+        this.deployer.forget(game, gone);
+        m.enabled = false;
+        delete m.health;
+        removed.push(m.name);
+        changed = true;
+        this.log.warn(`${m.name} was removed from the game folder outside this app; it is now shown as disabled. Enable it to put it back.`);
+        continue;
+      }
+      const health = missing || replaced ? { missing, replaced } : null;
+      if (JSON.stringify(health) !== JSON.stringify(m.health || null)) {
+        if (health) m.health = health; else delete m.health;
+        changed = true;
+        if (health) this.log.warn(`${m.name}: ${missing ? `${plural(missing, 'file')} missing` : ''}${missing && replaced ? ', ' : ''}${replaced ? `${plural(replaced, 'file')} replaced by another tool` : ''}. Use Repair to put them back.`);
+      }
+    }
+    if (changed) {
+      this.syncActiveProfile();
+      this.library.save();
+      this.emit('changed');
+    }
+    return removed;
+  }
+
+  /** Check now, and then every 15 seconds. */
+  startHealthChecks() {
+    const tick = () => this.op(async () => this.verifyDeployment(), { quiet: true }).catch(err => this.log.error('Checking the game folder failed', err));
+    tick();
+    this.healthTimer = setInterval(tick, 15000);
+  }
+
+  /** Put back missing or replaced files of the given mods. */
+  repair(ids) {
+    return this.op(async () => {
+      const game = this.gameDir();
+      for (const id of ids) {
+        const m = this.data.mods[id];
+        if (!m) continue;
+        // Forget the broken entries so the next sync places the files again.
+        const broken = m.files.map(f => f.toLowerCase()).filter(k => {
+          const e = this.deployer.deployed[k];
+          return e && e.owner === id && this.deployer.fileState(game, e) !== 'ok';
+        });
+        for (const k of broken) delete this.deployer.deployed[k];
+        delete m.health;
+      }
+      this.deploy();
+      this.log.success(`Repaired ${plural(ids.length, 'mod')}`);
+    });
+  }
+
+  // ---------------------------------------------------------------- updates
+
+  /**
+   * Ask Nexus for each installed mod's file list and find newer versions of the installed files.
+   * Results are kept in `updates` (mod id → newer file) until the mod is updated.
+   */
+  async checkUpdates() {
+    const mods = Object.values(this.data.mods).filter(m => Number(m.modId) > 0 && Number(m.fileId) > 0);
+    const groups = new Map();
+    for (const m of mods) {
+      const k = `${m.game}/${m.modId}`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(m);
+    }
+    const found = {};
+    const errors = [];
+    const work = [...groups.values()];
+    // A few requests at a time, to stay friendly with the API rate limit.
+    const worker = async () => {
+      while (work.length) {
+        const list = work.shift();
+        const { game, modId, modName } = list[0];
+        try {
+          const res = await this.nexus.getFiles(game, modId);
+          for (const m of list) {
+            const f = findUpdate(res.files || [], res.file_updates || [], m.fileId);
+            if (f && !this.data.mods[String(f.file_id)]) {
+              found[m.id] = {
+                fileId: Number(f.file_id), name: f.name || f.file_name, fileName: f.file_name, category: catOf(f),
+                version: f.version || f.mod_version || '', size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0,
+                uploaded: f.uploaded_timestamp || 0, from: m.version,
+              };
+            }
+          }
+        } catch (err) {
+          errors.push(`${modName}: ${err.message}`);
+          this.log.warn(`Could not check ${modName} for updates`, err.message);
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    this.data.updates = found;
+    this.data.lastUpdateCheck = Date.now();
+    this.library.save();
+    const n = Object.keys(found).length;
+    this.log[n ? 'success' : 'info'](n ? `${plural(n, 'update')} available` : `All ${plural(mods.length, 'mod')} are up to date`);
+    this.emit('changed');
+    return { checked: groups.size, available: n, errors };
+  }
+
+  /** Download the newer files; each one replaces its old version once it is installed. */
+  async updateMods(ids) {
+    const summary = { mods: 0, queued: 0, skipped: 0, errors: [] };
+    for (const id of ids) {
+      const m = this.data.mods[id];
+      const u = this.data.updates?.[id];
+      if (!m || !u) continue;
+      const file = { file_id: u.fileId, name: u.name, file_name: u.fileName, category_name: u.category, version: u.version, size_in_bytes: u.size, uploaded_timestamp: u.uploaded };
+      this.queueFiles({ game: m.game, modId: m.modId, name: m.modName, author: m.author }, [file], m.dependencyOf || '', summary, { replaces: m.id });
+      summary.mods++;
+    }
+    this.log.info(`Updating ${plural(summary.mods, 'mod')}`);
+    this.emit('changed');
+    return summary;
+  }
+
+  // ---------------------------------------------------------------- profiles
+
+  /** Profiles are named sets of enabled mods. The active one follows every enable/disable. */
+  ensureProfiles() {
+    if (this.data.profiles?.list && Object.keys(this.data.profiles.list).length) return;
+    const id = 'default';
+    this.data.profiles = {
+      active: id,
+      list: { [id]: { id, name: 'Default', enabled: Object.values(this.data.mods).filter(m => m.enabled).map(m => m.id), created: Date.now() } },
+    };
+    this.library.save();
+  }
+
+  /** The active profile follows the live state: which mods are on, and their priority order. */
+  syncActiveProfile() {
+    const p = this.data.profiles?.list?.[this.data.profiles.active];
+    if (!p) return;
+    p.enabled = Object.values(this.data.mods).filter(m => m.enabled).map(m => m.id);
+    p.priorities = Object.fromEntries(Object.values(this.data.mods).map(m => [m.id, m.priority]));
+  }
+
+  /** Make a profile's remembered priority order live (before deploying it). */
+  applyProfilePriorities(p) {
+    for (const m of Object.values(this.data.mods)) {
+      const want = p.priorities?.[m.id];
+      if (Number.isFinite(want)) m.priority = want;
+    }
+  }
+
+  profilesView() {
+    const { active, list } = this.data.profiles;
+    return {
+      active,
+      list: Object.values(list).sort((a, b) => a.created - b.created).map(p => ({ id: p.id, name: p.name, count: p.enabled.filter(id => this.data.mods[id]).length })),
+    };
+  }
+
+  switchProfile(id) {
+    return this.op(async () => {
+      const p = this.data.profiles.list[id];
+      if (!p) throw new Error('That profile no longer exists.');
+      const want = new Set(p.enabled);
+      const before = Object.values(this.data.mods).map(m => [m, m.enabled, m.priority]);
+      for (const m of Object.values(this.data.mods)) m.enabled = want.has(m.id);
+      this.applyProfilePriorities(p);
+      const prevActive = this.data.profiles.active;
+      this.data.profiles.active = id;
+      try {
+        this.deploy();
+      } catch (err) {
+        for (const [m, en, prio] of before) { m.enabled = en; m.priority = prio; }
+        this.data.profiles.active = prevActive;
+        this.library.save();
+        throw err;
+      }
+      this.log.success(`Switched to profile "${p.name}" (${plural(want.size, 'mod')} enabled)`);
+    });
+  }
+
+  createProfile(name, { copyCurrent = true } = {}) {
+    return this.op(async () => {
+      const clean = String(name || '').trim().slice(0, 60);
+      if (!clean) throw new Error('Give the profile a name.');
+      if (Object.values(this.data.profiles.list).some(p => p.name.toLowerCase() === clean.toLowerCase())) throw new Error(`A profile called "${clean}" already exists.`);
+      const id = crypto.randomBytes(5).toString('hex');
+      const enabled = copyCurrent ? Object.values(this.data.mods).filter(m => m.enabled).map(m => m.id) : [];
+      this.data.profiles.list[id] = { id, name: clean, enabled, created: Date.now() };
+      this.library.save();
+      this.log.success(`Created profile "${clean}"`);
+      return id;
+    });
+  }
+
+  renameProfile(id, name) {
+    return this.op(async () => {
+      const p = this.data.profiles.list[id];
+      const clean = String(name || '').trim().slice(0, 60);
+      if (!p || !clean) throw new Error('Give the profile a name.');
+      if (Object.values(this.data.profiles.list).some(o => o.id !== id && o.name.toLowerCase() === clean.toLowerCase())) throw new Error(`A profile called "${clean}" already exists.`);
+      p.name = clean;
+      this.library.save();
+    });
+  }
+
+  deleteProfile(id) {
+    return this.op(async () => {
+      const list = this.data.profiles.list;
+      if (!list[id]) return;
+      if (Object.keys(list).length === 1) throw new Error('You need at least one profile.');
+      if (this.data.profiles.active === id) throw new Error('Switch to another profile before deleting this one.');
+      const name = list[id].name;
+      delete list[id];
+      this.library.save();
+      this.log.success(`Deleted profile "${name}"`);
+    });
+  }
+
+  // ---------------------------------------------------------------- sharing profiles
+
+  /**
+   * A profile as a portable JSON document: the mods it enables (installed ones only), lowest
+   * priority first, so an import reproduces who wins each file conflict. Local archives (not from
+   * Nexus) are listed so the receiver knows they exist, but cannot be fetched for them.
+   */
+  exportProfile(id) {
+    const p = this.data.profiles.list[id];
+    if (!p) throw new Error('That profile no longer exists.');
+    const mods = p.enabled.map(mid => this.data.mods[mid]).filter(Boolean).sort((a, b) => a.priority - b.priority);
+    return {
+      format: PROFILE_FORMAT,
+      version: 1,
+      name: p.name,
+      game: 'cyberpunk2077',
+      exportedAt: new Date().toISOString(),
+      mods: mods.map(m => ({
+        name: m.name,
+        modName: m.modName,
+        game: m.game,
+        modId: Number(m.modId) || 0,
+        fileId: Number(m.fileId) || 0,
+        version: m.version || '',
+        category: m.category,
+        fomod: !!m.fomod,
+        fomodChoices: m.fomodChoices || undefined,
+        source: Number(m.modId) > 0 ? 'nexus' : 'local',
+      })),
+    };
+  }
+
+  /**
+   * Read a shared profile and work out, per mod, what importing it takes:
+   *   installed  — the same file is installed here (it will be enabled)
+   *   downloaded — the archive is here but not installed (it will be installed)
+   *   download   — the exact file is on Nexus (it will be downloaded)
+   *   newer      — that file is gone from Nexus; its newest replacement will be downloaded
+   *   local      — a local archive on the sender's PC; it can't be fetched
+   *   unavailable — not on Nexus any more, with no replacement
+   */
+  async planProfileImport(doc) {
+    if (!doc || doc.format !== PROFILE_FORMAT || !Array.isArray(doc.mods)) {
+      throw new Error('This file is not a Cyber Mod Manager profile.');
+    }
+    if (doc.version > 1) throw new Error('This profile was made by a newer version of Cyber Mod Manager.');
+    if (doc.mods.length > MAX_PROFILE_MODS) throw new Error(`This profile lists ${doc.mods.length} mods; the most a profile can hold is ${MAX_PROFILE_MODS}.`);
+    const rows = [];
+    const byMod = new Map();
+    const seenFiles = new Set();
+    const id = x => (Number.isSafeInteger(Number(x)) && Number(x) > 0 ? Number(x) : 0);
+    for (const [order, raw] of doc.mods.entries()) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+      const m = {
+        order, name: String(raw.name || raw.modName || 'Mod').slice(0, 200), modName: String(raw.modName || raw.name || '').slice(0, 200),
+        game: 'cyberpunk2077', modId: id(raw.modId), fileId: id(raw.fileId),
+        version: String(raw.version || '').slice(0, 40), fomod: !!raw.fomod,
+        fomodChoices: validChoices(raw.fomodChoices),
+      };
+      if (m.fileId) { if (seenFiles.has(m.fileId)) continue; seenFiles.add(m.fileId); }
+      if (raw.game && String(raw.game) !== 'cyberpunk2077') {
+        rows.push({ ...m, status: 'unavailable', detail: `A ${String(raw.game).slice(0, 40)} mod, not Cyberpunk 2077` });
+        continue;
+      }
+      const key = String(m.fileId);
+      if (m.fileId && this.data.mods[key]) {
+        rows.push({ ...m, status: 'installed', key, detail: 'Already installed' });
+      } else if (m.fileId && this.data.downloads[key] && fs.existsSync(this.data.downloads[key].path)) {
+        rows.push({ ...m, status: 'downloaded', key, detail: 'Downloaded — will be installed' });
+      } else if (!m.modId || !m.fileId) {
+        rows.push({ ...m, status: 'local', detail: 'A local file on the sender\'s PC — ask them for it' });
+      } else {
+        const row = { ...m, status: 'pending' };
+        rows.push(row);
+        if (!byMod.has(m.modId)) byMod.set(m.modId, []);
+        byMod.get(m.modId).push(row);
+      }
+    }
+    // One files.json request per Nexus mod, a few at a time.
+    const work = [...byMod.values()];
+    const worker = async () => {
+      while (work.length) {
+        const group = work.shift();
+        try {
+          const res = await this.nexus.getFiles(group[0].game, group[0].modId);
+          const files = res.files || [];
+          for (const row of group) {
+            const exact = files.find(f => Number(f.file_id) === row.fileId);
+            if (exact && !['DELETED', 'ARCHIVED'].includes(catOf(exact))) {
+              Object.assign(row, { status: 'download', file: exact, size: exact.size_in_bytes || (exact.size_kb || 0) * 1024, detail: exact.file_name });
+            } else {
+              const newer = findUpdate(files, res.file_updates || [], row.fileId);
+              if (newer) Object.assign(row, { status: 'newer', file: newer, size: newer.size_in_bytes || (newer.size_kb || 0) * 1024, detail: `That version is gone; will get ${newer.version ? `v${newer.version}` : newer.file_name}` });
+              else Object.assign(row, { status: 'unavailable', detail: 'No longer on Nexus Mods' });
+            }
+          }
+        } catch (err) {
+          for (const row of group) Object.assign(row, { status: 'unavailable', detail: err.message });
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    const token = crypto.randomBytes(6).toString('hex');
+    this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows });
+    while (this.profileImports.size > 3) this.profileImports.delete(this.profileImports.keys().next().value);
+    return {
+      token,
+      name: String(doc.name || 'Imported profile').slice(0, 60),
+      mods: rows.map(r => ({ name: r.name, modName: r.modName, version: r.version, status: r.status, detail: r.detail || '', size: r.size || 0, fomod: r.fomod, choices: !!r.fomodChoices && r.status !== 'newer' })),
+    };
+  }
+
+  /**
+   * Create the profile, switch to it, enable what is here, and download the rest. Downloads that
+   * finish later install into that profile and take their place in its priority order.
+   */
+  applyProfileImport(token, name) {
+    return this.op(async () => {
+      const plan = this.profileImports.get(token);
+      if (!plan) throw new Error('That import has expired. Open the file again.');
+      const base = String(name || '').trim().slice(0, 54) || plan.name.slice(0, 54) || 'Imported profile';
+      let clean = base;
+      const taken = new Set(Object.values(this.data.profiles.list).map(p => p.name.toLowerCase()));
+      for (let i = 2; taken.has(clean.toLowerCase()); i++) clean = `${base} (${i})`;
+
+      const id = crypto.randomBytes(5).toString('hex');
+      const order = plan.rows.map(r => r.key || (r.file ? String(r.file.file_id) : null)).filter(Boolean);
+      const summary = { profile: id, name: clean, enabled: 0, installing: 0, downloading: 0, skipped: 0 };
+
+      // Switch to the new profile (only its mods on), all or nothing.
+      const before = Object.values(this.data.mods).map(m => [m, m.enabled, m.priority]);
+      const prevActive = this.data.profiles.active;
+      this.syncActiveProfile(); // the profile being left keeps its exact state
+      this.data.profiles.list[id] = { id, name: clean, enabled: [], priorities: {}, created: Date.now(), importOrder: order };
+      try {
+        for (const m of Object.values(this.data.mods)) m.enabled = false;
+        this.data.profiles.active = id;
+        for (const r of plan.rows) {
+          const mod = r.status === 'installed' && this.data.mods[r.key];
+          if (mod) { mod.enabled = true; summary.enabled++; }
+        }
+        this.data.profiles.list[id].priorities = Object.fromEntries(Object.values(this.data.mods).map(m => [m.id, m.priority]));
+        this.applyImportOrder(id);
+        this.applyProfilePriorities(this.data.profiles.list[id]);
+        this.deploy();
+      } catch (err) {
+        for (const [m, en, prio] of before) { m.enabled = en; m.priority = prio; }
+        this.data.profiles.active = prevActive;
+        delete this.data.profiles.list[id];
+        try { this.deploy(); } catch { /* the folder itself is unusable; data is restored either way */ }
+        this.library.save();
+        throw err;
+      }
+      this.profileImports.delete(token);
+
+      const installRows = plan.rows.filter(r => r.status === 'downloaded');
+      const toInstall = installRows.map(r => r.key);
+      const presets = Object.fromEntries(installRows.filter(r => r.fomodChoices).map(r => [r.key, r.fomodChoices]));
+      const q = { mods: 0, queued: 0, skipped: 0, errors: [] };
+      for (const r of plan.rows.filter(x => x.status === 'download' || x.status === 'newer')) {
+        // The sender's installer choices only fit the exact same file.
+        const choices = r.status === 'download' ? r.fomodChoices : null;
+        this.queueFiles({ game: r.game, modId: r.modId, name: r.modName || r.name, author: '' }, [r.file], '', q, { forProfiles: [id], ...(choices ? { fomodChoices: choices } : {}) });
+      }
+      summary.downloading = q.queued;
+      summary.skipped = plan.rows.filter(r => r.status === 'local' || r.status === 'unavailable').length;
+      this.library.save();
+      this.log.success(`Imported profile "${clean}": ${summary.enabled} enabled, ${toInstall.length} to install, ${summary.downloading} downloading${summary.skipped ? `, ${summary.skipped} unavailable` : ''}`);
+      // Installing goes through the normal queue (FOMOD wizards included) after this operation.
+      if (toInstall.length) setImmediate(() => this.install(toInstall, { forProfiles: [id], fomodChoices: presets }).catch(() => {}));
+      summary.installing = toInstall.length;
+      return summary;
+    });
+  }
+
+  cancelProfileImport(token) { this.profileImports.delete(token); }
+
+  /**
+   * Add an installed mod to the imported profiles waiting for it. Returns the active profile if it is
+   * one of them (the caller enables the mod and deploys), else null.
+   */
+  joinProfiles(mod, profileIds) {
+    let active = null;
+    for (const pid of new Set(profileIds || [])) {
+      const p = this.data.profiles.list[pid];
+      if (!p) continue;
+      if (!p.enabled.includes(mod.id)) p.enabled.push(mod.id);
+      p.priorities = { ...(p.priorities || {}), [mod.id]: p.priorities?.[mod.id] ?? mod.priority };
+      this.applyImportOrder(pid);
+      if (this.data.profiles.active === pid) active = p;
+    }
+    return active;
+  }
+
+  /** Give an imported profile's mods the sender's relative priority order (in that profile). */
+  applyImportOrder(profileId) {
+    const p = this.data.profiles.list[profileId];
+    if (!p?.importOrder) return;
+    p.priorities ||= {};
+    const ids = p.importOrder.filter(k => this.data.mods[k]);
+    const prio = id => p.priorities[id] ?? this.data.mods[id].priority;
+    const slots = ids.map(prio).sort((a, b) => a - b);
+    ids.forEach((id, i) => { p.priorities[id] = slots[i]; });
+    // Every mod of the import is here: the order is final, and later changes are the user's own.
+    if (ids.length === p.importOrder.length) delete p.importOrder;
   }
 
   // ---------------------------------------------------------------- enabling / removing
@@ -313,6 +990,7 @@ class ModManager extends EventEmitter {
     const res = this.deployer.sync(game, enabled.map(m => ({
       id: m.id, stagingDir: path.join(this.settings.stagingDir, m.id), files: m.files,
     })), this.settings.get('deployMethod'));
+    this.syncActiveProfile();
     this.library.save();
     if (res.added || res.removed) this.log.info(`Deployment: ${res.added} file(s) placed, ${res.removed} removed${res.restored ? `, ${res.restored} original(s) restored` : ''}`);
     if (res.errors.length) this.log.error(`${res.errors.length} file(s) could not be deployed (is the game running?)`);
@@ -394,6 +1072,52 @@ class ModManager extends EventEmitter {
   }
 }
 
+/** Files that make up a mod's current release: the primary main file, else all main files, else the newest file. */
+function pickMainFiles(files, catOf) {
+  const current = files.filter(f => !['OLD_VERSION', 'ARCHIVED', 'DELETED'].includes(catOf(f)));
+  const main = current.filter(f => catOf(f) === 'MAIN');
+  if (main.length) {
+    const primary = main.filter(f => f.is_primary);
+    return primary.length ? primary : main;
+  }
+  const newest = [...current].sort((a, b) => (b.uploaded_timestamp ?? b.uploaded ?? 0) - (a.uploaded_timestamp ?? a.uploaded ?? 0))[0];
+  return newest ? [newest] : [];
+}
+
+/** Marker files of the common frameworks, by Nexus mod id. */
+const FRAMEWORK_MARKERS = {
+  107: 'bin/x64/plugins/cyber_engine_tweaks.asi', // Cyber Engine Tweaks
+  1511: 'engine/tools/scc.exe', // redscript
+  2380: 'red4ext/RED4ext.dll', // RED4ext
+  4197: 'red4ext/plugins/TweakXL/TweakXL.dll', // TweakXL
+  4198: 'red4ext/plugins/ArchiveXL/ArchiveXL.dll', // ArchiveXL
+  4575: 'red4ext/plugins/input_loader/input_loader.dll', // Input Loader
+  7780: 'red4ext/plugins/Codeware/Codeware.dll', // Codeware
+  12001: 'red4ext/plugins/audioware/audioware.dll', // Audioware
+};
+const MOD_FOLDERS = ['red4ext/plugins', 'bin/x64/plugins/cyber_engine_tweaks/mods', 'r6/scripts', 'r6/tweaks', 'mods'];
+const squash = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * Is a required mod already in the game folder, put there by something else (Vortex, by hand)?
+ * Checks known framework files first, then a mod folder whose name matches the mod's name.
+ * Returns the matching relative path, or ''.
+ */
+function foundInGame(gameDir, req) {
+  if (!gameDir || !isGameDir(gameDir)) return '';
+  const marker = FRAMEWORK_MARKERS[req.modId];
+  if (marker) return fs.existsSync(path.join(gameDir, marker)) ? marker : '';
+  const want = squash(req.modName);
+  if (want.length < 4) return '';
+  for (const rel of MOD_FOLDERS) {
+    let entries = [];
+    try { entries = fs.readdirSync(path.join(gameDir, rel)); } catch { continue; }
+    const hit = entries.find(e => squash(e) === want);
+    if (hit) return `${rel}/${hit}`;
+  }
+  return '';
+}
+
 function removeEmptyParents(dir, stopAt) {
   const stop = path.resolve(stopAt);
   let cur = path.resolve(dir);
@@ -406,4 +1130,4 @@ function removeEmptyParents(dir, stopAt) {
   }
 }
 
-module.exports = { ModManager };
+module.exports = { ModManager, pickMainFiles, foundInGame };

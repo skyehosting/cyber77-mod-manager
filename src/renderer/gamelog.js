@@ -1,0 +1,407 @@
+'use strict';
+/* global api, $, $$, h, icon, run, plural, fmtTime, state, renderMods, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus */
+
+// ---------------------------------------------------------------- game log page
+
+const GL_MAX_ROWS = 1500;
+const GL_MAX_ENTRIES = 8000;
+const GL_TRIM_SLACK = 1000; // trim in chunks, so counters are rebuilt once per 1000 lines, not per batch
+const gl = {
+  entries: [],
+  clearedAfter: 0,
+  paused: false,
+  held: 0,
+  tab: 'timeline',
+  level: 'all',
+  source: '',
+  q: '',
+  sources: new Set(),
+  errors: 0,
+  warns: 0,
+  // Problems grouped as they arrive (unfiltered), so stats never rescan history.
+  problemKeys: new Set(),
+  rootErrors: new Map(), // mod folder (lower case) → error count, kept as lines arrive
+  status: { running: false, since: null },
+  sourcesSeq: 0,
+};
+
+const relTime = t => {
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return new Date(t).toLocaleDateString();
+};
+
+const isProblem = e => !e.marker && (e.level === 'error' || e.level === 'warn');
+
+function glMatches(e) {
+  if (e.id <= gl.clearedAfter) return false;
+  if (gl.level === 'error' && e.level !== 'error') return false;
+  if (gl.level === 'warn' && e.level !== 'warn' && e.level !== 'error') return false;
+  if (gl.source && e.source !== gl.source) return false;
+  if (gl.q && !`${e.source} ${e.text}`.toLowerCase().includes(gl.q)) return false;
+  return true;
+}
+
+const LEVEL_TAG = { error: 'tag-err', warn: 'tag-warn', success: 'tag-ok' };
+const LEVEL_TEXT = { error: 'Error', warn: 'Warning', info: 'Info', success: 'Game', debug: 'Debug' };
+const LEVEL_SHORT = { error: 'ERROR', warn: 'WARN', info: 'INFO', success: 'GAME', debug: 'DEBUG' };
+
+/** Rows carry data attributes only; one delegated listener on the list handles clicks. */
+function glRow(e) {
+  return h('div', { class: `lrow lv-${e.level}${e.marker ? ' marker' : ''}` },
+    h('span', { class: 'lrow-time', title: new Date(e.time).toLocaleString() }, fmtTime(e.time)),
+    h('span', { class: 'lrow-level' }, LEVEL_SHORT[e.level] || e.level.toUpperCase()),
+    h('button', { class: 'lrow-source', dataset: { source: e.source }, title: e.file ? `${e.file}\nShow only ${e.source}` : `Show only ${e.source}` }, e.source),
+    h('span', { class: `lrow-text${e.lines > 3 ? ' clamp' : ''}`, title: e.lines > 3 ? 'Click to expand' : null }, e.text));
+}
+
+$('#gl-list').addEventListener('click', ev => {
+  const src = ev.target.closest('.lrow-source');
+  if (src) { setSource(src.dataset.source); return; }
+  const clamp = ev.target.closest('.lrow-text.clamp');
+  if (clamp) { clamp.classList.remove('clamp'); clamp.removeAttribute('title'); }
+});
+
+function atBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 40; }
+
+function setEmpty(cardSel, emptySel, isEmpty) {
+  $(emptySel).hidden = !isEmpty;
+  $(cardSel).classList.toggle('is-empty', isEmpty);
+}
+
+function renderTimeline() {
+  const rows = [];
+  for (let i = gl.entries.length - 1; i >= 0 && rows.length < GL_MAX_ROWS; i--) if (glMatches(gl.entries[i])) rows.push(gl.entries[i]);
+  rows.reverse();
+  $('#gl-list').replaceChildren(...rows.map(glRow));
+  const view = $('#gl-timeline');
+  view.scrollTop = view.scrollHeight;
+  $('#gl-jump').hidden = true;
+  setEmpty('#gl-timeline', '#gl-empty', rows.length === 0);
+  const filtered = gl.level !== 'all' || gl.source || gl.q;
+  $('#gl-empty-title').textContent = filtered ? 'Nothing matches' : 'No log lines yet';
+  $('#gl-empty-text').textContent = filtered
+    ? 'Try another search, level or source.'
+    : 'Start the game: new lines from every mod\'s log appear here as they are written.';
+}
+
+function appendTimeline(batch) {
+  const view = $('#gl-timeline');
+  const follow = atBottom(view);
+  const list = $('#gl-list');
+  const rows = batch.filter(glMatches);
+  if (!rows.length) return;
+  list.append(...rows.map(glRow));
+  while (list.childElementCount > GL_MAX_ROWS) list.firstElementChild.remove();
+  setEmpty('#gl-timeline', '#gl-empty', false);
+  if (follow) view.scrollTop = view.scrollHeight;
+  else $('#gl-jump').hidden = false;
+}
+
+/** Group identical problems: numbers, hex and quoted values vary between occurrences. */
+function problemKey(e) {
+  return `${e.level}|${e.source}|${e.text.split('\n')[0].replace(/0x[0-9a-f]+/gi, '#').replace(/\d+/g, '#').replace(/"[^"]*"|'[^']*'/g, '"…"').slice(0, 200)}`;
+}
+
+/** Problems matching the current filters, grouped and sorted: errors first, then by count. */
+function problems(entries = gl.entries, match = glMatches) {
+  const map = new Map();
+  for (const e of entries) {
+    if (!isProblem(e) || !match(e)) continue;
+    const k = problemKey(e);
+    const p = map.get(k);
+    if (p) { p.count++; if (e.time >= p.last.time) p.last = e; } else map.set(k, { count: 1, last: e });
+  }
+  return [...map.values()].sort((a, b) => (a.last.level === b.last.level ? 0 : a.last.level === 'error' ? -1 : 1) || b.count - a.count || b.last.time - a.last.time);
+}
+
+function jumpToProblem(e) {
+  setSource(e.source, false);
+  setSearch(e.text.split('\n')[0].slice(0, 60));
+  setTab('timeline');
+}
+
+/** The installed mod a log line belongs to, from the folders each mod owns. */
+function modFor(e) {
+  if (!e.root) return null;
+  const root = e.root.toLowerCase();
+  return state.snap.mods.find(m => (m.roots || []).some(r => r.toLowerCase() === root)) || null;
+}
+
+function modCell(e) {
+  const m = modFor(e);
+  if (!m) return h('span', { class: 'muted', title: e.root ? 'This log is not from a mod managed here' : 'Not tied to a mod folder' }, '—');
+  return h('button', {
+    class: 'link-btn quiet', title: `Open ${m.name}`,
+    onclick: ev => { ev.stopPropagation(); goTo('mods'); openDrawer(m.id, 'logs'); },
+  }, m.name);
+}
+
+function renderProblems() {
+  const list = problems();
+  const tbody = $('#gl-problems tbody');
+  keepFocus(tbody, () => tbody.replaceChildren(...list.map(p => h('tr', {
+    class: 'row', tabindex: '0', title: 'Open in the timeline (Enter)', dataset: { key: problemKey(p.last) },
+    onclick: () => jumpToProblem(p.last),
+    onkeydown: ev => { if (ev.key === 'Enter') { ev.preventDefault(); jumpToProblem(p.last); } },
+  },
+  h('td', { class: 'num' }, h('span', { class: 'count-pill' }, String(p.count))),
+  h('td', {}, h('span', { class: `lvl lvl-${p.last.level}` }, LEVEL_SHORT[p.last.level])),
+  h('td', { class: 'dim', title: p.last.file || p.last.source }, p.last.source),
+  h('td', { class: 'col-cat' }, modCell(p.last)),
+  h('td', { class: 'wrap mono-msg', title: p.last.text }, h('span', {}, p.last.text.split('\n')[0])),
+  h('td', { class: 'dim', title: new Date(p.last.time).toLocaleString() }, relTime(p.last.time))))), null);
+  setEmpty('#gl-problems', '#gl-prob-empty', list.length === 0);
+}
+const renderProblemsSoon = (() => {
+  let pending = false;
+  return () => {
+    if (pending) return;
+    pending = true;
+    setTimeout(() => { pending = false; if (gl.tab === 'problems' && $('#page-gamelog').classList.contains('active')) renderProblems(); }, 500);
+  };
+})();
+
+async function renderSources() {
+  const seq = ++gl.sourcesSeq;
+  const res = await api.gameLogSources(); // polled every 5 s: errors show inline, not as toasts
+  if (seq !== gl.sourcesSeq) return; // a newer request is on its way
+  const rows = res.ok || [];
+  $('#gl-sources').title = res.error ? `Could not read the log list: ${res.error}` : '';
+  const shown = rows.filter(r => r.followed || r.errors || r.warns);
+  $('#gl-sources tbody').replaceChildren(...shown.map(r => h('tr', { class: 'row' },
+    h('td', {}, h('div', { class: 'cell-name' }, h('span', { class: 'name' }, r.source), h('span', { class: 'subname' }, r.followed ? 'Following' : 'Older session'))),
+    h('td', { class: 'dim mono', title: r.rel }, r.rel),
+    h('td', { class: 'num' }, r.errors ? h('span', { class: 'tag tag-err' }, String(r.errors)) : h('span', { class: 'muted' }, '0')),
+    h('td', { class: 'num' }, r.warns ? h('span', { class: 'tag tag-warn' }, String(r.warns)) : h('span', { class: 'muted' }, '0')),
+    h('td', { class: 'dim', title: new Date(r.mtime).toLocaleString() }, relTime(r.mtime)),
+    h('td', { class: 'actions' },
+      h('button', { class: 'btn btn-sm btn-icon', title: 'Open the file', 'aria-label': `Open ${r.rel}`, onclick: () => run(api.openGameFile(r.rel)) }, icon('file')),
+      h('button', { class: 'btn btn-sm btn-icon', title: 'Show in folder', 'aria-label': `Show ${r.rel} in folder`, onclick: () => run(api.revealGameFile(r.rel)) }, icon('folder'))))));
+}
+
+function renderView() {
+  for (const t of ['timeline', 'problems', 'sources']) $(`#gl-${t}`).hidden = gl.tab !== t;
+  $$('#gl-tabs .seg-btn').forEach(b => {
+    const on = b.dataset.tab === gl.tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  $('#gl-level').classList.toggle('is-disabled', gl.tab === 'sources');
+  $$('#gl-level .seg-btn').forEach(b => { b.disabled = gl.tab === 'sources'; });
+  if (gl.tab === 'timeline') renderTimeline();
+  if (gl.tab === 'problems') renderProblems();
+  if (gl.tab === 'sources') renderSources();
+}
+
+function renderStats() {
+  $('#gl-errs').textContent = gl.errors;
+  $('#gl-warns').textContent = gl.warns;
+  $('#gl-stat-err').classList.toggle('has-errors', gl.errors > 0);
+  $('#gl-stat-warn').classList.toggle('has-warns', gl.warns > 0);
+  const nav = $('#nav-log-count');
+  nav.textContent = gl.errors || '';
+  nav.classList.toggle('alert', gl.errors > 0);
+  nav.title = gl.errors ? `${plural(gl.errors, 'error')} in the game logs` : '';
+  $('#gl-prob-count').textContent = gl.problemKeys.size ? String(gl.problemKeys.size) : '';
+}
+
+function renderGameStatus() {
+  const s = gl.status;
+  state.gameRunning = !!s.running;
+  $('#gl-game').textContent = s.running ? 'Running' : 'Not running';
+  $('#gl-game-sub').textContent = s.running && s.since ? `Cyberpunk 2077 · since ${fmtTime(s.since)}` : 'Cyberpunk 2077';
+  $('#gl-stat-game').classList.toggle('is-live', !!s.running);
+  $('#gl-srcs').textContent = s.followed ?? 0;
+}
+
+function syncSourceOptions() {
+  const sel = $('#gl-source');
+  if (sel.options.length - 1 === gl.sources.size) return;
+  const cur = sel.value;
+  sel.replaceChildren(h('option', { value: '' }, 'All sources'), ...[...gl.sources].sort((a, b) => a.localeCompare(b)).map(s => h('option', { value: s }, s)));
+  sel.value = cur;
+}
+
+// Errors per installed mod, by the folders each mod owns (red4ext/plugins/X, CET mods/X, …).
+// Throttled (not debounced): with logs arriving every 300 ms a debounce would never fire.
+function updateModProblems() {
+  const next = {};
+  for (const m of state.snap.mods) {
+    const n = (m.roots || []).reduce((sum, r) => sum + (gl.rootErrors.get(r.toLowerCase()) || 0), 0);
+    if (n) next[m.id] = n;
+  }
+  if (JSON.stringify(next) !== JSON.stringify(state.modLogProblems)) {
+    state.modLogProblems = next;
+    renderMods();
+  }
+}
+const scheduleModProblems = (() => {
+  let timer = null;
+  return () => {
+    if (timer) return;
+    timer = setTimeout(() => { timer = null; updateModProblems(); }, 1000);
+  };
+})();
+
+// The mod details panel lists that mod's log problems, grouped, each one a link into the timeline.
+drawerSections.push(m => {
+  const roots = new Set((m.roots || []).map(r => r.toLowerCase()));
+  if (!roots.size) return [];
+  const list = problems(gl.entries, e => e.id > gl.clearedAfter && e.root && roots.has(e.root.toLowerCase())).slice(0, 8);
+  if (!list.length) return [];
+  return [
+    h('h2', { dataset: { section: 'logs' } }, `Game log problems · ${list.length}`),
+    h('div', { class: 'mini-log' }, list.map(p => h('button', {
+      class: `mini-row lv-${p.last.level}`,
+      title: `${p.last.source} · ${new Date(p.last.time).toLocaleString()}\nOpen in the game log`,
+      onclick: () => { closeDrawer(); jumpToProblem(p.last); goTo('gamelog'); },
+    },
+    h('span', { class: `tag ${LEVEL_TAG[p.last.level]}` }, LEVEL_TEXT[p.last.level]),
+    h('span', { class: 'mini-text' }, p.last.text.split('\n')[0]),
+    p.count > 1 ? h('span', { class: 'count-pill', title: `${p.count} times` }, `×${p.count}`) : null))),
+  ];
+});
+
+function count(e) {
+  if (e.id <= gl.clearedAfter || !isProblem(e)) return;
+  if (e.level === 'error') {
+    gl.errors++;
+    if (e.root) gl.rootErrors.set(e.root.toLowerCase(), (gl.rootErrors.get(e.root.toLowerCase()) || 0) + 1);
+  } else gl.warns++;
+  gl.problemKeys.add(problemKey(e));
+}
+
+/** Rebuild every counter from the retained lines (after trimming, clearing or a reset). */
+function recount() {
+  gl.errors = 0;
+  gl.warns = 0;
+  gl.problemKeys.clear();
+  gl.rootErrors.clear();
+  for (const e of gl.entries) count(e);
+}
+
+function ingest(batch) {
+  for (const e of batch) {
+    gl.entries.push(e);
+    gl.sources.add(e.source);
+    count(e);
+  }
+  if (gl.entries.length > GL_MAX_ENTRIES + GL_TRIM_SLACK) {
+    gl.entries.splice(0, gl.entries.length - GL_MAX_ENTRIES);
+    recount();
+  }
+}
+
+function onBatch(batch) {
+  ingest(batch);
+  syncSourceOptions();
+  renderStats();
+  scheduleModProblems();
+  if (gl.paused) { gl.held += batch.length; updatePauseLabel(); return; }
+  if (!$('#page-gamelog').classList.contains('active')) return;
+  if (gl.tab === 'timeline') appendTimeline(batch);
+  else if (gl.tab === 'problems') renderProblemsSoon();
+}
+
+function updatePauseLabel() {
+  const btn = $('#gl-follow');
+  const label = gl.paused ? `Resume${gl.held ? ` (${gl.held} new)` : ''}` : 'Pause';
+  btn.setAttribute('aria-pressed', String(gl.paused));
+  btn.setAttribute('aria-label', gl.paused ? 'Resume live updates' : 'Pause live updates');
+  btn.replaceChildren(icon(gl.paused ? 'play' : 'pause'), h('span', {}, label));
+}
+
+// ---------------------------------------------------------------- controls
+
+function setTab(t) { gl.tab = t; renderView(); }
+function setSource(s, rerender = true) {
+  gl.source = s;
+  syncSourceOptions();
+  $('#gl-source').value = s;
+  if (rerender) renderView();
+}
+function setSearch(q) { $('#gl-search').value = q; gl.q = q.trim().toLowerCase(); }
+function setLevel(l) {
+  gl.level = l;
+  setSegActive('#gl-level', 'level', l);
+  renderView();
+}
+
+$$('#gl-tabs .seg-btn').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+// Tabs: arrow keys move between them.
+$('#gl-tabs').addEventListener('keydown', ev => {
+  if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
+  const tabs = $$('#gl-tabs .seg-btn');
+  const i = tabs.findIndex(b => b.dataset.tab === gl.tab);
+  const next = tabs[(i + (ev.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+  setTab(next.dataset.tab);
+  next.focus();
+});
+$$('#gl-level .seg-btn').forEach(b => b.addEventListener('click', () => setLevel(b.dataset.level)));
+$('#gl-source').addEventListener('change', ev => setSource(ev.target.value));
+$('#gl-search').addEventListener('input', debounce(ev => { gl.q = ev.target.value.trim().toLowerCase(); renderView(); }, 150));
+$('#gl-follow').addEventListener('click', () => {
+  gl.paused = !gl.paused;
+  if (!gl.paused) { gl.held = 0; renderView(); }
+  updatePauseLabel();
+});
+$('#gl-clear').addEventListener('click', () => {
+  gl.clearedAfter = gl.entries.length ? gl.entries[gl.entries.length - 1].id : 0;
+  recount();
+  renderStats();
+  renderView();
+  scheduleModProblems();
+});
+$('#gl-jump').addEventListener('click', () => {
+  const view = $('#gl-timeline');
+  view.scrollTop = view.scrollHeight;
+  $('#gl-jump').hidden = true;
+});
+$('#gl-timeline').addEventListener('scroll', ev => { if (atBottom(ev.currentTarget)) $('#gl-jump').hidden = true; });
+$('#gl-stat-err').addEventListener('click', () => { setLevel('error'); setTab('problems'); });
+$('#gl-stat-warn').addEventListener('click', () => { setLevel('warn'); setTab('problems'); });
+$('#gl-stat-src').addEventListener('click', () => setTab('sources'));
+
+pageHooks.gamelog = () => renderView();
+snapshotHooks.push(snap => {
+  if (snap.gameStatus) { gl.status = snap.gameStatus; renderGameStatus(); }
+  scheduleModProblems();
+});
+
+// Live batches that arrive before the initial snapshot wait, so lines stay in order and unique.
+let early = [];
+api.onGameLog(batch => { if (early) early.push(...batch); else onBatch(batch); });
+api.onGameStatus(s => { gl.status = s; renderGameStatus(); renderMods(); });
+api.onGameLogReset(() => {
+  gl.entries = [];
+  gl.sources.clear();
+  recount();
+  renderStats();
+  renderView();
+});
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const snap = await run(api.gameLogSnapshot());
+  const held = early || [];
+  early = null;
+  if (!snap) { if (held.length) onBatch(held); return; }
+  ingest(snap.entries);
+  const lastId = snap.entries.length ? snap.entries[snap.entries.length - 1].id : 0;
+  const later = held.filter(e => e.id > lastId);
+  if (later.length) ingest(later);
+  gl.status = snap.status;
+  syncSourceOptions();
+  renderStats();
+  renderGameStatus();
+  updatePauseLabel();
+  updateModProblems();
+  if ($('#page-gamelog').classList.contains('active')) renderView();
+});
+
+setInterval(() => {
+  if ($('#page-gamelog').classList.contains('active') && gl.tab === 'sources') renderSources();
+}, 5000);

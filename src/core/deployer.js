@@ -96,6 +96,33 @@ class Deployer {
     }
   }
 
+  /** 'ok' | 'missing' (deleted outside the app) | 'changed' (replaced by something else). */
+  fileState(gameDir, entry) {
+    try {
+      const st = fs.statSync(path.join(gameDir, entry.dest), { bigint: true });
+      return st.ino.toString() === entry.ino ? 'ok' : 'changed';
+    } catch (err) {
+      return err.code === 'ENOENT' ? 'missing' : 'ok';
+    }
+  }
+
+  /**
+   * Drop manifest entries whose files were deleted outside the app (a mod removed by hand).
+   * Where we had backed up an original file, it is put back.
+   */
+  forget(gameDir, keys) {
+    for (const key of keys) {
+      const entry = this.deployed[key];
+      if (!entry) continue;
+      if (entry.backup) {
+        try { this.restoreBackup(gameDir, entry); } catch (err) { this.log.warn(`Could not restore ${entry.dest}`, err.message); }
+      }
+      delete this.deployed[key];
+    }
+    this.cleanDirs(gameDir);
+    this.store.save();
+  }
+
   removeFile(gameDir, entry) {
     const full = path.join(gameDir, entry.dest);
     let st;
