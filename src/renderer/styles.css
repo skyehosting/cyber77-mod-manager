@@ -1676,3 +1676,18 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ai-filecard > .i { width: 1.2rem; flex: none; color: var(--info); }
 .ai-filecard-body { flex: 1; min-width: 0; }
 .ai-filecard-path { font: var(--fs-sm) var(--mono); overflow-wrap: anywhere; }
+/* REDmod deploy state on the Mods page */
+.redmod-btn[data-state="waiting"] { color: var(--accent); }
+.redmod-btn[data-state="failed"] { color: var(--warn); }
+.redmod-btn[data-state="ok"] .i { color: var(--ok); }
+/* The editor's typing layer fills the editor: no general textarea limits (they capped it at 9rem). */
+.ed .ed-text { min-height: 0; max-height: none; cursor: text; line-height: var(--ed-line); }
+.ed-marks { position: absolute; inset: 0; padding: var(--ed-pad) 1rem; box-sizing: border-box; margin: 0; overflow: hidden; color: transparent; pointer-events: none; font: var(--ed-font)/var(--ed-line) var(--mono); tab-size: 4; white-space: pre; letter-spacing: 0; font-variant-ligatures: none; }
+.ed-marks mark { background: rgb(242 214 75 / 0.22); color: transparent; border-radius: 2px; }
+.ed-marks mark.cur { background: rgb(242 214 75 / 0.55); box-shadow: 0 0 0 1px var(--accent); }
+.ed-find { display: flex; align-items: center; gap: var(--sp-2); flex: none; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.ed-find[hidden] { display: none; }
+.ed-find > .i { width: 0.95rem; flex: none; color: var(--muted); }
+.ed-find-input { flex: 0 1 22rem; min-width: 8rem; height: var(--control-h-sm); }
+.ed-find-count { min-width: 6rem; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.ed-find.none .ed-find-count { color: var(--warn); }

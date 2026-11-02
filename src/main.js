@@ -200,6 +200,7 @@ async function boot() {
       return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
     },
     deployRedmods: () => runRedmodDeploy(settings.get('gamePath'), true),
+    redmodStatus: () => redmodStatus(),
   });
   assistant = new Assistant({ settings, tools, file: path.join(app.getPath('userData'), 'ai-chat.json') });
   assistant.on('event', e => send('ai', e));
@@ -278,6 +279,7 @@ async function boot() {
     return r;
   });
   handle('redmod:deploy', () => runRedmodDeploy(settings.get('gamePath'), true));
+  handle('redmod:status', () => redmodStatus());
   handle('ai:view', () => assistant.view());
   handle('ai:send', text => { assistant.send(text).catch(err => send('ai', { type: 'item', item: { id: String(Date.now()), type: 'error', text: err.message } })); return true; });
   handle('ai:stop', () => assistant.stop());
@@ -519,6 +521,17 @@ async function applyNxmSetting() {
  * Returns null when there was nothing to do, else { ok, reason }. Progress goes to the window.
  */
 let redmodRunning = null;
+
+/**
+ * Where the REDmods stand: how many there are, whether what is deployed matches them (a change
+ * since the last successful deploy means Play deploys first), and how this app's last deploy went.
+ */
+function redmodStatus(dir = settings.get('gamePath')) {
+  if (!isGameDir(dir)) return { count: 0, upToDate: true, last: null };
+  const count = hasRedmods(dir) ? redmodFolders(dir).length : 0;
+  return { count, upToDate: !count || redmodFingerprint(dir) === settings.get('redmodDeployed'), running: !!redmodRunning, last: settings.get('redmodLast') || null };
+}
+
 async function runRedmodDeploy(dir, force) {
   if (!isGameDir(dir) || !hasRedmods(dir)) return null;
   const fp = redmodFingerprint(dir);
@@ -529,16 +542,17 @@ async function runRedmodDeploy(dir, force) {
     send('redmod', { stage: 'deploying' });
     const res = await deployRedmods(dir, { onLine: line => { if (/stage|deploy|error/i.test(line)) send('redmod', { stage: 'deploying', line }); } });
     if (res.ok) {
-      settings.update({ redmodDeployed: fp });
+      settings.update({ redmodDeployed: fp, redmodLast: { ok: true, at: Date.now() } });
       logger.success('REDmods deployed');
-      send('redmod', { stage: 'done' });
+      send('redmod', { stage: 'done', status: redmodStatus() });
       return { ok: true };
     }
     // The tool's own error lines say why (a script that does not compile, a missing file, …).
     const why = res.lines.filter(l => /error|failed|missing|not found/i.test(l)).slice(-6);
     const reason = why.join('\n') || res.lines.slice(-3).join('\n') || 'REDmod deploy failed';
+    settings.update({ redmodLast: { ok: false, at: Date.now(), reason } });
     logger.error('REDmod deploy failed: your REDmods may not load in the game', res.lines.slice(-25).join('\n'));
-    send('redmod', { stage: 'failed', reason });
+    send('redmod', { stage: 'failed', reason, status: redmodStatus() });
     return { ok: false, reason };
   })().finally(() => { redmodRunning = null; });
   return redmodRunning;

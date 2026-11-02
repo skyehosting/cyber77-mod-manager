@@ -368,18 +368,25 @@ class GameLogMonitor extends EventEmitter {
   ingest(f, lines, historyOnly = false) {
     let last = null;
     const cutoff = historyOnly ? Date.now() - HISTORY_MS : 0;
+    // REDmod's log keeps every run, without times: on start only its latest run counts.
+    const redmod = /(^|\/)tools\/redmod\/bin\/redmodlog\.txt$/i.test(f.rel);
+    if (redmod && historyOnly) {
+      const start = lines.map(l => /^\s*Copyright \(c\)/i.test(l)).lastIndexOf(true);
+      if (start > 0) lines = lines.slice(start);
+    }
     for (const raw of lines) {
       const line = raw.replace(/\0/g, '').trimEnd();
       if (!line) continue;
       const p = parseLine(line, f.mtime);
       // Lines with no stamp and no level continue the previous entry (stack traces, file lists).
-      if (!p.time && !p.level && last && last.lines < 40) {
+      const done = redmod && /has succeeded/i.test(line);
+      if (!p.time && !p.level && !done && last && last.lines < 40) {
         last.text += `\n${line}`;
         last.lines++;
         continue;
       }
       const entry = {
-        id: this.nextId++, time: p.time || (last ? last.time : f.mtime), level: p.level || 'info',
+        id: this.nextId++, time: p.time || (last ? last.time : f.mtime), level: p.level || (done ? 'success' : 'info'),
         source: f.source, file: f.rel, root: f.root, text: p.text || line, lines: 1,
       };
       if (entry.time < cutoff) { last = entry; continue; }

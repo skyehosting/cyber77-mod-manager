@@ -113,3 +113,24 @@ test('a log a mod starts writing anywhere in the install during a game run is fo
   fs.rmSync(known, { force: true });
   fs.rmSync(game, { recursive: true, force: true });
 });
+
+test('REDmod\'s log keeps every run without times: on start only its latest run shows', () => {
+  const run = ok => [
+    'Copyright (c) 2022-26 CD Projekt Red. All Rights Reserved.',
+    '"redMod.exe" deploy -root x',
+    '[DEPLOY] Stage 1/5 - Initialization',
+    ok ? '[DEPLOY] Stage 2/10 - Script Compilation' : 'ERROR: Script compilation has failed!',
+    ok ? 'Commandlet deploy has succeeded.' : 'Commandlet deploy has failed.',
+  ];
+  const mon = new GameLogMonitor({ getGameDir: () => '', log: {}, crashDir: '' });
+  const f = { rel: 'tools/redmod/bin/REDmodLog.txt', mtime: Date.now(), source: 'REDmod deploy', root: '', errors: 0, warns: 0 };
+  mon.ingest(f, [...run(false), ...run(false), ...run(true)], true);
+  mon.flush();
+  assert.strictEqual(mon.entries.filter(e => e.level === 'error').length, 0, 'the old failed runs are not today\'s errors');
+  assert.strictEqual(mon.entries.at(-1).level, 'success');
+  assert.ok(mon.entries.some(e => /has succeeded/.test(e.text)));
+  // A new run written while the app runs is read as it comes, failures included.
+  mon.ingest(f, run(false), false);
+  mon.flush();
+  assert.strictEqual(mon.entries.filter(e => e.level === 'error').length, 2);
+});

@@ -1492,15 +1492,42 @@ api.onRedmod(e => {
   } else if (e.stage === 'done') {
     toast('REDmods deployed', 'success');
     renderPlay();
+    refreshRedmod(e.status);
   } else if (e.stage === 'failed') {
     renderPlay();
+    refreshRedmod(e.status);
   }
+  if (e.stage === 'deploying') refreshRedmod({ ...(e.status || {}), count: 1, running: true });
 });
 $('#mods-redmod').addEventListener('click', async () => {
   const r = await run(api.deployRedmods());
+  refreshRedmod();
   if (r === null) toast('There are no REDmods in the game folder');
   else if (r && !r.ok) modal({ title: 'REDmod deploy failed', body: h('p', { class: 'pre-wrap' }, `${r.reason}\n\nThe full output is in Game log → Manager.`), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
 });
+
+/**
+ * The Mods page's REDmod button says where REDmods stand: deployed, changed since (Play deploys
+ * them first), or the last deploy failed. Only REDmods need deploying; other mods work at once.
+ */
+async function refreshRedmod(st) {
+  const s = st || (await api.redmodStatus()).ok;
+  const btn = $('#mods-redmod');
+  btn.hidden = !s?.count;
+  if (!s?.count) return;
+  const when = s.last?.at ? new Date(s.last.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const failed = s.last && !s.last.ok;
+  const mode = s.running ? 'running' : failed ? 'failed' : s.upToDate ? 'ok' : 'waiting';
+  btn.dataset.state = mode;
+  btn.disabled = s.running;
+  $('#mods-redmod-label').textContent = { running: 'Deploying REDmods…', failed: 'REDmod deploy failed', ok: 'REDmods deployed', waiting: 'Deploy REDmods' }[mode];
+  btn.title = {
+    running: 'REDmod deploy is running',
+    failed: `The last REDmod deploy failed${when ? ` (${when})` : ''}. Click to try again; Play also tries before starting the game.\n\n${s.last?.reason || ''}`,
+    ok: `${s.count} REDmods, deployed${when ? ` ${when}` : ''}. Play deploys again by itself when they change. Click to deploy now anyway.`,
+    waiting: `Your REDmods changed since the last deploy: Play deploys them before starting the game, or click to do it now.`,
+  }[mode];
+}
 
 /** Settings: every install found, with its store; one click to use another. */
 function renderInstalls() {
@@ -1788,6 +1815,7 @@ function runWizard(req) {
 // ---------------------------------------------------------------- wiring
 
 const snapshotHooks = [];
+snapshotHooks.push(() => refreshRedmod()); // the REDmod button on the Mods page
 
 function applySnapshot(snap) {
   state.snap = snap;

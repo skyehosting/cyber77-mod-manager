@@ -4,6 +4,14 @@ const { redactLine, isConfigFile, formatOf, setValues, secretName } = require('.
 
 const hide = line => redactLine(line)[0];
 
+/** REDmod deploy as this app knows it (REDmodLog.txt also keeps old runs by other tools, without times). */
+const redmodView = s => (!s?.count ? 'no REDmods installed' : {
+  installed: s.count,
+  deployedState: s.upToDate ? 'up to date: what is deployed matches the installed REDmods' : 'REDmods changed since the last deploy: Play deploys them before the game starts',
+  lastDeployByThisApp: s.last ? { ok: s.last.ok, at: iso(s.last.at), reason: s.last.ok ? undefined : s.last.reason } : 'none yet',
+  note: 'Judge REDmod deploy by this, not by old lines in REDmodLog.txt (it keeps every run, including failed ones by Vortex, without times).',
+});
+
 /*
  * What the AI assistant can do. Read tools run at once (they change nothing). Action tools never
  * run on their own: the model can only propose them, the user sees a card listing them and
@@ -136,6 +144,7 @@ function makeTools(ctx) {
           updatesAvailable: Object.keys(snap.updates || {}).length,
           logErrors: prob.filter(e => e.level === 'error').length, logWarnings: prob.filter(e => e.level === 'warn').length,
           modsNeedingRepair: all.filter(m => m.health).map(m => m.name),
+          redmods: ctx.redmodStatus ? redmodView(ctx.redmodStatus()) : undefined,
           recentChanges: recent.map(m => ({ name: m.name, installedAt: iso(m.installedAt), enabledAt: iso(m.enabledAt), disabledAt: iso(m.disabledAt), enabled: !!m.enabled })),
         });
       }

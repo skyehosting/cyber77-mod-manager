@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   steamLaunchOptions: () => call('steam:launchOptions'),
   openSteamGame: () => call('steam:openGame'),
   deployRedmods: () => call('redmod:deploy'),
+  redmodStatus: () => call('redmod:status'),
   stopGame: () => call('game:stop'),
   aiView: () => call('ai:view'),
   aiSend: text => call('ai:send', text),

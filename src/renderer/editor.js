@@ -125,27 +125,136 @@ function buildEditor() {
     f.readOnly ? 'This file is large: it opens read-only.' : '',
     f.text.length > HIGHLIGHT_MAX ? 'Colours are off for a file this large.' : '',
   ].filter(Boolean);
-  $('#ed').replaceChildren(
+  ed.find = { open: false, q: '', hits: [], i: -1 };
+  const findInput = h('input', {
+    type: 'search', class: 'ed-find-input', placeholder: 'Find in file', 'aria-label': 'Find in file', spellcheck: 'false',
+    oninput: ev => { ed.find.q = ev.target.value; runFind(true); },
+    onkeydown: ev => {
+      if (ev.key === 'Enter') { ev.preventDefault(); stepFind(ev.shiftKey ? -1 : 1); }
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeFind(); }
+      if (ev.key === 'F3') { ev.preventDefault(); stepFind(ev.shiftKey ? -1 : 1); }
+    },
+  });
+  // (replaceChildren would print a null child as the text "null", so absent parts are left out.)
+  $('#ed').replaceChildren(...[
     h('div', { class: 'ed-head' },
       h('span', { class: 'ed-icon' }, icon('file-code')),
       h('div', { class: 'ed-titles' },
         h('h3', { id: 'ed-title' }, name),
         h('div', { class: 'ed-path', title: f.loc.rel }, [f.loc.rel, f.mod].filter(Boolean).join('  ·  '))),
       h('div', { class: 'ed-actions' },
+        h('button', { class: 'btn btn-sm btn-ghost', title: 'Find in this file (Ctrl+F)', onclick: () => openFind() }, icon('search'), h('span', {}, 'Find')),
         h('button', { class: 'btn btn-sm btn-ghost', id: 'ed-restore', hidden: !f.hasBackup, title: 'Put back the file as it was before you first saved it here', onclick: restoreOriginal }, icon('rotate'), h('span', {}, 'Restore original')),
         h('button', { class: 'btn btn-sm btn-ghost', onclick: () => api.cfgShow(f.loc) }, icon('folder'), h('span', {}, 'Show in folder')),
         h('button', { class: 'btn btn-icon btn-ghost', title: 'Close (Esc)', 'aria-label': 'Close the editor', onclick: () => closeEditor() }, icon('x')))),
     notes.length ? h('div', { class: 'ed-notes' }, notes.map(n => h('p', {}, icon('info'), h('span', {}, n)))) : null,
+    h('div', { class: 'ed-find', id: 'ed-find', hidden: true, role: 'search' },
+      icon('search'), findInput,
+      h('span', { class: 'ed-find-count', id: 'ed-find-count', role: 'status' }),
+      h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Previous (Shift+Enter)', 'aria-label': 'Previous match', onclick: () => stepFind(-1) }, icon('arrow-up')),
+      h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Next (Enter)', 'aria-label': 'Next match', onclick: () => stepFind(1) }, icon('arrow-down')),
+      h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Close (Esc)', 'aria-label': 'Close find', onclick: () => closeFind() }, icon('x'))),
     h('div', { class: `ed-body${f.text.length > HIGHLIGHT_MAX ? ' plain' : ''}` },
       h('pre', { class: 'ed-gutter', 'aria-hidden': 'true' }),
-      h('div', { class: 'ed-area' }, h('pre', { class: 'ed-hl', 'aria-hidden': 'true' }), ta)),
+      h('div', { class: 'ed-area' }, h('pre', { class: 'ed-marks', 'aria-hidden': 'true' }), h('pre', { class: 'ed-hl', 'aria-hidden': 'true' }), ta)),
     h('div', { class: 'ed-foot' },
       h('span', { class: 'ed-pos', id: 'ed-pos' }, 'Ln 1, Col 1'),
       h('span', { class: 'ed-meta' }, [lang.label, f.bom === 'utf16le' ? 'UTF-16' : f.bom ? 'UTF-8 BOM' : 'UTF-8', f.eol === '\r\n' ? 'CRLF' : 'LF'].join('  ·  ')),
       h('span', { class: 'ed-state', id: 'ed-state', role: 'status' }, f.readOnly ? 'Read only' : ''),
       h('button', { class: 'btn', onclick: () => closeEditor() }, 'Close'),
-      f.readOnly ? null : h('button', { class: 'btn btn-primary', id: 'ed-save', disabled: true, onclick: saveEditor, title: 'Save (Ctrl+S)' }, icon('save'), h('span', {}, 'Save'))));
+      f.readOnly ? null : h('button', { class: 'btn btn-primary', id: 'ed-save', disabled: true, onclick: saveEditor, title: 'Save (Ctrl+S)' }, icon('save'), h('span', {}, 'Save'))),
+  ].filter(Boolean));
   render(true);
+}
+
+// ---- find in the file: matches are marked on a layer under the coloured text
+
+function openFind() {
+  const ta = $('#ed .ed-text');
+  const bar = $('#ed-find');
+  const input = bar.querySelector('input');
+  const picked = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  if (picked && !picked.includes('\n')) { input.value = picked; ed.find.q = picked; }
+  bar.hidden = false;
+  ed.find.open = true;
+  input.focus();
+  input.select();
+  runFind(true);
+}
+
+function closeFind() {
+  ed.find.open = false;
+  $('#ed-find').hidden = true;
+  $('#ed .ed-marks').textContent = '';
+  const ta = $('#ed .ed-text');
+  const hit = ed.find.hits[ed.find.i];
+  ta.focus();
+  if (hit !== undefined) ta.setSelectionRange(hit, hit + ed.find.q.length);
+}
+
+/** Find every match (case-insensitive); `fromCaret` starts at the first one after the caret; `move` goes to it. */
+function runFind(fromCaret = false, move = true) {
+  if (!ed.find?.open) return;
+  const ta = $('#ed .ed-text');
+  const q = ed.find.q.toLowerCase();
+  const hay = ta.value.toLowerCase();
+  const hits = [];
+  if (q) for (let i = hay.indexOf(q); i >= 0 && hits.length < 5000; i = hay.indexOf(q, i + q.length)) hits.push(i);
+  ed.find.hits = hits;
+  if (fromCaret || ed.find.i >= hits.length) {
+    const at = ta.selectionStart;
+    const next = hits.findIndex(i => i >= at);
+    ed.find.i = hits.length ? (next < 0 ? 0 : next) : -1;
+  }
+  showFind(move);
+}
+
+function stepFind(dir) {
+  const n = ed.find.hits.length;
+  if (!n) return;
+  ed.find.i = (ed.find.i + dir + n) % n;
+  showFind();
+}
+
+function showFind(move = true) {
+  const { q, hits, i } = ed.find;
+  const ta = $('#ed .ed-text');
+  $('#ed-find-count').textContent = !q ? '' : hits.length ? `${i + 1} of ${hits.length}${hits.length >= 5000 ? '+' : ''}` : 'No matches';
+  $('#ed-find').classList.toggle('none', !!q && !hits.length);
+  // The marks layer: the same text, invisible, with each match on a coloured background.
+  let html = '';
+  let last = 0;
+  hits.forEach((at, k) => {
+    html += `${esc(ta.value.slice(last, at))}<mark${k === i ? ' class="cur"' : ''}>${esc(ta.value.slice(at, at + q.length))}</mark>`;
+    last = at + q.length;
+  });
+  $('#ed .ed-marks').innerHTML = hits.length ? `${html}${esc(ta.value.slice(last))}\n` : '';
+  if (i < 0 || !move) return;
+  // Bring the current match into view (a third of the way down) and put the caret on it.
+  const at = hits[i];
+  const before = ta.value.slice(0, at);
+  const line = before.split('\n').length - 1;
+  const col = at - before.lastIndexOf('\n') - 1;
+  const cs = getComputedStyle(ta);
+  const lh = parseFloat(cs.lineHeight) || 20;
+  const cw = charWidth(cs);
+  ta.setSelectionRange(at, at + q.length);
+  ta.scrollTop = Math.max(0, line * lh - ta.clientHeight / 3);
+  const x = col * cw;
+  if (x < ta.scrollLeft || x > ta.scrollLeft + ta.clientWidth - 80) ta.scrollLeft = Math.max(0, x - ta.clientWidth / 2);
+  syncScroll();
+  showPos();
+}
+
+let measured = { font: '', w: 8 };
+function charWidth(cs) {
+  const font = `${cs.fontSize} ${cs.fontFamily}`;
+  if (measured.font !== font) {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = font;
+    measured = { font, w: ctx.measureText('0123456789').width / 10 || 8 };
+  }
+  return measured.w;
 }
 
 function render(full = false) {
@@ -159,6 +268,7 @@ function render(full = false) {
     gutter.dataset.n = String(lines);
     gutter.textContent = `${Array.from({ length: lines }, (_, i) => i + 1).join('\n')}\n`;
   }
+  if (ed.find?.open) runFind(false, false); // matches follow the edit; the caret stays where you type
   syncScroll();
   const dirty = text !== ed.saved;
   const save = $('#ed-save');
@@ -175,9 +285,10 @@ function onEdit() {
 function syncScroll() {
   const ta = $('#ed .ed-text');
   if (!ta) return;
-  const hl = $('#ed .ed-hl');
-  hl.scrollTop = ta.scrollTop;
-  hl.scrollLeft = ta.scrollLeft;
+  for (const layer of [$('#ed .ed-hl'), $('#ed .ed-marks')]) {
+    layer.scrollTop = ta.scrollTop;
+    layer.scrollLeft = ta.scrollLeft;
+  }
   $('#ed .ed-gutter').scrollTop = ta.scrollTop;
 }
 
@@ -205,7 +316,9 @@ function insert(ta, text) {
 function onKey(ev) {
   const ta = ev.currentTarget;
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); saveEditor(); return; }
-  if (ev.key === 'Escape') { ev.preventDefault(); closeEditor(); return; }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'f') { ev.preventDefault(); openFind(); return; }
+  if (ev.key === 'F3' && ed.find?.q) { ev.preventDefault(); if (!ed.find.open) openFind(); else stepFind(ev.shiftKey ? -1 : 1); return; }
+  if (ev.key === 'Escape') { ev.preventDefault(); if (ed.find?.open) closeFind(); else closeEditor(); return; }
   if (ta.readOnly) return;
   const unit = indentUnit(ta.value);
   if (ev.key === 'Tab') {
