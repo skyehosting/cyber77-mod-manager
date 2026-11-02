@@ -1120,7 +1120,8 @@ class ModManager extends EventEmitter {
       list: Object.values(list).sort((a, b) => a.created - b.created).map(p => {
         let tag = '';
         try { tag = profileCode.fingerprint(profileCode.encode(this.exportProfile(p.id))); } catch { /* none */ }
-        return { id: p.id, name: p.name, created: p.created || 0, count: p.enabled.filter(id => this.data.mods[id]).length, codeTag: tag };
+        const mods = p.enabled.filter(id => this.data.mods[id]);
+        return { id: p.id, name: p.name, created: p.created || 0, count: mods.length, mods, codeTag: tag };
       }),
     };
   }

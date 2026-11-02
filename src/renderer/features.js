@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, icon, run, toast, plural, fmtSize, state, modAction, drawerSections, snapshotHooks, withModal, showModal, keepFocus, pageHooks, goTo, setModFilter, CAT_LABEL */
+/* global api, $, h, icon, run, toast, plural, fmtSize, state, modAction, drawerSections, snapshotHooks, withModal, showModal, keepFocus, pageHooks, goTo, setModFilter, CAT_LABEL, cfg, renderConfig, setSegActive, moveFromVortex, openDrawer */
 
 // ---------------------------------------------------------------- mod details: update and health
 
@@ -341,7 +341,7 @@ const profGuard = (fn, workingLabel = '') => async ev => {
   }
 };
 
-const profFocus = key => $('#prof-grid').querySelector(`[data-key="${key}"]`)?.focus();
+const profFocus = key => $('#page-profiles').querySelector(`[data-key="${key}"]`)?.focus();
 const initialOf = name => (String(name).trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
 const fmtDay = t => (t ? new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
@@ -366,69 +366,162 @@ function copyCode(x) {
   });
 }
 
-function profileCard(x, p) {
-  const active = x.id === p.active;
-  const key = action => ({ key: `${x.id}:${action}` });
-  const head = (...extra) => h('div', { class: 'prof-head' },
-    h('span', { class: 'prof-avatar', 'aria-hidden': 'true' }, initialOf(x.name)),
-    ...extra);
+/** Names of this app's mods, A to Z, for a list of ids. */
+const modNames = ids => {
+  const byId = new Map((state.snap.mods || []).map(m => [m.id, m]));
+  return ids.map(id => byId.get(id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+};
 
-  if (prof.confirming === x.id) {
-    return h('article', { class: 'card prof-card confirming', 'aria-label': `Delete ${x.name}?` },
-      head(h('div', { class: 'prof-title' }, h('span', { class: 'name' }, `Delete "${x.name}"?`))),
-      h('p', { class: 'prof-meta' }, 'Its list of enabled mods and its conflict order are lost. The mods themselves are not touched.'),
-      h('div', { class: 'prof-actions' },
-        h('button', { class: 'btn btn-sm', dataset: key('cancel'), onclick: () => { prof.confirming = null; renderProfilesPage(true); profFocus(`${x.id}:delete`); } }, 'Cancel'),
-        h('button', { class: 'btn btn-sm btn-danger', dataset: key('confirm'), onclick: profGuard(async () => { await run(api.deleteProfile(x.id), `Deleted "${x.name}"`); prof.confirming = null; renderProfilesPage(true); }) }, 'Delete')));
-  }
-
-  let title;
-  if (prof.editing === x.id) {
-    const input = h('input', { type: 'text', value: x.name, 'aria-label': `New name for ${x.name}`, maxlength: '60', dataset: key('name-input') });
-    let done = false;
-    const finish = async save => {
-      if (done) return;
-      done = true;
-      const name = input.value.trim();
-      if (prof.editing === x.id) prof.editing = null;
-      if (save && name && name !== x.name) await run(api.renameProfile(x.id, name));
-      if (prof.editing) return; // another rename started meanwhile: leave its input alone
-      renderProfilesPage(true);
-      profFocus(`${x.id}:rename`);
-    };
-    input.addEventListener('keydown', ev => {
-      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
-      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
-    });
-    input.addEventListener('blur', () => finish(true));
-    setTimeout(() => { if (document.contains(input)) { input.focus(); input.select(); } });
-    title = h('div', { class: 'prof-title' }, input);
-  } else {
-    title = h('div', { class: 'prof-title' },
+/** The rename field, or the name with its tags. */
+function profTitle(x, active, key) {
+  if (prof.editing !== x.id) {
+    return h('div', { class: 'prof-title' },
       h('span', { class: 'name', title: x.name }, x.name),
-      active ? h('span', { class: 'tag tag-ok' }, 'Active') : null);
+      active ? h('span', { class: 'tag tag-ok' }, 'Active') : null,
+      h('button', { class: 'btn btn-sm btn-icon btn-ghost prof-rename', dataset: key('rename'), title: 'Rename', 'aria-label': `Rename ${x.name}`, onclick: () => { prof.editing = x.id; renderProfilesPage(true); } }, icon('edit')));
   }
+  const input = h('input', { type: 'text', value: x.name, 'aria-label': `New name for ${x.name}`, maxlength: '60', dataset: key('name-input') });
+  let done = false;
+  const finish = async save => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (prof.editing === x.id) prof.editing = null;
+    if (save && name && name !== x.name) await run(api.renameProfile(x.id, name));
+    if (prof.editing) return; // another rename started meanwhile: leave its input alone
+    renderProfilesPage(true);
+    profFocus(`${x.id}:rename`);
+  };
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  setTimeout(() => { if (document.contains(input)) { input.focus(); input.select(); } });
+  return h('div', { class: 'prof-title' }, input);
+}
 
-  return h('article', { class: `card prof-card${active ? ' active' : ''}`, 'aria-label': `${x.name}${active ? ' (active)' : ''}` },
-    head(title,
-      h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('rename'), title: 'Rename', 'aria-label': `Rename ${x.name}`, onclick: () => { prof.editing = x.id; renderProfilesPage(true); } }, icon('edit'))),
-    h('div', { class: 'prof-stats' },
-      h('div', { class: 'prof-stat' }, h('b', {}, String(x.count)), h('span', {}, x.count === 1 ? 'mod enabled' : 'mods enabled')),
-      x.created ? h('div', { class: 'prof-stat' }, h('b', {}, fmtDay(x.created)), h('span', {}, 'created')) : null,
-      x.codeTag ? h('div', { class: 'prof-stat', title: 'This tag changes whenever the profile\'s mods change: a code you copy is always the profile as it is now' }, h('b', { class: 'code-tag' }, x.codeTag), h('span', {}, 'share code')) : null),
+function deleteConfirm(x, key) {
+  return h('article', { class: 'card prof-card confirming', 'aria-label': `Delete ${x.name}?` },
+    h('div', { class: 'prof-head' }, h('span', { class: 'prof-avatar', 'aria-hidden': 'true' }, initialOf(x.name)), h('div', { class: 'prof-title' }, h('span', { class: 'name' }, `Delete "${x.name}"?`))),
+    h('p', { class: 'prof-meta' }, 'Its list of enabled mods and its conflict order are lost. The mods themselves are not touched.'),
     h('div', { class: 'prof-actions' },
-      active
-        ? h('span', { class: 'prof-live' }, icon('check'), h('span', {}, 'In use'))
-        : h('button', { class: 'btn btn-sm btn-primary', dataset: key('switch'), onclick: profGuard(() => switchTo(x), 'Switching…') }, icon('play'), h('span', {}, 'Activate')),
-      h('button', { class: 'btn btn-sm', dataset: key('code'), title: 'Copy a code that sets up this profile, as it is now, on someone else\'s PC', 'aria-label': `Copy the share code of ${x.name}`, onclick: copyCode(x) }, icon('copy'), h('span', {}, 'Copy code')),
-      h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('export'), title: 'Save this profile as a .json file', 'aria-label': `Export ${x.name} as a file`, onclick: exportProfile(x) }, icon('share')),
+      h('button', { class: 'btn btn-sm', dataset: key('cancel'), onclick: () => { prof.confirming = null; renderProfilesPage(true); profFocus(`${x.id}:delete`); } }, 'Cancel'),
+      h('button', { class: 'btn btn-sm btn-danger', dataset: key('confirm'), onclick: profGuard(async () => { await run(api.deleteProfile(x.id), `Deleted "${x.name}"`); prof.confirming = null; renderProfilesPage(true); }) }, 'Delete')));
+}
+
+const shareButtons = (x, key) => [
+  h('button', { class: 'btn btn-sm', dataset: key('code'), title: 'Copy a code that sets up this profile, as it is now, on someone else\'s PC', 'aria-label': `Copy the share code of ${x.name}`, onclick: copyCode(x) }, icon('copy'), h('span', {}, 'Copy code')),
+  h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('export'), title: 'Save this profile as a .json file', 'aria-label': `Export ${x.name} as a file`, onclick: exportProfile(x) }, icon('share')),
+];
+
+/** The active profile: what it turns on, in full. */
+function activeProfileEl(x, p) {
+  const key = action => ({ key: `${x.id}:${action}` });
+  const all = state.snap.mods || [];
+  const on = modNames(x.mods || []);
+  const onIds = new Set(x.mods || []);
+  const off = all.filter(m => !onIds.has(m.id)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const LIMIT = 30;
+  const shown = prof.showAll ? on : on.slice(0, LIMIT);
+  const chip = (m, cls = '') => h('button', { class: `prof-chip ${cls}`, title: `${m.name}${m.version ? ` v${m.version}` : ''}: show its details`, onclick: () => { goTo('mods'); openDrawer?.(m.id); } }, m.name);
+  return h('article', { class: 'card prof-hero', 'aria-label': `${x.name} (active profile)` },
+    h('div', { class: 'prof-hero-head' },
+      h('span', { class: 'prof-avatar lg', 'aria-hidden': 'true' }, initialOf(x.name)),
+      h('div', { class: 'prof-hero-titles' },
+        h('span', { class: 'prof-kicker' }, 'Active profile'),
+        profTitle(x, false, key),
+        h('span', { class: 'prof-meta' }, [x.created ? `Created ${fmtDay(x.created)}` : '', 'Follows what you turn on and off on the Mods page'].filter(Boolean).join(' · '))),
+      h('div', { class: 'prof-hero-stats' },
+        h('div', { class: 'prof-stat' }, h('b', {}, `${on.length}`, h('small', {}, ` / ${all.length}`)), h('span', {}, 'of this app\'s mods on')),
+        x.codeTag ? h('div', { class: 'prof-stat', title: 'This tag changes whenever the profile\'s mods change: a code you copy is always the profile as it is now' }, h('b', { class: 'code-tag' }, x.codeTag), h('span', {}, 'share code')) : null)),
+    h('div', { class: 'prof-mods' },
+      h('div', { class: 'prof-mods-label' }, `On in this profile (${on.length})`),
+      on.length ? h('div', { class: 'prof-chips' }, shown.map(m => chip(m, 'on')),
+        on.length > LIMIT ? h('button', { class: 'prof-chip more', onclick: () => { prof.showAll = !prof.showAll; renderProfilesPage(true); } }, prof.showAll ? 'Show fewer' : `+${on.length - LIMIT} more`) : null)
+        : h('p', { class: 'hint' }, 'No mods of this app are on. Turn some on on the Mods page.'),
+      off.length ? h('div', { class: 'prof-mods-label off' }, `Off in this profile (${off.length})`) : null,
+      off.length ? h('div', { class: 'prof-chips' }, off.slice(0, 12).map(m => chip(m, 'off')), off.length > 12 ? h('span', { class: 'prof-chip off static' }, `+${off.length - 12} more`) : null) : null),
+    h('div', { class: 'prof-actions' },
+      h('span', { class: 'prof-live' }, icon('check'), h('span', {}, 'In use: activate another profile to delete this one')),
+      ...shareButtons(x, key)));
+}
+
+/** Another profile: how it differs from the active one, and Activate. */
+function profileCard(x, p) {
+  const key = action => ({ key: `${x.id}:${action}` });
+  if (prof.confirming === x.id) return deleteConfirm(x, key);
+  const active = p.list.find(o => o.id === p.active);
+  const mine = new Set(x.mods || []);
+  const theirs = new Set(active?.mods || []);
+  const adds = [...mine].filter(id => !theirs.has(id));
+  const drops = [...theirs].filter(id => !mine.has(id));
+  const names = ids => modNames(ids).map(m => m.name);
+  return h('article', { class: 'card prof-card', 'aria-label': x.name },
+    h('div', { class: 'prof-head' }, h('span', { class: 'prof-avatar', 'aria-hidden': 'true' }, initialOf(x.name)), profTitle(x, false, key)),
+    h('div', { class: 'prof-stats' },
+      h('div', { class: 'prof-stat' }, h('b', {}, String(x.count)), h('span', {}, x.count === 1 ? 'mod on' : 'mods on')),
+      h('div', { class: 'prof-stat' }, h('b', { class: 'prof-diff' },
+        adds.length || drops.length ? [adds.length ? h('span', { class: 'plus', title: `Turns on: ${names(adds).join(', ')}` }, `+${adds.length}`) : null, drops.length ? h('span', { class: 'minus', title: `Turns off: ${names(drops).join(', ')}` }, `−${drops.length}`) : null] : 'Same'),
+      h('span', {}, 'vs. active')),
+      x.created ? h('div', { class: 'prof-stat' }, h('b', {}, fmtDay(x.created)), h('span', {}, 'created')) : null),
+    h('div', { class: 'prof-actions' },
+      h('button', { class: 'btn btn-sm btn-primary', dataset: key('switch'), onclick: profGuard(() => switchTo(x), 'Switching…') }, icon('play'), h('span', {}, 'Activate')),
+      ...shareButtons(x, key),
       h('button', {
-        class: 'btn btn-sm btn-icon btn-ghost', dataset: key('delete'),
-        title: active ? 'Activate another profile to delete this one' : p.list.length === 1 ? 'The only profile cannot be deleted' : 'Delete',
-        'aria-label': `Delete ${x.name}`,
-        disabled: active || p.list.length === 1,
+        class: 'btn btn-sm btn-icon btn-ghost', dataset: key('delete'), title: 'Delete', 'aria-label': `Delete ${x.name}`,
         onclick: () => { prof.confirming = x.id; renderProfilesPage(true); profFocus(`${x.id}:cancel`); },
       }, icon('trash'))));
+}
+
+/** What loads whatever this app's profile is: Vortex's mods and files no mod manager put there. */
+function outsideEl() {
+  const vx = state.snap.vortex;
+  const vxOn = vx?.installed ? (vx.mods || []).filter(m => m.enabled).length : 0;
+  const hand = (cfg.list || []).filter(m => m.source === 'hand');
+  const handFiles = hand.reduce((n, m) => n + m.fileCount, 0);
+  if (!vxOn && !hand.length) return null;
+  const row = (ico, title, text, ...buttons) => h('div', { class: 'prof-out-row' },
+    h('span', { class: 'prof-out-icon' }, icon(ico)),
+    h('div', { class: 'prof-out-text' }, h('b', {}, title), h('span', {}, text)),
+    h('div', { class: 'prof-out-actions' }, ...buttons));
+  return h('section', { class: 'card prof-outside', 'aria-label': 'Also loaded, whatever the profile' },
+    h('div', { class: 'prof-mods-label' }, 'Also loaded, whatever the profile'),
+    vxOn ? row('vortex', `${plural(vxOn, 'mod')} from Vortex`,
+      `They follow Vortex's own profile${vx.activeProfileName ? ` ("${vx.activeProfileName}")` : ''}, not these. Move them to this app to put them in profiles.`,
+      h('button', { class: 'btn btn-sm', onclick: () => { goTo('mods'); setModFilter('vortex'); } }, h('span', {}, 'Show them')),
+      h('button', { class: 'btn btn-sm btn-primary', onclick: () => moveFromVortex() }, icon('download'), h('span', {}, 'Move to this app'))) : null,
+    hand.length ? row('folder', `${plural(hand.length, 'folder')} not from a mod manager`,
+      `${plural(handFiles, 'file')} installed by hand (or by another tool) are always loaded; no profile turns them off.`,
+      h('button', { class: 'btn btn-sm', onclick: () => { goTo('config'); cfg.filter = 'hand'; setSegActive('#cfg-filter', 'f', 'hand'); renderConfig(); } }, icon('file-code'), h('span', {}, 'See them'))) : null);
+}
+
+function renderProfilesPage(force = false) {
+  const p = state.snap.profiles;
+  if (!p) return;
+  $('#nav-prof-count').textContent = p.list.length > 1 ? String(p.list.length) : '';
+  const vx = state.snap.vortex;
+  const next = JSON.stringify([p, prof.editing, prof.confirming, prof.showAll, vx?.profiles, vx?.mods?.length, (state.snap.mods || []).length, (cfg.list || []).length]);
+  // Never throw away a rename in progress.
+  if (!force && (next === prof.sig || prof.editing)) return;
+  prof.sig = next;
+  const page = $('#page-profiles');
+  const active = p.list.find(x => x.id === p.active) || p.list[0];
+  const others = p.list.filter(x => x !== active);
+  keepFocus(page, () => {
+    $('#prof-active').replaceChildren(activeProfileEl(active, p));
+    $('#prof-others-head').hidden = !others.length;
+    $('#prof-grid').replaceChildren(...others.map(x => profileCard(x, p)));
+    $('#prof-outside').replaceChildren(...[outsideEl()].filter(Boolean));
+  }, '#prof-new');
+  const vxList = vx?.installed ? vx.profiles || [] : [];
+  $('#vx-prof-head').hidden = !vxList.length;
+  $('#vx-prof-grid').replaceChildren(...vxList.map(vortexProfileCard));
+  // Files no mod manager put there: read once, then this page shows them too.
+  if (!cfg.list && !prof.readingHand) {
+    prof.readingHand = true;
+    api.cfgList().then(r => { if (r.ok) { cfg.list = r.ok; renderProfilesPage(true); } }).finally(() => { prof.readingHand = false; });
+  }
 }
 
 function vortexProfileCard(x) {
@@ -442,22 +535,6 @@ function vortexProfileCard(x) {
       x.active
         ? h('button', { class: 'btn btn-sm', onclick: () => { goTo('mods'); setModFilter('vortex'); } }, h('span', {}, 'Show its mods'))
         : h('span', { class: 'prof-live muted' }, h('span', {}, 'Switch to it in Vortex'))));
-}
-
-function renderProfilesPage(force = false) {
-  const p = state.snap.profiles;
-  if (!p) return;
-  $('#nav-prof-count').textContent = p.list.length > 1 ? String(p.list.length) : '';
-  const vx = state.snap.vortex;
-  const next = JSON.stringify([p, prof.editing, prof.confirming, vx?.profiles]);
-  // Never throw away a rename in progress.
-  if (!force && (next === prof.sig || prof.editing)) return;
-  prof.sig = next;
-  const grid = $('#prof-grid');
-  keepFocus(grid, () => grid.replaceChildren(...p.list.map(x => profileCard(x, p))), '#prof-new');
-  const vxList = vx?.installed ? vx.profiles || [] : [];
-  $('#vx-prof-head').hidden = !vxList.length;
-  $('#vx-prof-grid').replaceChildren(...vxList.map(vortexProfileCard));
 }
 
 /** New profile: a name, and whether it starts with what is enabled now. */

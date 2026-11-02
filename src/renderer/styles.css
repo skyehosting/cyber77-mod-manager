@@ -1218,6 +1218,8 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .prof-stat span { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 .prof-actions { display: flex; align-items: center; gap: var(--sp-2); margin-top: auto; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 .prof-actions > :last-child { margin-left: auto; }
+.prof-hero .prof-live { margin-right: auto; }
+.prof-hero .prof-actions > :last-child { margin-left: 0; }
 .prof-actions > :first-child:last-child { margin-left: 0; }
 .prof-live { white-space: nowrap; display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ok); font-size: var(--fs-sm); margin-right: auto; }
 .prof-live.muted { color: var(--muted); }
@@ -1691,3 +1693,44 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ed-find-input { flex: 0 1 22rem; min-width: 8rem; height: var(--control-h-sm); }
 .ed-find-count { min-width: 6rem; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .ed-find.none .ed-find-count { color: var(--warn); }
+
+/* ================================================================== Profiles (redesign) */
+.prof-active { margin-bottom: var(--sp-2); }
+.prof-hero { position: relative; display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-5); overflow: hidden; border-color: var(--line-strong);
+  background: radial-gradient(120% 140% at 0% 0%, rgb(242 214 75 / 0.07), transparent 55%), var(--surface); }
+.prof-hero::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 0.22rem; background: linear-gradient(var(--accent), rgb(242 214 75 / 0.15)); }
+.prof-hero-head { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; flex-wrap: wrap; }
+.prof-avatar.lg { width: 3.4rem; font-size: 1.45rem; border-radius: var(--r-lg); background: rgb(242 214 75 / 0.12); color: var(--accent); box-shadow: inset 0 0 0 1px rgb(242 214 75 / 0.28); }
+.prof-hero-titles { flex: 1 1 16rem; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.prof-kicker { color: var(--accent); font-size: var(--fs-xs); font-weight: var(--fw-bold); letter-spacing: 0.08em; text-transform: uppercase; }
+.prof-hero .prof-title .name { font-size: var(--fs-lg); }
+.prof-hero .prof-meta { font-size: var(--fs-sm); color: var(--muted); }
+.prof-hero-stats { display: flex; gap: var(--sp-5); flex: none; }
+.prof-hero-stats .prof-stat b { font-size: 1.6rem; line-height: 1.1; }
+.prof-stat b small { font-size: 0.55em; color: var(--muted); font-weight: var(--fw-medium); }
+.prof-rename { opacity: 0.55; }
+.prof-title:hover .prof-rename, .prof-rename:focus-visible { opacity: 1; }
+.prof-mods { display: flex; flex-direction: column; gap: var(--sp-2); }
+.prof-mods-label { color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }
+.prof-mods-label.off { margin-top: var(--sp-2); }
+.prof-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.prof-chip { max-width: 18rem; height: 1.75rem; padding: 0 0.7rem; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.prof-chip:hover { border-color: var(--ok-track); color: var(--text); }
+.prof-chip:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
+.prof-chip.on { display: inline-flex; align-items: center; gap: 0.45rem; }
+.prof-chip.on::before { content: ""; width: 0.4rem; height: auto; aspect-ratio: 1; border-radius: 50%; background: var(--ok); flex: none; }
+.prof-chip.off { background: transparent; color: var(--muted); border-style: dashed; }
+.prof-chip.more { color: var(--info); border-color: var(--info-line); background: var(--info-soft); }
+.prof-chip.static { cursor: default; }
+.prof-diff { display: inline-flex; gap: 0.45rem; }
+.prof-diff .plus { color: var(--ok); }
+.prof-diff .minus { color: var(--err); }
+.prof-card { transition: border-color .15s var(--ease), transform .15s var(--ease); }
+.prof-card:hover { border-color: var(--line-strong); }
+.prof-outside { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-5); padding: var(--sp-4) var(--sp-5); background: var(--bg); border-style: dashed; }
+.prof-out-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.prof-out-icon { display: grid; place-items: center; width: 2.2rem; aspect-ratio: 1; height: auto; flex: none; border-radius: var(--r); background: var(--info-soft); color: var(--info); }
+.prof-out-text { flex: 1 1 18rem; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; font-size: var(--fs-sm); }
+.prof-out-text span { color: var(--text-2); }
+.prof-out-actions { display: flex; gap: var(--sp-2); flex: none; }
+#prof-others-head { margin-top: var(--sp-5); }
