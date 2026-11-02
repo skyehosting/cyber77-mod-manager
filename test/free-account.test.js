@@ -27,14 +27,21 @@ async function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-free-'));
   const spec = (fileId, name) => ({ game: 'cyberpunk2077', modId: 1, fileId, name, modName: 'Mod', fileName: `${name}.zip`, dest: path.join(dir, `${name}.zip`), size: 7 });
   const settle = () => new Promise(r => setTimeout(r, 120));
-  return { server, dl, spec, asked, settle };
+  // Waits for a state instead of guessing how long a download takes (CI machines are slower).
+  const until = async (ok, ms = 10000) => {
+    for (const end = Date.now() + ms; !ok();) {
+      if (Date.now() > end) throw new Error('timed out');
+      await new Promise(r => setTimeout(r, 20));
+    }
+  };
+  return { server, dl, spec, asked, settle, until };
 }
 
 test('a free account: refused files wait for a click, then download with its one-time key', async () => {
-  const { server, dl, spec, asked, settle } = await setup();
+  const { server, dl, spec, asked, settle, until } = await setup();
   try {
     const a = dl.enqueue(spec(11, 'alpha'));
-    await settle();
+    await until(() => a.status === 'waiting');
     assert.strictEqual(a.status, 'waiting', 'Nexus refused a direct link: the file waits');
     assert.strictEqual(dl.freeAccount, true, 'and the account is known to be free from now on');
 
@@ -46,7 +53,7 @@ test('a free account: refused files wait for a click, then download with its one
 
     assert.strictEqual(dl.provideKey(99, { key: 'k', expires: '1' }), null, 'a key for another file changes nothing');
     assert.strictEqual(dl.provideKey(11, { key: 'k1', expires: '1' }), a);
-    await settle();
+    await until(() => a.status === 'done');
     assert.strictEqual(a.status, 'done');
     assert.strictEqual(fs.readFileSync(a.dest, 'utf8'), 'ARCHIVE');
     assert.deepStrictEqual(asked.at(-1), { fileId: 11, key: 'k1' });
@@ -60,11 +67,11 @@ test('a free account: refused files wait for a click, then download with its one
 });
 
 test('a Premium account never waits', async () => {
-  const { server, dl, spec, settle } = await setup();
+  const { server, dl, spec, until } = await setup();
   dl.nexus.getDownloadLink = async () => `http://127.0.0.1:${server.address().port}/f.zip`;
   try {
     const a = dl.enqueue(spec(33, 'gamma'));
-    await settle();
+    await until(() => ['done', 'waiting', 'error'].includes(a.status));
     assert.strictEqual(a.status, 'done');
     assert.strictEqual(dl.freeAccount, false);
   } finally {
