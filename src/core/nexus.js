@@ -1,6 +1,8 @@
 'use strict';
 const API = 'https://api.nexusmods.com/v1';
 const GRAPHQL = 'https://api.nexusmods.com/v2/graphql';
+/** Browse's "Adult (18+)" entry: only mods flagged as adult content. */
+const ADULT_ONLY = '__adult';
 const APP_NAME = 'CyberModManager';
 const APP_VERSION = '1.0.0';
 
@@ -145,8 +147,12 @@ class NexusClient {
     const q = String(query || '').trim().slice(0, 100);
     const filter = { gameDomainName: [{ value: game }] };
     if (q) filter.name = [{ value: q, op: 'WILDCARD' }];
-    if (category) filter.categoryName = [{ value: String(category) }];
-    if (!adult) filter.adultContent = [{ value: false }];
+    // ADULT_ONLY is not a Nexus category: it is the "adult content" flag, used as one in Browse.
+    if (category === ADULT_ONLY) filter.adultContent = [{ value: true }];
+    else {
+      if (category) filter.categoryName = [{ value: String(category) }];
+      if (!adult) filter.adultContent = [{ value: false }];
+    }
     const SORTS = { endorsements: 'DESC', downloads: 'DESC', updatedAt: 'DESC', createdAt: 'DESC', name: 'ASC', relevance: 'DESC' };
     const key = SORTS[sort] ? sort : 'endorsements';
     const count = Math.min(Math.max(Number(perPage) || 20, 1), 100);
@@ -172,9 +178,15 @@ class NexusClient {
 
   /** The game's mod categories with how many mods each has (the site's category filter). */
   async modCategories(game = 'cyberpunk2077') {
-    const data = await this.graphql(`query($f: ModsFilter) { mods(filter: $f, facets: { categoryName: [] }, count: 0) { facetsData } }`,
-      { f: { gameDomainName: [{ value: game }] } }, 'read the categories');
-    return Object.entries(data.mods?.facetsData?.categoryName || {}).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
+    const [data, adult] = await Promise.all([
+      this.graphql(`query($f: ModsFilter) { mods(filter: $f, facets: { categoryName: [] }, count: 0) { facetsData } }`,
+        { f: { gameDomainName: [{ value: game }] } }, 'read the categories'),
+      this.graphql('query($f: ModsFilter) { mods(filter: $f, count: 0) { totalCount } }',
+        { f: { gameDomainName: [{ value: game }], adultContent: [{ value: true }] } }, 'count adult mods').catch(() => null),
+    ]);
+    const list = Object.entries(data.mods?.facetsData?.categoryName || {}).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
+    // Adult mods, as their own entry first (they are spread over the real categories on Nexus).
+    return [{ name: 'Adult (18+)', value: ADULT_ONLY, count: adult?.mods?.totalCount ?? 0 }, ...list];
   }
 
   /** Premium accounts get CDN links straight from the API. Returns the preferred URI. */
@@ -188,4 +200,4 @@ class NexusClient {
   }
 }
 
-module.exports = { NexusClient, NexusError, parseModUrl, parseNxm };
+module.exports = { ADULT_ONLY, NexusClient, NexusError, parseModUrl, parseNxm };

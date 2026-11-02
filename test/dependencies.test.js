@@ -136,3 +136,18 @@ test('pickMainFiles and foundInGame', () => {
   assert.strictEqual(foundInGame(game, { modId: 99999, modName: 'Mod Settings' }), 'red4ext/plugins/mod_settings');
   assert.strictEqual(foundInGame(game, { modId: 2380, modName: 'RED4ext' }), '');
 });
+
+test('each requirement records which mods need it, by id, for the requirements tree', async () => {
+  const { root, game } = fakeGame();
+  const settings = new Settings(path.join(root, 'ud'), null);
+  settings.update({ gamePath: game });
+  const mgr = new ModManager({ settings, log: quiet });
+  stubNexus(mgr);
+  const plan = await mgr.planLinks('https://www.nexusmods.com/cyberpunk2077/mods/1');
+  const byName = Object.fromEntries(plan.deps.map(d => [d.name, d]));
+  assert.deepStrictEqual(byName['Lib Two'].parents, [1], 'Main Mod needs Lib Two');
+  assert.deepStrictEqual(byName['Lib Three'].parents, [2], 'Lib Two needs Lib Three (a requirement of a requirement)');
+  assert.deepStrictEqual(byName['Some Tool'].parents, [1]);
+  // Lib Three needs Main Mod again (a loop): it is not added as its own requirement.
+  assert.ok(!plan.deps.some(d => d.modId === 1));
+});

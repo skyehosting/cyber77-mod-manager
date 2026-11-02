@@ -93,15 +93,15 @@ function chooseFiles(plan) {
     const fileRow = (mod, f) => {
       const box = h('input', { type: 'checkbox', checked: !!f.selected, 'aria-label': `Download ${f.name}`, onchange: refresh });
       boxes.push([box, mod, f]);
-      const meta = [f.version ? `v${f.version}` : '', f.size ? fmtSize(f.size) : '', fmtDate(f.uploaded)].filter(Boolean);
-      return { box, el: h('label', { class: 'pick' },
-        h('span', { class: 'pick-check' }, box),
+      const meta = [f.version ? `v${f.version}` : '', f.size ? fmtSize(f.size) : '', fmtDate(f.uploaded)].filter(Boolean).join(' · ');
+      return { box, el: h('label', { class: 'pick', title: f.description ? `${f.name}\n\n${f.description}` : f.fileName },
+        box,
         h('span', { class: 'pick-main' },
           h('span', { class: 'pick-name' },
-            h('span', { class: 'name', title: f.fileName }, f.name),
-            f.downloaded ? h('span', { class: 'tag', title: 'Already in your downloads: it is not downloaded again' }, 'Downloaded') : null),
-          f.description ? h('span', { class: 'pick-desc', title: f.description }, f.description) : null),
-        h('span', { class: 'pick-meta' }, meta.map(x => h('span', {}, x)))) };
+            h('span', { class: 'name' }, f.name),
+            f.downloaded ? h('span', { class: 'tag', title: 'Already in your downloads: it is not downloaded again' }, 'Downloaded') : null,
+            h('span', { class: 'pick-meta' }, meta)),
+          f.description ? h('span', { class: 'pick-desc' }, f.description) : null)) };
     };
 
     const groupEl = (mod, [cat, label], list) => {
@@ -109,15 +109,13 @@ function chooseFiles(plan) {
       const mine = rows.map(r => r.box);
       const all = h('input', { type: 'checkbox', 'aria-label': `All ${label.toLowerCase()} of ${mod.name}`, onchange: ev => { mine.forEach(b => { b.checked = ev.target.checked; }); refresh(); } });
       groupBoxes.push([all, mine]);
-      const head = h('div', { class: 'pick-group-head' },
-        h('label', { class: 'pick-all' }, all, h('span', {}, label)),
-        h('span', { class: 'count' }, String(list.length)));
+      const head = h('label', { class: 'pick-group-head' }, all, h('span', {}, label), h('span', { class: 'pick-n' }, String(list.length)));
       // Old and archived files stay folded unless one of them is already ticked.
       const folded = ['OLD_VERSION', 'ARCHIVED'].includes(cat) && !list.some(f => f.selected);
       if (folded) {
         return h('details', { class: 'pick-group' },
-          h('summary', {}, h('span', {}, label), h('span', { class: 'count' }, String(list.length))),
-          h('div', { class: 'pick-group-head pick-group-inner' }, h('label', { class: 'pick-all' }, all, h('span', {}, `Select all ${label.toLowerCase()}`))),
+          h('summary', {}, h('span', {}, label), h('span', { class: 'pick-n' }, String(list.length))),
+          h('label', { class: 'pick-group-head pick-group-inner' }, all, h('span', {}, `All ${label.toLowerCase()}`)),
           h('div', { class: 'pick-rows' }, rows.map(r => r.el)));
       }
       return h('section', { class: 'pick-group' }, head, h('div', { class: 'pick-rows' }, rows.map(r => r.el)));
@@ -131,13 +129,12 @@ function chooseFiles(plan) {
       const mine = boxes.slice(start).map(([b]) => b);
       const counter = h('span', { class: 'pick-mod-count' });
       modCounts.push([counter, mod, mine]);
+      const single = plan.mods.length === 1;
       return h('div', { class: 'pick-mod' },
-        h('div', { class: 'pick-mod-head' },
-          h('div', { class: 'pick-mod-title' },
-            h('span', { class: 'name' }, mod.name),
-            h('span', { class: 'subname' }, [mod.author ? `by ${mod.author}` : '', plural(mod.allFiles.length, 'file')].filter(Boolean).join(' · '))),
+        single ? null : h('div', { class: 'pick-mod-head', title: mod.summary || '' },
+          h('span', { class: 'name' }, mod.name),
+          mod.author ? h('span', { class: 'subname' }, `by ${mod.author}`) : null,
           counter),
-        mod.summary ? h('p', { class: 'pick-summary' }, mod.summary) : null,
         mod.allFiles.length ? els : h('p', { class: 'hint' }, 'This mod has no files to download.'));
     };
 
@@ -155,26 +152,26 @@ function chooseFiles(plan) {
         all.checked = n === mine.length;
         all.indeterminate = n > 0 && n < mine.length;
       }
-      for (const [el, , mine] of modCounts) el.textContent = `${mine.filter(b => b.checked).length} of ${mine.length} selected`;
+      for (const [el, , mine] of modCounts) el.textContent = `${mine.filter(b => b.checked).length}/${mine.length}`;
       const ticked = boxes.filter(([b]) => b.checked).map(([, , f]) => f);
       const size = ticked.filter(f => !f.downloaded).reduce((n, f) => n + (f.size || 0), 0);
-      countLine.textContent = ticked.length ? `${plural(ticked.length, 'file')}${size ? ` · ${fmtSize(size)} to download` : ''}` : 'Nothing selected';
+      countLine.textContent = ticked.length ? `${ticked.length} of ${plural(boxes.length, 'file')}${size ? ` · ${fmtSize(size)} to download` : ''}` : 'Nothing selected';
       goBtn.disabled = !ticked.length;
       goBtn.textContent = plan.deps.length ? 'Next: requirements' : `Download ${plural(ticked.length, 'file')}`;
     }
     const setAll = on => { boxes.forEach(([b]) => { b.checked = on; }); refresh(); };
     const suggested = () => { boxes.forEach(([b, , f]) => { b.checked = !!f.selected; }); refresh(); };
 
-    const total = plan.mods.reduce((n, x) => n + x.allFiles.length, 0);
+    const one = plan.mods.length === 1 ? plan.mods[0] : null;
+    const sub = one ? [one.author ? `by ${one.author}` : '', one.summary].filter(Boolean).join(' · ') : plan.mods.map(x => x.name).join(', ');
     m.replaceChildren(
-      h('div', { class: 'modal-head' },
-        h('h3', { id: 'files-title' }, 'Choose files'),
-        h('div', { class: 'sub' }, `${plan.mods.length === 1 ? plan.mods[0].name : plural(plan.mods.length, 'mod')} · ${plural(total, 'file')} on Nexus`)),
-      h('div', { class: 'pick-tools' },
-        h('span', { class: 'hint' }, 'Files in the categories chosen in Settings are ticked. Untick what you do not want, or add older versions.'),
-        h('span', { class: 'pick-tools-btns' },
-          h('button', { class: 'link-btn', onclick: () => setAll(true) }, 'Select all'),
-          h('button', { class: 'link-btn', onclick: () => setAll(false) }, 'Select none'),
+      h('div', { class: 'modal-head pick-head' },
+        h('div', { class: 'pick-head-text' },
+          h('h3', { id: 'files-title', title: one ? one.name : '' }, one ? one.name : `Choose files · ${plural(plan.mods.length, 'mod')}`),
+          sub ? h('div', { class: 'sub', title: sub }, sub) : null),
+        h('span', { class: 'pick-tools', title: 'Ticked to start with: the file categories chosen in Settings' },
+          h('button', { class: 'link-btn', onclick: () => setAll(true) }, 'All'),
+          h('button', { class: 'link-btn', onclick: () => setAll(false) }, 'None'),
           h('button', { class: 'link-btn', onclick: suggested }, 'Suggested'))),
       h('div', { class: 'modal-body pick-body' }, plan.mods.map(modEl)),
       h('div', { class: 'modal-foot' },
@@ -193,49 +190,110 @@ function chooseRequirements(plan, files = null) {
     const m = $('#modal');
     m.className = 'modal medium';
     m.setAttribute('aria-labelledby', 'deps-title');
-    const boxes = [];
     const fileCount = files ? Object.values(files).reduce((n, x) => n + x.length, 0) : plan.mods.reduce((n, x) => n + x.files.length, 0);
     const pickable = plan.deps.filter(d => DEP_STATUS[d.status]?.pick);
+    const idOf = d => (d.modId ? d.modId : `ext:${d.name}`);
+    const rootIds = new Set(plan.mods.map(x => x.modId));
+    // Older plans carry names only: hang those under the first mod.
+    const parentsOf = d => (d.parents?.length ? d.parents : [plan.mods[0]?.modId]);
+    const childrenOf = id => plan.deps.filter(d => parentsOf(d).includes(id));
+    const nameOf = id => plan.mods.find(x => x.modId === id)?.name || plan.deps.find(d => d.modId === id)?.name || '';
+    const boxes = new Map(); // dep id → checkbox
 
-    const depRow = d => {
+    // Ticking one ticks everything it needs, all the way down.
+    const tickDown = (id, seen = new Set()) => {
+      for (const c of childrenOf(id)) {
+        const cid = idOf(c);
+        if (seen.has(cid)) continue;
+        seen.add(cid);
+        if (boxes.has(cid)) boxes.get(cid).checked = true;
+        tickDown(cid, seen);
+      }
+    };
+    // Unticking leaves out what no ticked mod needs any more.
+    const pruneOrphans = () => {
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const d of pickable) {
+          const box = boxes.get(idOf(d));
+          if (!box?.checked) continue;
+          const needed = parentsOf(d).some(p => rootIds.has(p) || boxes.get(p)?.checked);
+          if (!needed) { box.checked = false; changed = true; }
+        }
+      }
+    };
+
+    const rows = [];
+    const drawn = new Set();
+    const addRow = (d, depth, parentId, onPath) => {
+      const id = idOf(d);
       const st = DEP_STATUS[d.status] || { label: d.status, tag: '' };
-      const box = st.pick ? h('input', { type: 'checkbox', checked: true, 'aria-label': `Include ${d.name}`, onchange: refresh }) : null;
-      if (box) boxes.push([box, d]);
-      const files = (d.files || []).map(f => `${f.fileName}${f.size ? ` (${fmtSize(f.size)})` : ''}`).join(', ');
-      // The status tag already says installed/disabled/downloaded; the line adds what it can't.
-      const detail = d.status === 'missing' ? files : ['in-game', 'error'].includes(d.status) ? d.detail : '';
-      return h(st.pick ? 'label' : 'div', { class: `dep${st.pick ? '' : ' dep-done'}` },
+      const others = d.requiredBy.filter(n => n !== nameOf(parentId));
+      if (drawn.has(id)) {
+        rows.push(h('div', { class: 'dep dep-ref', style: `--depth:${depth}` },
+          h('span', { class: 'dep-check' }, icon('chevron-right')),
+          h('span', { class: 'dep-main' }, h('span', { class: 'name' }, d.name),
+            h('span', { class: 'subname' }, onPath.has(id) ? 'Needs a mod above it in turn (a loop): shown once' : 'Also needed here: shown above'))));
+        return;
+      }
+      drawn.add(id);
+      let box = null;
+      if (st.pick) {
+        box = h('input', { type: 'checkbox', checked: true, 'aria-label': `Include ${d.name}`, onchange: ev => {
+          if (ev.target.checked) tickDown(id); else pruneOrphans();
+          refresh();
+        } });
+        boxes.set(id, box);
+      }
+      const fileList = (d.files || []).map(f => `${f.fileName}${f.size ? ` (${fmtSize(f.size)})` : ''}`).join(', ');
+      // The status tag says installed/disabled/downloaded; the line adds what it can't.
+      const detail = d.status === 'missing' ? fileList : ['in-game', 'error'].includes(d.status) ? d.detail : '';
+      const sub = [others.length ? `also needed by ${others.join(', ')}` : '', detail].filter(Boolean).join(' · ');
+      rows.push(h(st.pick ? 'label' : 'div', { class: `dep${st.pick ? '' : ' dep-done'}`, style: `--depth:${depth}`, title: d.notes || d.detail || '' },
         h('span', { class: 'dep-check' }, box || icon(d.status === 'external' ? 'external' : 'check')),
         h('span', { class: 'dep-main' },
           h('span', { class: 'name' }, d.name),
-          h('span', { class: 'subname', title: d.detail || '' }, [`Needed by ${d.requiredBy.join(', ')}`, detail].filter(Boolean).join(' · '))),
+          sub ? h('span', { class: 'subname' }, sub) : null),
         d.status === 'external' && isHttps(d.url)
           ? h('a', { class: 'btn btn-sm', href: d.url, target: '_blank', rel: 'noopener', title: d.url }, 'Open page')
-          : h('span', { class: `tag ${st.tag}` }, st.label));
+          : h('span', { class: `tag ${st.tag}` }, st.label)));
+      const path = new Set(onPath).add(id);
+      for (const c of childrenOf(id)) addRow(c, depth + 1, id, path);
     };
+    for (const mod of plan.mods) {
+      const kids = childrenOf(mod.modId);
+      if (!kids.length) continue;
+      rows.push(h('div', { class: 'dep dep-root', style: '--depth:0' },
+        h('span', { class: 'dep-check' }, icon('package')),
+        h('span', { class: 'dep-main' }, h('span', { class: 'name' }, mod.name), h('span', { class: 'subname' }, 'Downloading · needs:'))));
+      for (const c of kids) addRow(c, 1, mod.modId, new Set([mod.modId]));
+    }
+    // Anything not reached from a linked mod (should not happen) still gets a row.
+    for (const d of plan.deps) if (!drawn.has(idOf(d))) addRow(d, 1, 0, new Set());
 
     const countLine = h('span', { class: 'foot-note' });
-    const goBtn = h('button', { class: 'btn btn-primary', onclick: () => close(boxes.filter(([b]) => b.checked).map(([, d]) => d.modId)) });
+    const goBtn = h('button', { class: 'btn btn-primary', onclick: () => close(pickable.filter(d => boxes.get(idOf(d))?.checked).map(d => d.modId)) });
     function refresh() {
-      const ticked = boxes.filter(([b]) => b.checked).map(([, d]) => d);
+      const ticked = pickable.filter(d => boxes.get(idOf(d))?.checked);
       const downloads = (files ? Object.values(files).filter(x => x.length).length : plan.mods.length) + ticked.filter(d => d.status === 'missing').length;
       const enables = ticked.filter(d => d.status !== 'missing').length;
       countLine.textContent = pickable.length ? `${ticked.length} of ${plural(pickable.length, 'requirement')} selected` : 'Every requirement is already covered';
-      goBtn.textContent = `Download ${plural(downloads, 'mod')}${enables ? ` · ${enables === 1 ? 'enable 1' : `enable ${enables}`}` : ''}`;
+      goBtn.textContent = `Download ${plural(downloads, 'mod')}${enables ? ` · enable ${enables}` : ''}`;
     }
+    const setAll = on => { boxes.forEach(b => { b.checked = on; }); refresh(); };
+    const depth = Math.max(0, ...rows.map(r => Number(r.style.getPropertyValue('--depth')) || 0));
 
     m.replaceChildren(
-      h('div', { class: 'modal-head' },
-        h('h3', { id: 'deps-title' }, 'Review requirements'),
-        h('div', { class: 'sub' }, `${plan.mods.map(x => x.name).join(', ')} · ${plural(fileCount, 'file')}`)),
-      h('div', { class: 'modal-body' },
-        h('p', { class: 'modal-lead' }, pickable.length
-          ? 'These mods need other mods to work. Ticked ones are downloaded, installed and enabled with them.'
-          : 'These mods need other mods, and you already have all of them.'),
-        h('div', { class: 'dep-list' }, plan.deps.map(depRow)),
-        pickable.length > 1 ? h('div', { class: 'dep-tools' },
-          h('button', { class: 'link-btn', onclick: () => { boxes.forEach(([b]) => { b.checked = true; }); refresh(); } }, 'Select all'),
-          h('button', { class: 'link-btn', onclick: () => { boxes.forEach(([b]) => { b.checked = false; }); refresh(); } }, 'Select none')) : null),
+      h('div', { class: 'modal-head pick-head' },
+        h('div', { class: 'pick-head-text' },
+          h('h3', { id: 'deps-title' }, 'Requirements'),
+          h('div', { class: 'sub sub-wrap' }, pickable.length
+            ? `What ${plan.mods.length === 1 ? plan.mods[0].name : 'these mods'} need${depth > 1 ? ', and what those need' : ''}. Ticked ones are downloaded, installed and enabled.`
+            : 'Everything these mods need is already here.')),
+        pickable.length > 1 ? h('span', { class: 'pick-tools', title: 'Ticking a requirement also ticks what it needs' },
+          h('button', { class: 'link-btn', onclick: () => setAll(true) }, 'All'),
+          h('button', { class: 'link-btn', onclick: () => setAll(false) }, 'None')) : null),
+      h('div', { class: 'modal-body pick-body' }, h('div', { class: 'dep-list dep-tree' }, rows)),
       h('div', { class: 'modal-foot' },
         countLine,
         h('button', { class: 'btn', onclick: () => close(null) }, 'Cancel'),

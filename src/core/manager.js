@@ -273,9 +273,14 @@ class ModManager extends EventEmitter {
       }
       for (const req of info.requirements) {
         const existing = plan.deps.find(d => (req.external ? d.name === req.modName : d.modId === req.modId));
-        if (existing) { if (!existing.requiredBy.includes(cur.name)) existing.requiredBy.push(cur.name); continue; }
+        if (existing) {
+          if (!existing.requiredBy.includes(cur.name)) existing.requiredBy.push(cur.name);
+          // Who needs it, by mod id: the requirements dialog draws these as a tree.
+          if (!existing.parents.includes(cur.modId)) existing.parents.push(cur.modId);
+          continue;
+        }
         if (req.external) {
-          plan.deps.push({ modId: 0, game: cur.game, name: req.modName, requiredBy: [cur.name], status: 'external', detail: req.url || 'Not hosted on Nexus', url: req.url });
+          plan.deps.push({ modId: 0, game: cur.game, name: req.modName, requiredBy: [cur.name], parents: [cur.modId], status: 'external', detail: req.url || 'Not hosted on Nexus', url: req.url });
           continue;
         }
         if (!req.modId || seen.has(req.modId)) continue;
@@ -285,7 +290,7 @@ class ModManager extends EventEmitter {
         }
         seen.add(req.modId);
         const st = this.dependencyStatus(req);
-        const dep = { modId: req.modId, game: cur.game, name: req.modName, requiredBy: [cur.name], status: st.status, detail: st.reason || '', notes: req.notes || '' };
+        const dep = { modId: req.modId, game: cur.game, name: req.modName, requiredBy: [cur.name], parents: [cur.modId], status: st.status, detail: st.reason || '', notes: req.notes || '' };
         if (st.status === 'missing') {
           try {
             const mi = await this.fetchModInfo(cur.game, req.modId);

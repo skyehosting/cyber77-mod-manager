@@ -56,7 +56,7 @@ function renderResults() {
   const have = installedIds();
   const pages = Math.max(1, Math.ceil(r.total / r.perPage));
   $('#browse-status').textContent = r.total || r.mods.length
-    ? `${r.total.toLocaleString()} mod${r.total === 1 ? '' : 's'}${br.q ? ` matching "${br.q}"` : ''}${br.category ? ` in ${br.category}` : ''}${r.exact ? ` · mod ${br.q} first` : ''}`
+    ? `${r.total.toLocaleString()} mod${r.total === 1 ? '' : 's'}${br.q ? ` matching "${br.q}"` : ''}${br.category ? ` in ${br.category === '__adult' ? 'adult mods' : br.category}` : ''}${r.exact ? ` · mod ${br.q} first` : ''}`
     : `Nothing found${br.q ? ` for "${br.q}"` : ''}. Try fewer words, or another category.`;
   $('#browse-grid').replaceChildren(...r.mods.map(m => {
     const owned = have.has(m.modId);
@@ -242,7 +242,7 @@ async function loadCategories() {
   const list = await api.modCategories();
   if (!list.ok) return;
   $('#browse-cat').replaceChildren(h('option', { value: '' }, 'All categories'),
-    ...list.ok.map(c => h('option', { value: c.name }, `${c.name} (${c.count.toLocaleString()})`)));
+    ...list.ok.map(c => h('option', { value: c.value || c.name }, `${c.name} (${c.count.toLocaleString()})`)));
   $('#browse-cat').value = br.category;
 }
 

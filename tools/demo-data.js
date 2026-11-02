@@ -144,12 +144,12 @@
       })),
     }],
     deps: [
-      { modId: 7780, name: 'Codeware', requiredBy: ['Appearance Menu Mod'], status: 'missing', files: [{ fileName: 'Codeware-7780-1-21-2.zip', size: 2_621_440 }] },
-      { modId: 4575, name: 'Input Loader', requiredBy: ['Codeware'], status: 'missing', files: [{ fileName: 'InputLoader-4575-0-2-6.zip', size: 310_000 }] },
-      { modId: 4198, name: 'ArchiveXL', requiredBy: ['Appearance Menu Mod'], status: 'disabled', detail: 'Installed but disabled — will be enabled' },
-      { modId: 2380, name: 'RED4ext', requiredBy: ['Codeware', 'ArchiveXL'], status: 'in-game', detail: 'Already in the game folder (red4ext/RED4ext.dll), installed by another tool' },
-      { modId: 107, name: 'Cyber Engine Tweaks', requiredBy: ['Appearance Menu Mod'], status: 'installed', detail: 'Installed and enabled' },
-      { modId: 0, name: 'Visual C++ Redistributable', requiredBy: ['Cyber Engine Tweaks'], status: 'external', url: 'https://aka.ms/vs/17/release/vc_redist.x64.exe', detail: 'Not hosted on Nexus' },
+      { modId: 7780, parents: [790], name: 'Codeware', requiredBy: ['Appearance Menu Mod'], status: 'missing', files: [{ fileName: 'Codeware-7780-1-21-2.zip', size: 2_621_440 }] },
+      { modId: 4575, parents: [7780], name: 'Input Loader', requiredBy: ['Codeware'], status: 'missing', files: [{ fileName: 'InputLoader-4575-0-2-6.zip', size: 310_000 }] },
+      { modId: 4198, parents: [790], name: 'ArchiveXL', requiredBy: ['Appearance Menu Mod'], status: 'disabled', detail: 'Installed but disabled — will be enabled' },
+      { modId: 2380, parents: [7780, 4198], name: 'RED4ext', requiredBy: ['Codeware', 'ArchiveXL'], status: 'in-game', detail: 'Already in the game folder (red4ext/RED4ext.dll), installed by another tool' },
+      { modId: 107, parents: [790], name: 'Cyber Engine Tweaks', requiredBy: ['Appearance Menu Mod'], status: 'installed', detail: 'Installed and enabled' },
+      { modId: 0, parents: [107], name: 'Visual C++ Redistributable', requiredBy: ['Cyber Engine Tweaks'], status: 'external', url: 'https://aka.ms/vs/17/release/vc_redist.x64.exe', detail: 'Not hosted on Nexus' },
     ],
   };
 

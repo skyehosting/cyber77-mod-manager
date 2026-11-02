@@ -200,3 +200,20 @@ test('a clicked "Slow download" (nxm link) continues the file that waits for it'
   assert.strictEqual(fetched, false, 'no second download is made for it');
   assert.strictEqual(mgr.downloader.jobs.size, 1);
 });
+
+test('Browse "Adult (18+)" asks Nexus for adult mods only', async () => {
+  const { NexusClient, ADULT_ONLY } = require('../src/core/nexus');
+  const sent = [];
+  const realFetch = global.fetch;
+  global.fetch = async (_url, init) => {
+    sent.push(JSON.parse(init.body).variables);
+    return { ok: true, status: 200, json: async () => ({ data: { mods: { totalCount: 0, nodes: [] } } }) };
+  };
+  try {
+    await new NexusClient(() => '', { info() {} }).searchMods({ category: ADULT_ONLY });
+    assert.deepStrictEqual(sent[0].f.adultContent, [{ value: true }]);
+    assert.strictEqual(sent[0].f.categoryName, undefined, 'not a Nexus category name');
+  } finally {
+    global.fetch = realFetch;
+  }
+});

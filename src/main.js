@@ -135,6 +135,8 @@ async function boot() {
   logger.setFile(path.join(userData, 'logs', `${new Date().toISOString().slice(0, 10)}.log`));
   logger.setHistory(path.join(userData, 'logs', 'manager-history.jsonl'));
   logger.on('entry', e => send('log', e));
+  // One line per start: which version, and whether the saved settings and API key were there.
+  logger.info(`Cyber Mod Manager ${app.getVersion()} started${process.argv.includes('--updated') ? ' after an update' : ''}: settings ${settings.store.restored ? 'restored from their backup' : 'loaded'}, API key ${settings.apiKey ? 'found' : settings.get('apiKeyEnc') ? 'saved but could not be read' : 'not set'}`);
 
   if (!isGameDir(settings.get('gamePath'))) {
     const found = await findCyberpunk();
@@ -526,10 +528,21 @@ function handleNxmArgs(argv) {
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
+function start() {
   app.on('second-instance', (_e, argv) => handleNxmArgs(argv));
   app.whenReady().then(guardWebviews).then(boot).then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); });
+}
+
+if (app.requestSingleInstanceLock()) {
+  start();
+} else if (process.argv.includes('--updated')) {
+  // Started by the installer of an update: the old version may still be closing. Wait for it
+  // (up to 15 s) instead of quitting, so the app comes back after updating.
+  let tries = 0;
+  const retry = setInterval(() => {
+    if (app.requestSingleInstanceLock()) { clearInterval(retry); start(); } else if (++tries >= 30) { clearInterval(retry); app.quit(); }
+  }, 500);
+} else {
+  app.quit();
 }
 app.on('window-all-closed', () => app.quit());
