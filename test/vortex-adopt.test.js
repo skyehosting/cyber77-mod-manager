@@ -113,3 +113,30 @@ test('updating a Vortex mod takes it over and updates it here, without opening V
   assert.ok(!mgr.vortexView().mods.some(m => m.vortexId === 'alpha'));
   assert.ok(mgr.vortexView().mods.some(m => m.vortexId === 'beta'), 'the other Vortex mods stay in Vortex');
 });
+
+test('a mod in both apps shows once, and enabling it here switches Vortex\'s copy off', async () => {
+  const { mgr, game, cli } = setup();
+  // This app has beta too (same Nexus file), enabled.
+  mgr.data.mods['200'] = { id: '200', key: '200', name: 'BETA', modName: 'BETA', modId: 20, fileId: 200, game: 'cyberpunk2077', version: '1.0', category: 'MAIN', files: [], enabled: false, priority: 1 };
+  const view = mgr.vortexView();
+  assert.ok(!view.mods.some(m => m.vortexId === 'beta'), 'Vortex\'s copy is not a second row');
+  assert.deepStrictEqual(view.twins['200'], { name: 'BETA', enabled: true });
+  assert.ok(view.mods.some(m => m.vortexId === 'alpha'), 'other Vortex mods are still listed');
+
+  await mgr.setEnabled(['200'], true);
+  assert.ok(cli.flat().some(a => a.includes('beta.enabled=false')), 'Vortex switched its copy off');
+  assert.ok(!cli.flat().some(a => a.includes('alpha.enabled=false')), 'and nothing else');
+  const manifest = JSON.parse(fs.readFileSync(path.join(game, 'vortex.deployment.json'), 'utf8'));
+  assert.ok(!manifest.files.some(f => f.source === 'beta'));
+});
+
+test('a clash left from before waits while Vortex is open, and is settled once it closes', async () => {
+  const { mgr, cli } = setup();
+  mgr.data.mods['100'] = { id: '100', key: '100', name: 'ALPHA', modName: 'ALPHA', modId: 10, fileId: 100, game: 'cyberpunk2077', version: '1.0', category: 'MAIN', files: [], enabled: true, priority: 1 };
+  mgr.vortex.isRunning = async () => true;
+  assert.deepStrictEqual(await mgr.switchOffVortexTwins(null, { allowClose: false }), { switched: 0, waiting: 1 });
+  assert.strictEqual(cli.length, 0, 'Vortex is not closed behind the user\'s back');
+  mgr.vortex.isRunning = async () => false;
+  assert.deepStrictEqual(await mgr.switchOffVortexTwins(null, { allowClose: false }), { switched: 1 });
+  assert.ok(cli.flat().some(a => a.includes('alpha.enabled=false')));
+});

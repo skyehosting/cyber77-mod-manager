@@ -888,18 +888,58 @@ class ModManager extends EventEmitter {
   }
 
 
+  /**
+   * Mods installed in both apps: Vortex mods that are the same Nexus file as one of this app's
+   * (or the same mod and file name). vortexId → this app's mod id.
+   */
+  vortexTwins(data = this.vortex.read()) {
+    const adopted = this.data.vortexAdopted || {};
+    const own = Object.values(this.data.mods);
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const out = {};
+    for (const v of data.mods || []) {
+      if (adopted[v.vortexId]) continue;
+      const twin = own.find(m => (v.fileId && Number(m.fileId) === v.fileId)) ||
+        own.find(m => v.modId && Number(m.modId) === v.modId && norm(m.name) === norm(v.name));
+      if (twin) out[v.vortexId] = twin.id;
+    }
+    return out;
+  }
+
+  /**
+   * A mod enabled here and also in Vortex would be placed twice: Vortex's copy is switched off
+   * (without opening Vortex). ids: only these mods of ours (all when omitted). If Vortex is open
+   * and closing it is not allowed (a background check), nothing changes and the count is returned.
+   */
+  async switchOffVortexTwins(ids = null, { allowClose = true } = {}) {
+    if (!this.vortex.installed || this.vortex.busy) return { switched: 0 };
+    const data = this.vortex.read();
+    const twins = this.vortexTwins(data);
+    const clash = (data.mods || []).filter(v => v.enabled && twins[v.vortexId] && this.data.mods[twins[v.vortexId]]?.enabled && (!ids || ids.includes(twins[v.vortexId])));
+    if (!clash.length) return { switched: 0 };
+    if (!allowClose && await this.vortex.isRunning()) return { switched: 0, waiting: clash.length };
+    await this.vortex.apply(clash.map(v => ({ vortexId: v.vortexId, enabled: false })));
+    this.log.info(`Switched off Vortex's copy of ${nameList(clash)}: ${clash.length === 1 ? 'it is' : 'they are'} enabled in this app`);
+    this.emit('changed');
+    return { switched: clash.length };
+  }
+
   /** Vortex's mods for the UI, plus every place where our enabled files and Vortex's files meet. */
   vortexView() {
     let data;
     try { data = this.vortex.read(); } catch (err) { return { installed: true, error: err.message, mods: [] }; }
     if (!data.installed) return { installed: false, mods: [] };
     const adopted = this.data.vortexAdopted || {};
-    const vxMods = data.mods.filter(m => !adopted[m.vortexId]);
+    // A mod in both apps shows once: as this app's, marked as also being in Vortex.
+    const twins = this.vortexTwins(data);
+    const vxMods = data.mods.filter(m => !adopted[m.vortexId] && !twins[m.vortexId]);
+    const twinOf = {};
+    for (const [vid, id] of Object.entries(twins)) twinOf[id] = { name: data.mods.find(v => v.vortexId === vid)?.name || vid, enabled: !!data.mods.find(v => v.vortexId === vid)?.enabled };
     const overlaps = {};
     for (const m of Object.values(this.data.mods)) {
       if (!m.enabled) continue;
       const hit = new Set();
-      for (const f of m.files) { const src = data.deployedPaths.get(f.toLowerCase()); if (src && !adopted[src]) hit.add(`vx:${src}`); }
+      for (const f of m.files) { const src = data.deployedPaths.get(f.toLowerCase()); if (src && !adopted[src] && twins[src] !== m.id) hit.add(`vx:${src}`); }
       if (hit.size) overlaps[m.id] = [...hit];
     }
     return {
@@ -912,6 +952,7 @@ class ModManager extends EventEmitter {
       profiles: data.profiles.map(p => ({ id: p.id, name: p.name, active: p.active, count: p.enabledIds.length })),
       mods: vxMods.map(({ deployedFiles, ...m }) => m),
       adopted: Object.keys(adopted).length,
+      twins: twinOf,
       overlaps,
     };
   }
@@ -924,7 +965,11 @@ class ModManager extends EventEmitter {
       this.vortexRunning = await this.vortex.isRunning();
       const d = this.vortex.read();
       const now = `${this.vortexRunning}|${d.snapshotTime}|${d.deployedAt}|${d.mods.length}`;
-      if (now !== sig) { sig = now; this.emit('changed'); }
+      if (now !== sig) {
+        sig = now;
+        this.emit('changed');
+        if (!this.vortexRunning) await this.switchOffVortexTwins(null, { allowClose: false }).catch(err => this.log.warn("Could not switch off Vortex's copy of a mod enabled here", err.message));
+      }
     };
     tick();
     this.vortexTimer = setInterval(() => tick().catch(() => {}), 5000);
@@ -1337,7 +1382,7 @@ class ModManager extends EventEmitter {
         throw err;
       }
       if (changed.length) this.log.success(`${enabled ? 'Enabled' : 'Disabled'} ${nameList(changed)}`, changed.length > 6 ? changed.map(m => m.name).join('\n') : undefined);
-    });
+    }).then(() => (enabled ? this.switchOffVortexTwins(ids).catch(err => this.log.warn("Could not switch off Vortex's copy", err.message)) : null));
   }
 
   prioritize(ids) {

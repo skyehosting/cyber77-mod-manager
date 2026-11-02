@@ -421,6 +421,7 @@ function renderMods() {
     h('td', {}, h('div', { class: 'cell-name' },
       h('div', { class: 'name-line' },
         h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name),
+        state.snap.vortex?.twins?.[m.id] ? h('span', { class: 'tag tag-vortex', title: `Also installed in Vortex. While it is enabled here, Vortex's copy is switched off${state.snap.vortex.twins[m.id].enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}.` }, 'Also in Vortex') : null,
         m.warnings?.length ? tagBtn('tag-warn tag-icon', `${plural(m.warnings.length, 'install warning')} — click to see`, 'warnings', icon('alert'), { 'aria-label': plural(m.warnings.length, 'install warning') }) : null,
         logIssues ? tagBtn('tag-err', 'Errors in this mod\'s game logs — click to see them', 'logs', `${logIssues} log error${logIssues === 1 ? '' : 's'}`) : null,
         m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
@@ -472,6 +473,8 @@ function renderMods() {
   if (updates.length) sub.append(' · ', link(`${plural(updates.length, 'update')} available`, 'updates'));
 
   $('#mods-upd-count').textContent = updates.length || '';
+  // Counted like the Conflicts filter: rows (versions of one mod are one) with a file conflict.
+  $('#mods-conf-count').textContent = rows.filter(m => state.snap.conflicts[m.id]).length || '';
   $('#mods-prob-count').textContent = problems || '';
   const updAll = $('#mods-update-all');
   updAll.hidden = updates.length === 0;
@@ -532,7 +535,9 @@ async function confirmVortexClose(count) {
 
 async function setModsEnabled(ids, enabled) {
   const vx = ids.filter(isVx);
-  if (!(await confirmVortexClose(vx.length))) return null;
+  // Enabling one of ours that Vortex also has switches Vortex's copy off: Vortex closes if open.
+  const twins = enabled ? ids.filter(id => state.snap.vortex?.twins?.[id]?.enabled).length : 0;
+  if (!(await confirmVortexClose(vx.length + twins))) return null;
   return run(enabled ? api.enable(ids) : api.disable(ids));
 }
 
