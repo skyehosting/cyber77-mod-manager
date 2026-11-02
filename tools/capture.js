@@ -51,6 +51,7 @@ const STATES = {
   'mods-vortex': { only: ['fhd-100', 'min-window'], run: "setModFilter('vortex');" },
   browse: { all: true, run: 'demoBrowse();' },
   'browse-detail': { only: ['fhd-100', 'min-window'], run: 'demoBrowse(); openMod(br.result.mods[1]);', wait: 4000 },
+  'gamelog-manager': { only: ['fhd-100', 'min-window'], run: "goTo('gamelog'); setTab('manager');" },
   drop: { only: ['fhd-100'], run: "goTo('mods'); document.querySelector('#drop-zone').hidden = false;" },
   'mods-updates': { only: ['fhd-100'], run: "setModFilter('updates');" },
   fomod: { only: ['fhd-100', 'fhd-150', '4k-200', 'uw-3440', 'sxga-54', 'min-window'], run: 'demoWizard();' },

@@ -182,8 +182,56 @@ async function renderSources() {
       h('button', { class: 'btn btn-sm btn-icon', title: 'Show in folder', 'aria-label': `Show ${r.rel} in folder`, onclick: () => run(api.revealGameFile(r.rel)) }, icon('folder'))))));
 }
 
+// ---------------------------------------------------------------- Manager: this app's own record
+
+const mgr = { entries: [], pending: false };
+const MGR_LEVEL = { error: ['tag-err', 'Error'], warn: ['tag-warn', 'Warning'], success: ['tag-ok', 'Done'], info: ['', 'Info'] };
+
+function renderManager() {
+  const q = gl.q;
+  const rows = [];
+  for (let i = mgr.entries.length - 1; i >= 0 && rows.length < GL_MAX_ROWS; i--) {
+    const e = mgr.entries[i];
+    if (gl.level === 'error' && e.level !== 'error') continue;
+    if (gl.level === 'warn' && e.level !== 'warn' && e.level !== 'error') continue;
+    if (q && !`${e.message} ${e.detail || ''}`.toLowerCase().includes(q)) continue;
+    rows.push(e);
+  }
+  const day = new Date().toDateString();
+  $('#gl-manager tbody').replaceChildren(...rows.map(e => {
+    const [tag, label] = MGR_LEVEL[e.level] || ['', e.level];
+    const d = new Date(e.time);
+    return h('tr', { class: 'row' },
+      h('td', { class: 'dim', title: d.toLocaleString() }, d.toDateString() === day ? d.toLocaleTimeString() : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })),
+      h('td', {}, h('span', { class: `tag ${tag}` }, label)),
+      h('td', { class: 'mgr-msg' }, e.message, e.detail ? h('span', { class: 'mgr-detail' }, e.detail) : null));
+  }));
+  $('#gl-mgr-empty').hidden = rows.length > 0;
+}
+function renderManagerSoon() {
+  if (mgr.pending) return;
+  mgr.pending = true;
+  requestAnimationFrame(() => { mgr.pending = false; if (gl.tab === 'manager') renderManager(); });
+}
+api.logHistory().then(r => {
+  if (!r.ok) return;
+  // Lines that arrived before the history did are already in it.
+  const seen = new Set(r.ok.map(e => `${e.time}|${e.message}`));
+  mgr.entries = [...r.ok, ...mgr.entries.filter(e => !seen.has(`${e.time}|${e.message}`))];
+  if (gl.tab === 'manager') renderManager();
+});
+api.onLog(e => {
+  if (e.level === 'debug') return;
+  mgr.entries.push(e);
+  if (mgr.entries.length > 3000) mgr.entries.shift();
+  if (gl.tab === 'manager') renderManagerSoon();
+});
+
 function renderView() {
-  for (const t of ['timeline', 'problems', 'sources']) $(`#gl-${t}`).hidden = gl.tab !== t;
+  for (const t of ['timeline', 'problems', 'sources', 'manager']) $(`#gl-${t}`).hidden = gl.tab !== t;
+  $('#gl-manager-note').hidden = gl.tab !== 'manager';
+  // The game's log sources mean nothing for this app's own record.
+  $('#gl-source').disabled = gl.tab === 'manager';
   $$('#gl-tabs .seg-btn').forEach(b => {
     const on = b.dataset.tab === gl.tab;
     b.classList.toggle('active', on);
@@ -195,6 +243,7 @@ function renderView() {
   if (gl.tab === 'timeline') renderTimeline();
   if (gl.tab === 'problems') renderProblems();
   if (gl.tab === 'sources') renderSources();
+  if (gl.tab === 'manager') renderManager();
 }
 
 function renderStats() {

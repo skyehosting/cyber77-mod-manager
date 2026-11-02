@@ -14,6 +14,7 @@
       <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="m2 16 10 5 10-5"/><path d="m2 12 10 5 10-5"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
       <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
       <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/></symbol>
       <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
@@ -221,7 +222,6 @@
               <option value="60">60 per page</option>
               <option value="80">80 per page</option>
             </select>
-            <label class="check browse-adult"><input type="checkbox" id="browse-adult"><span>Adult content</span></label>
           </div>
           <div class="browse-status" id="browse-status" role="status" aria-live="polite"></div>
           <div class="browse-grid" id="browse-grid"></div>
@@ -268,34 +268,28 @@
           </div>
         </header>
 
+        <div class="banner banner-warn dl-keybanner" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.</span><button class="btn btn-sm" data-goto="settings">Open Settings</button></div>
         <div class="dl-top">
-          <div class="card add-card">
-            <div class="banner banner-warn" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading. Direct downloads need a Premium account.</span><button class="btn btn-sm" data-goto="settings">Open Settings</button></div>
-            <label for="dl-links" class="label">Nexus Mods links</label>
-            <div class="add-row">
-              <div class="input-icon">
-                <svg class="i"><use href="#i-link"/></svg>
-                <textarea id="dl-links" rows="1" placeholder="https://www.nexusmods.com/cyberpunk2077/mods/107 — one or more links"></textarea>
-              </div>
-              <button class="btn btn-primary btn-lg" id="dl-go"><svg class="i"><use href="#i-download"/></svg><span>Choose files</span></button>
+          <div class="dl-add">
+            <div class="input-icon dl-input">
+              <svg class="i"><use href="#i-link"/></svg>
+              <textarea id="dl-links" rows="1" aria-label="Nexus Mods links" title="Enter: choose files · Shift+Enter: another link" placeholder="Paste Nexus mod links"></textarea>
             </div>
-            <p class="hint" id="dl-hint"></p>
-            <p class="hint" id="dl-keys"><kbd>Enter</kbd> opens the file picker · <kbd>Shift</kbd>+<kbd>Enter</kbd> adds another link · <span id="dl-nxm-hint">Nexus "Mod Manager Download" buttons can be sent here (Settings)</span></p>
+            <button class="btn btn-primary" id="dl-go"><svg class="i"><use href="#i-download"/></svg><span>Choose files</span></button>
           </div>
-          <div class="card net-card" aria-label="Network">
-            <div class="net-head">
-              <h2 class="card-title"><svg class="i"><use href="#i-gauge"/></svg>Network</h2>
-              <span class="net-now" id="net-now">Idle</span>
-            </div>
+          <div class="net" aria-label="Network">
             <div class="net-graph-box"><svg class="net-graph" id="net-graph" viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true"><path class="net-area" d=""/><path class="net-line" d=""/></svg></div>
-            <div class="net-stats">
-              <div><span class="stat-label">Downloading</span><b id="net-active">0</b></div>
-              <div><span class="stat-label">Queued</span><b id="net-queued">0</b></div>
-              <div><span class="stat-label">This session</span><b id="net-total">0 B</b></div>
-              <div><span class="stat-label">Peak</span><b id="net-peak">—</b></div>
+            <div class="net-read">
+              <b class="net-now" id="net-now">Idle</b>
+              <span class="net-meta"><span id="net-active">0</span> active · <span id="net-queued">0</span> queued</span>
+            </div>
+            <div class="net-side">
+              <span title="Downloaded since the app started"><span class="stat-label">Session</span> <b id="net-total">0 B</b></span>
+              <span title="Fastest speed this session"><span class="stat-label">Peak</span> <b id="net-peak">—</b></span>
             </div>
           </div>
         </div>
+        <p class="hint dl-hint" id="dl-hint"></p>
 
         <div class="toolbar" id="dl-toolbar">
           <label class="search">
@@ -382,6 +376,7 @@
             <button class="seg-btn active" data-tab="timeline" role="tab" id="tab-timeline" aria-selected="true" aria-controls="gl-timeline">Timeline</button>
             <button class="seg-btn" data-tab="problems" role="tab" id="tab-problems" aria-selected="false" aria-controls="gl-problems" tabindex="-1">Problems <span class="seg-count seg-count-neutral" id="gl-prob-count" title="Distinct problems: repeats of the same error or warning count once"></span></button>
             <button class="seg-btn" data-tab="sources" role="tab" id="tab-sources" aria-selected="false" aria-controls="gl-sources" tabindex="-1">Sources</button>
+            <button class="seg-btn" data-tab="manager" role="tab" id="tab-manager" aria-selected="false" aria-controls="gl-manager" tabindex="-1" title="What this app did: enables, disables, installs, updates. Not included in exported reports.">Manager</button>
           </div>
           <label class="search">
             <svg class="i"><use href="#i-search"/></svg>
@@ -417,6 +412,20 @@
             <span class="empty-icon"><svg class="i"><use href="#i-check"/></svg></span>
             <p class="empty-title">No problems</p>
             <p class="empty-text">No errors or warnings match these filters.</p>
+          </div>
+        </div>
+
+        <p class="gl-note" id="gl-manager-note" hidden><svg class="i"><use href="#i-info"/></svg><span>What this app did, newest first: enables, disables, installs, updates, profiles. Kept on this PC across restarts, and left out of exported reports.</span></p>
+        <div class="table-card gl-view" id="gl-manager" role="tabpanel" aria-labelledby="tab-manager" hidden>
+          <table class="grid">
+            <colgroup><col class="w-when"><col class="w-level"><col></colgroup>
+            <thead><tr><th>When</th><th>Level</th><th>What happened</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="gl-mgr-empty" hidden>
+            <span class="empty-icon"><svg class="i"><use href="#i-check"/></svg></span>
+            <p class="empty-title">Nothing here</p>
+            <p class="empty-text">Nothing matches these filters yet.</p>
           </div>
         </div>
 
@@ -518,7 +527,8 @@
               </div>
               <label class="check"><input type="checkbox" id="s-autoenable"><span>Enable mods right after an automatic install</span></label>
               <label class="check"><input type="checkbox" id="s-deps"><span>Download, install and enable required mods (and what they require)</span></label>
-              <label class="check"><input type="checkbox" id="s-nxm"><span>Handle Nexus "Mod Manager Download" buttons<span class="check-sub">Clicking one on nexusmods.com starts the download here. Vortex takes these links back each time it starts unless you turn off "Handle Nexus links" in Vortex's settings.</span></span></label>
+              <label class="check"><input type="checkbox" id="s-nxm"><span>Handle Nexus "Mod Manager Download" buttons<span class="check-sub">Clicking one on nexusmods.com starts the download here. Applies at once; turning it off gives the links back to the program that had them.</span><span class="check-sub nxm-state" id="s-nxm-state"></span></span></label>
+              <label class="check"><input type="checkbox" id="s-adblock"><span>Block ads and trackers on Nexus pages in Browse<span class="check-sub">Uses the same kind of filter lists as Brave and uBlock Origin. Only the pages shown inside this app are affected.</span></span></label>
             </section>
 
             <section class="card">

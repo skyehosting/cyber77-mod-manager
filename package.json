@@ -10,9 +10,14 @@
     "test": "node --require ./test/setup.cjs --test test/*.test.js"
   },
   "dependencies": {
+    "@ghostery/adblocker-electron": "2.20.1",
     "fast-xml-parser": "5.11.2"
   },
   "devDependencies": {
     "electron": "45.2.1"
+  },
+  "overrides": {
+    "@ghostery/adblocker": "2.20.1",
+    "@ghostery/adblocker-electron-preload": "2.20.1"
   }
 }

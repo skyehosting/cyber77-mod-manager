@@ -3,8 +3,9 @@ const os = require('os');
 const { ownerRoot } = require('./gameLogs');
 
 /*
- * One JSON file with everything needed to look into a problem: every error and warning (from the
- * game's and mods' logs and from this app), grouped and in full, plus every mod with its state.
+ * One JSON file with everything needed to look into a problem: every error and warning from the
+ * game's and mods' logs, grouped and in full, plus every mod with its state. This app's own log
+ * (the Game log's Manager tab) is left out: it is a record of what was done here, kept locally.
  */
 
 // Numbers, hex and quoted values differ between repeats of the same message.
@@ -26,7 +27,7 @@ function group(entries) {
 
 const iso = t => (t ? new Date(t).toISOString() : null);
 
-function buildReport({ snap, vortex, gameLog, gameStatus, sources, activity, app }) {
+function buildReport({ snap, vortex, gameLog, gameStatus, sources, app }) {
   const own = snap.mods || [];
   // Which mod a log line comes from: the mod folders each mod owns, here and in Vortex.
   const byRoot = new Map();
@@ -37,8 +38,6 @@ function buildReport({ snap, vortex, gameLog, gameStatus, sources, activity, app
   }
   const tag = e => ({ ...e, mod: e.root ? byRoot.get(e.root.toLowerCase()) || '' : '' });
   const logProblems = (gameLog || []).filter(e => e.level === 'error' || e.level === 'warn').map(tag);
-  const appProblems = (activity || []).filter(e => e.level === 'error' || e.level === 'warn')
-    .map(e => ({ level: e.level, source: 'Cyber Mod Manager', text: e.detail ? `${e.message}\n${e.detail}` : e.message, time: e.time }));
 
   const logErrorsByMod = {};
   for (const e of logProblems) if (e.mod && e.level === 'error') logErrorsByMod[e.mod] = (logErrorsByMod[e.mod] || 0) + 1;
@@ -64,8 +63,8 @@ function buildReport({ snap, vortex, gameLog, gameStatus, sources, activity, app
     })),
   ].sort((a, b) => a.name.localeCompare(b.name));
 
-  const errors = logProblems.filter(e => e.level === 'error').length + appProblems.filter(e => e.level === 'error').length;
-  const warnings = logProblems.length + appProblems.length - errors;
+  const errors = logProblems.filter(e => e.level === 'error').length;
+  const warnings = logProblems.length - errors;
   return {
     report: 'Cyber Mod Manager diagnostics',
     exportedAt: new Date().toISOString(),
@@ -83,7 +82,7 @@ function buildReport({ snap, vortex, gameLog, gameStatus, sources, activity, app
       updatesAvailable: Object.keys(snap.updates || {}).length,
     },
     // The same message repeated is one line here, with how often and when.
-    problems: group([...logProblems, ...appProblems]),
+    problems: group(logProblems),
     mods,
     profiles: {
       active: snap.profiles?.list.find(p => p.id === snap.profiles.active)?.name || null,
@@ -92,8 +91,7 @@ function buildReport({ snap, vortex, gameLog, gameStatus, sources, activity, app
     },
     logSources: (sources || []).map(s => ({ name: s.source || s.name, file: s.rel || s.file, followed: !!s.followed })),
     // Every error and warning, in full and in order.
-    allErrorsAndWarnings: [...logProblems.map(e => ({ time: iso(e.time), level: e.level, source: e.source, file: e.file, mod: e.mod || null, text: e.text })),
-      ...appProblems.map(e => ({ time: iso(e.time), level: e.level, source: e.source, file: null, mod: null, text: e.text }))]
+    allErrorsAndWarnings: logProblems.map(e => ({ time: iso(e.time), level: e.level, source: e.source, file: e.file, mod: e.mod || null, text: e.text }))
       .sort((a, b) => String(a.time).localeCompare(String(b.time))),
   };
 }

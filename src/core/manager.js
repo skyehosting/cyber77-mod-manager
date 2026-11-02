@@ -38,6 +38,15 @@ const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
 /** Nexus descriptions are BBCode/HTML: keep the words only. */
 const plainText = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/\[\/?[a-z0-9=#*"' -]+\]/gi, '').replace(/<[^>]+>/g, '')
   .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+/** "A, B and C" or "A, B, C and 9 more": who an action was about. */
+const nameList = (mods, max = 6) => {
+  const names = mods.map(m => (m.version ? `${m.name} v${m.version}` : m.name));
+  if (names.length <= 1) return names[0] || 'nothing';
+  const shown = names.slice(0, max);
+  const rest = names.length - shown.length;
+  return rest ? `${shown.join(', ')} and ${rest} more` : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+};
+
 const publicFile = f => ({ fileId: f.file_id, name: f.name || f.file_name, fileName: f.file_name, category: catOf(f), version: f.version || f.mod_version || '', size: (f.size_in_bytes || (f.size_kb || 0) * 1024) || 0 });
 
 const CATEGORY_FOLDERS = {
@@ -1146,7 +1155,7 @@ class ModManager extends EventEmitter {
         this.library.save();
         throw err;
       }
-      this.log.success(`${enabled ? 'Enabled' : 'Disabled'} ${changed.length} mod(s)`);
+      if (changed.length) this.log.success(`${enabled ? 'Enabled' : 'Disabled'} ${nameList(changed)}`, changed.length > 6 ? changed.map(m => m.name).join('\n') : undefined);
     });
   }
 

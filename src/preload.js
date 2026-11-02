@@ -11,6 +11,9 @@ const on = channel => cb => {
 contextBridge.exposeInMainWorld('api', {
   snapshot: () => call('snapshot'),
   logs: () => call('logs'),
+  logHistory: () => call('logs:history'),
+  nxmStatus: () => call('nxm:status'),
+  setNxm: on => call('nxm:set', on),
   getSettings: () => call('settings:get'),
   setSettings: patch => call('settings:set', patch),
   validateKey: () => call('settings:validateKey'),

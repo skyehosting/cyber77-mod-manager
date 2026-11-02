@@ -321,8 +321,12 @@ function visibleMods() {
     if (state.modFilter === 'repair') return !!m.health;
     if (state.modFilter === 'vortex') return !!m.vortex;
     return true;
-  });
+  }).sort(byName);
 }
+
+// A to Z, ignoring case and accents, with numbers in number order (Mod 2 before Mod 10).
+const nameOrder = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+const byName = (a, b) => nameOrder.compare(a.name, b.name) || nameOrder.compare(a.version || '', b.version || '');
 
 function conflictCell(m, byId) {
   const c = state.snap.conflicts[m.id];
@@ -951,7 +955,7 @@ function sampleNetwork() {
   $('#net-queued').textContent = jobs.filter(j => j.status === 'queued').length;
   $('#net-total').textContent = fmtSize(dl.sessionBytes) === '—' ? '0 B' : fmtSize(dl.sessionBytes);
   $('#net-peak').textContent = dl.peak ? `${fmtSize(dl.peak)}/s` : '—';
-  const max = Math.max(...dl.speeds, 1);
+  const max = Math.max(...dl.speeds, 1024 * 1024);
   const pts = dl.speeds.map((v, i) => `${i},${(40 - (v / max) * 36).toFixed(2)}`);
   $('#net-graph .net-line').setAttribute('d', `M${pts.join(' L')}`);
   $('#net-graph .net-area').setAttribute('d', `M0,40 L${pts.join(' L')} L119,40 Z`);
@@ -1033,7 +1037,42 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
 };
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', handleNxm: '#s-nxm' };
+// The nxm switch is not here: it applies at once, see "Nexus download links" below.
+// ---------------------------------------------------------------- Nexus download links (nxm://)
+
+function showNxmState(st) {
+  if (!st) return;
+  $('#s-nxm').checked = st.on;
+  const el = $('#s-nxm-state');
+  el.className = `check-sub nxm-state ${st.on && !st.ours ? 'bad' : st.ours ? 'ok' : ''}`;
+  el.textContent = st.ours ? 'Now: these links open Cyber Mod Manager.'
+    : st.on ? `Now: ${st.handler || 'nothing'} has these links (it took them back). Turn this off and on again to take them over.`
+      : `Now: ${st.handler ? `these links open ${st.handler}` : 'no program handles these links'}.`;
+}
+async function refreshNxm() { showNxmState(await run(api.nxmStatus())); }
+
+$('#s-nxm').addEventListener('change', async ev => {
+  const on = ev.target.checked;
+  ev.target.checked = !on; // stays as it was until the change is done
+  const st = await run(api.nxmStatus());
+  if (!st) return;
+  if (on) {
+    const ok = await confirmBox('Handle Nexus downloads here?', `"Mod Manager Download" buttons on nexusmods.com will open Cyber Mod Manager and download here${st.handler && st.handler !== 'Cyber Mod Manager' ? `, instead of ${st.handler}` : ''}. The current setting is saved, and turning this off puts it back. The first time, your browser asks whether to open Cyber Mod Manager: allow it.${st.handler === 'Vortex' ? ' Vortex takes these links back when it starts, unless "Handle Nexus links" is off in Vortex\'s settings.' : ''}`, 'Handle them here');
+    if (!ok) return;
+  }
+  const res = await run(api.setNxm(on));
+  if (!res) { refreshNxm(); return; }
+  showNxmState(res);
+  if (on && !res.ours) {
+    modal({ title: 'Windows did not switch', body: h('p', {}, `Nexus links still open ${res.handler || 'nothing'}. Try again, or check Windows Settings → Apps → Default apps → "Choose defaults by link type" → NXM.`), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
+  } else if (on) {
+    modal({ title: 'Nexus downloads come here now', body: h('p', {}, 'Click "Mod Manager Download" on any mod\'s Files tab to try it. Your browser asks once whether to open Cyber Mod Manager.'), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
+  } else {
+    toast(res.handler ? `Nexus links open ${res.handler} again` : 'Nexus links are no longer handled by this app', 'success');
+  }
+});
+
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock' };
 
 function readForm() {
   const patch = {};
@@ -1072,6 +1111,7 @@ async function loadSettings() {
   $('#s-apikey').placeholder = s.hasApiKey ? `Saved key ${s.apiKeyHint} — paste a new one to replace it` : 'Paste your personal API key';
   for (const [k, sel] of Object.entries(form)) { $(sel).value = s[k] ?? ''; $(sel).title = String(s[k] ?? ''); }
   for (const [k, sel] of Object.entries(checks)) $(sel).checked = !!s[k];
+  refreshNxm();
   $$('#s-cats input').forEach(i => { i.checked = s.categories.includes(i.value); });
   renderStatus();
   renderInstalls();

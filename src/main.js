@@ -9,6 +9,7 @@ const { findCyberpunk, findInstalls, storeOf, isGameDir } = require('./core/game
 const { launchGame } = require('./core/launcher');
 const { GameLogMonitor } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
+const nxm = require('./core/nxmHandler');
 
 let win = null;
 let settings = null;
@@ -130,6 +131,7 @@ async function boot() {
   const userData = app.getPath('userData');
   settings = new Settings(userData, cipher);
   logger.setFile(path.join(userData, 'logs', `${new Date().toISOString().slice(0, 10)}.log`));
+  logger.setHistory(path.join(userData, 'logs', 'manager-history.jsonl'));
   logger.on('entry', e => send('log', e));
 
   if (!isGameDir(settings.get('gamePath'))) {
@@ -148,7 +150,8 @@ async function boot() {
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
   manager.startVortexWatch();
-  applyNxmSetting();
+  applyNxmSetting().catch(err => logger.error('Could not set the Nexus link handler', err.message));
+  applyAdBlock();
 
   gameLogs = new GameLogMonitor({
     getGameDir: () => settings.get('gamePath'),
@@ -185,7 +188,8 @@ async function boot() {
     settings.update(patch);
     if (settings.get('dataDir') !== before) logger.warn('Data folder changed. Restart the app to use it.');
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
-    if ('handleNxm' in patch) applyNxmSetting();
+    if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
+    if ('blockAds' in patch) applyAdBlock();
     logger.success('Settings saved');
     pushSnapshot();
     return settings.publicView();
@@ -220,6 +224,13 @@ async function boot() {
     return r;
   });
   // One report for both export buttons: every error and warning, and every mod with its state.
+  handle('logs:history', () => logger.history);
+  handle('nxm:status', () => nxmStatus());
+  // The switch applies at once (not with Save): Settings shows the result right away.
+  handle('nxm:set', async on => {
+    settings.update({ handleNxm: !!on });
+    return applyNxmSetting();
+  });
   handle('browse:search', opts => manager.nexus.searchMods(opts || {}));
   handle('browse:categories', () => manager.nexus.modCategories());
   handle('browse:open', url => { if (NEXUS_PAGE.test(String(url))) shell.openExternal(String(url)); });
@@ -236,7 +247,7 @@ async function boot() {
     const doc = buildReport({
       snap: manager.snapshot(), vortex,
       gameLog: gameLogs.entries, gameStatus: gameLogs.status(), sources: gameLogs.sources(),
-      activity: logger.entries, app: { version: app.getVersion() },
+      app: { version: app.getVersion() },
     });
     fs.writeFileSync(r.filePath, JSON.stringify(doc, null, 2));
     lastExport = r.filePath;
@@ -350,14 +361,46 @@ process.on('unhandledRejection', err => logger.error(`Unhandled promise rejectio
  * becomes the handler and a clicked link starts downloading here. Windows hands the link to a new
  * process, which passes it to the running one and exits (single instance).
  */
-function applyNxmSetting() {
-  const args = process.defaultApp ? [path.resolve(process.argv[1] || '.')] : [];
+const nxmArgs = () => (process.defaultApp ? [path.resolve(process.argv[1] || '.')] : []);
+const nxmBackupFile = () => path.join(app.getPath('userData'), 'nxm-previous-handler.reg');
+
+/** Who opens nxm:// links now, for Settings. */
+async function nxmStatus() {
+  const command = await nxm.readCommand();
+  return {
+    on: !!settings.get('handleNxm'),
+    ours: app.isDefaultProtocolClient('nxm', process.execPath, nxmArgs()),
+    handler: nxm.describe(command, process.execPath),
+    saved: fs.existsSync(nxmBackupFile()),
+  };
+}
+
+/**
+ * Make the registry match the setting. On: save whoever handles the links now, then take them
+ * over. Off: give them back to whoever had them before. Screenshot runs never touch the registry
+ * (their throwaway settings would undo the user's choice).
+ */
+async function applyNxmSetting() {
+  if (process.env.CMM_CAPTURE) return nxmStatus();
+  const args = nxmArgs();
+  const ours = app.isDefaultProtocolClient('nxm', process.execPath, args);
   if (settings.get('handleNxm')) {
-    if (app.setAsDefaultProtocolClient('nxm', process.execPath, args)) logger.info('This app now handles Nexus "Mod Manager Download" links');
-  } else if (app.isDefaultProtocolClient('nxm', process.execPath, args)) {
-    app.removeAsDefaultProtocolClient('nxm', process.execPath, args);
-    logger.info('Nexus "Mod Manager Download" links are no longer handled by this app');
+    if (!ours) {
+      const before = nxm.describe(await nxm.readCommand(), process.execPath);
+      // Keep the first handler we replaced; a later Vortex start that took the links back is not it.
+      if (!fs.existsSync(nxmBackupFile())) await nxm.backup(nxmBackupFile());
+      if (!app.setAsDefaultProtocolClient('nxm', process.execPath, args)) throw new Error('Windows did not accept this app as the handler for Nexus links.');
+      await nxm.setIcon(process.execPath);
+      logger.success(`Nexus "Mod Manager Download" links now open this app${before ? ` (they opened ${before} before)` : ''}`);
+    }
+  } else if (ours) {
+    const saved = fs.existsSync(nxmBackupFile());
+    await nxm.restore(saved ? nxmBackupFile() : '');
+    const back = nxm.describe(await nxm.readCommand(), process.execPath);
+    try { fs.unlinkSync(nxmBackupFile()); } catch { /* none */ }
+    logger.success(`Nexus "Mod Manager Download" links are no longer handled by this app${back ? `; they open ${back} again` : saved ? '' : '; no other program was set before'}`);
   }
+  return nxmStatus();
 }
 
 /*
@@ -400,6 +443,43 @@ function guardWebviews() {
     const m = page.match(/nexusmods\.com\/(?:games\/)?([a-z0-9_-]+)\/mods\/(\d+)/i);
     send('browse:download', m ? { game: m[1].toLowerCase(), modId: Number(m[2]) } : { url: item.getURL() });
   });
+}
+
+/*
+ * Ads and trackers on the Nexus pages (Browse), blocked with Ghostery's engine and the usual
+ * filter lists (EasyList, EasyPrivacy, uBlock Origin's), network and cosmetic. Only the Nexus page
+ * session is affected. The compiled lists are cached and fetched again after a week.
+ */
+let adBlocker = null;
+let adBlockOn = false;
+async function applyAdBlock() {
+  const want = settings.get('blockAds') !== false;
+  const ses = session.fromPartition(NEXUS_PARTITION);
+  if (!want) {
+    if (adBlockOn && adBlocker) adBlocker.disableBlockingInSession(ses);
+    adBlockOn = false;
+    return;
+  }
+  if (adBlockOn) return;
+  try {
+    if (!adBlocker) {
+      const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+      const cache = path.join(app.getPath('userData'), 'adblock-engine.bin');
+      try { if (Date.now() - fs.statSync(cache).mtimeMs > 7 * 86400000) fs.unlinkSync(cache); } catch { /* none yet */ }
+      adBlocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
+        path: cache,
+        read: p => fs.promises.readFile(p),
+        write: (p, buf) => fs.promises.writeFile(p, buf),
+      });
+    }
+    // The setting may have been turned off while the lists loaded.
+    if (settings.get('blockAds') === false || adBlockOn) return;
+    adBlocker.enableBlockingInSession(ses);
+    adBlockOn = true;
+    logger.info('Ad and tracker blocking is on for Nexus pages');
+  } catch (err) {
+    logger.warn('Could not load the ad-blocking lists; Nexus pages show ads for now', err.message);
+  }
 }
 
 const pendingNxm = [];

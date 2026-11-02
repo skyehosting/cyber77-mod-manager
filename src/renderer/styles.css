@@ -592,12 +592,8 @@ button.tag:hover { filter: brightness(1.2); }
 
 /* ================================================================== cards & downloads */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--sp-4) var(--sp-5) var(--sp-5); min-width: 0; }
-.add-card { padding-bottom: var(--sp-4); }
-.add-card .banner { margin: 0 0 var(--sp-3); }
-.add-row { display: flex; gap: var(--sp-3); align-items: flex-start; }
-.add-row .btn-lg { flex: none; }
 .label { display: block; color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-medium); margin: var(--sp-4) 0 var(--sp-2); padding: 0; }
-.card-title + .label, .add-card > .label { margin-top: 0; }
+.card-title + .label { margin-top: 0; }
 .hint { color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-2); }
 .hint:empty { display: none; }
 .hint.ok { color: var(--ok); }
@@ -1158,30 +1154,28 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .menu-item.danger:hover { background: var(--err-soft); }
 
 /* ================================================================== downloads */
-.dl-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 24rem); gap: var(--sp-4); margin-bottom: var(--sp-5); align-items: stretch; }
-@container (max-width: 56rem) { .dl-top { grid-template-columns: minmax(0, 1fr); } }
-.net-card { display: flex; flex-direction: column; gap: var(--sp-3); padding-bottom: var(--sp-4); }
-.net-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-.net-head .card-title { margin: 0; }
-.net-now { font-variant-numeric: tabular-nums; font-weight: var(--fw-bold); font-size: var(--fs-md); color: var(--muted); }
-.net-now.live { color: var(--select); }
-.net-graph-box {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 4 / 1;
-  max-height: 6rem;
-  border-radius: var(--r);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  overflow: hidden;
-}
+/* One slim row: the link box and a compact network readout. */
+.dl-keybanner { margin-bottom: var(--sp-3); }
+.dl-top { display: flex; align-items: stretch; gap: var(--sp-3); margin-bottom: var(--sp-2); flex-wrap: wrap; }
+.dl-add { flex: 1 1 26rem; min-width: 0; display: flex; gap: var(--sp-2); align-items: flex-start; }
+.dl-input textarea { min-height: var(--control-h); height: var(--control-h); max-height: 7.5rem; padding-top: 0.45rem; padding-bottom: 0.45rem; resize: none; line-height: 1.35; }
+.dl-input .i { top: 0.6rem; }
+.dl-add .btn { flex: none; height: var(--control-h); }
+.dl-hint { margin: 0 0 var(--sp-3); }
+.dl-hint:empty { display: none; }
+.net { flex: 0 1 26rem; min-width: 16rem; display: flex; align-items: center; gap: var(--sp-3); height: var(--control-h); padding: 0 var(--sp-3) 0 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.net-graph-box { flex: none; width: auto; height: 100%; aspect-ratio: 3 / 1; border-right: 1px solid var(--line); background: var(--bg); }
 .net-graph { display: block; width: 100%; height: 100%; }
 .net-line { fill: none; stroke: var(--select); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .net-area { fill: var(--select-soft); stroke: none; }
-.net-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
-.net-stats > div { display: flex; flex-direction: column; min-width: 0; }
-.net-stats .stat-label { font-size: var(--fs-xs); }
-.net-stats b { font-variant-numeric: tabular-nums; font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.net-read { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.net-now { font-size: var(--fs-sm); font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.net-now.live { color: var(--select); }
+.net-meta { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.net-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.net-side b { font-weight: var(--fw-medium); color: var(--text-2); }
+.net-side .stat-label { font-size: var(--fs-xs); }
+@container (max-width: 44rem) { .net-side { display: none; } }
 .toolbar > .push { margin-left: auto; }
 .grid col.w-progress { width: 15rem; }
 #dl-table col.w-actions { width: 8rem; }
@@ -1389,3 +1383,13 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .detail-load { color: var(--muted); font-size: var(--fs-sm); }
 .detail-view { flex: 1; min-height: 12rem; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: #101010; }
 .nexus-view { display: flex; width: 100%; height: 100%; border: 0; }
+
+/* ================================================================== game log: Manager tab */
+.gl-note { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-3); color: var(--muted); font-size: var(--fs-sm); }
+.gl-note .i { flex: none; color: var(--info); }
+.mgr-msg { white-space: normal; overflow-wrap: anywhere; line-height: 1.45; color: var(--text); }
+.mgr-detail { display: block; margin-top: 0.15rem; color: var(--muted); font-size: var(--fs-sm); white-space: pre-wrap; }
+#gl-manager .row td { padding-block: var(--sp-2); vertical-align: top; }
+#gl-manager tr.row { user-select: text; }
+.nxm-state.ok { color: var(--ok); }
+.nxm-state.bad { color: var(--warn); }

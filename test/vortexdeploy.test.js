@@ -105,7 +105,7 @@ test('Vortex folder and Nexus archive names give name, mod id and version', () =
   assert.deepStrictEqual(parseFolderName('my custom mod'), {});
 });
 
-test('the report has every error and warning, grouped and in full, and every mod', () => {
+test('the report has every game and mod log error and warning, grouped and in full, and every mod', () => {
   const t = Date.parse('2026-11-01T10:00:00Z');
   const doc = buildReport({
     snap: {
@@ -124,10 +124,11 @@ test('the report has every error and warning, grouped and in full, and every mod
     activity: [{ level: 'error', message: 'Download failed', detail: '403', time: t + 3000 }, { level: 'info', message: 'ok', time: t }],
     app: { version: '1.0.0' },
   });
-  assert.deepStrictEqual([doc.summary.errors, doc.summary.warnings, doc.summary.mods], [3, 1, 2]);
+  assert.deepStrictEqual([doc.summary.errors, doc.summary.warnings, doc.summary.mods], [2, 1, 2]);
   assert.strictEqual(doc.problems[0].count, 2, 'repeats of one message are grouped');
   assert.strictEqual(doc.problems[0].mod, 'ArchiveXL');
-  assert.strictEqual(doc.allErrorsAndWarnings.length, 4);
+  assert.strictEqual(doc.allErrorsAndWarnings.length, 3);
+  assert.ok(!JSON.stringify(doc).includes('Download failed'), "this app's own log (the Manager tab) is not in the report");
   assert.ok(doc.allErrorsAndWarnings.some(e => e.mod === 'Codeware (Vortex)'), 'Vortex mods are named on their log lines');
   assert.deepStrictEqual(doc.mods.map(m => [m.name, m.managedBy]), [['ArchiveXL', 'Cyber Mod Manager'], ['Codeware', 'Vortex']]);
   assert.strictEqual(doc.mods[0].logErrors, 2);

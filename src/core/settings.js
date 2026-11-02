@@ -22,6 +22,7 @@ class Settings {
       autoEnable: true,
       installDependencies: true,
       handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
+      blockAds: true, // ads and trackers on the Nexus pages shown in Browse
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
     });
   }
@@ -64,6 +65,7 @@ class Settings {
     if ('autoEnable' in patch) d.autoEnable = !!patch.autoEnable;
     if ('installDependencies' in patch) d.installDependencies = !!patch.installDependencies;
     if ('handleNxm' in patch) d.handleNxm = !!patch.handleNxm;
+    if ('blockAds' in patch) d.blockAds = !!patch.blockAds;
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }

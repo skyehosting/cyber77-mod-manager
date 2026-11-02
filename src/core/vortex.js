@@ -224,15 +224,20 @@ class VortexBridge extends EventEmitter {
           throw new Error(`Could not place the files (${err.message}). Vortex will redeploy the next time it starts.`);
         }
       }
-      const on = changes.filter(c => c.enabled).length;
-      const off = changes.length - on;
-      const what = [on ? `${on} enabled` : '', off ? `${off} disabled` : ''].filter(Boolean).join(', ');
+      // Which mods, by name and version, so the Manager log says what happened.
+      const label = c => {
+        const m = data.mods.find(x => x.vortexId === c.vortexId);
+        return m ? `${m.name}${m.version ? ` v${m.version}` : ''}` : c.vortexId;
+      };
+      const on = changes.filter(c => c.enabled).map(label);
+      const off = changes.filter(c => !c.enabled).map(label);
+      const what = [on.length ? `enabled ${on.join(', ')}` : '', off.length ? `disabled ${off.join(', ')}` : ''].filter(Boolean).join('; ');
       if (result) {
-        this.log.success(`Vortex mods: ${what} without opening Vortex (${result.linked} files placed, ${result.removed} removed).`);
+        this.log.success(`Vortex: ${what} (without opening Vortex: ${result.linked} files placed, ${result.removed} removed)`);
         if (result.deferred) this.log.warn(`${result.deferred} files are shipped by more than one Vortex mod, or are already in the game folder. Vortex decides those the next time it starts.`);
         if (result.kept) this.log.warn(`${result.kept} files had been replaced by another tool and were left in place.`);
       } else {
-        this.log.success(`Vortex mods: ${what}. This deployment can only be done by Vortex, so Vortex is opening to deploy.`);
+        this.log.success(`Vortex: ${what}. This deployment can only be done by Vortex, so Vortex is opening to deploy.`);
       }
       this.cache = null;
       // Vortex is opened again only if it was open, or if only Vortex can deploy this.

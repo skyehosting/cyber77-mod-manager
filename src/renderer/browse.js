@@ -13,7 +13,7 @@ const br = {
   category: '',
   sort: store.get('browse.sort', 'endorsements'),
   perPage: store.get('browse.perPage', 20),
-  adult: store.get('browse.adult', false),
+  adult: true, // adult mods are always included
   page: 1,
   result: null,
   seq: 0,          // a newer search makes an older answer stale
@@ -168,7 +168,6 @@ $('#browse-q').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.
 $('#browse-cat').addEventListener('change', ev => { br.category = ev.target.value; br.page = 1; search(); });
 $('#browse-sort').addEventListener('change', ev => { br.sort = ev.target.value; store.set('browse.sort', br.sort); br.page = 1; search(); });
 $('#browse-per').addEventListener('change', ev => { br.perPage = Number(ev.target.value); store.set('browse.perPage', br.perPage); br.page = 1; search(); });
-$('#browse-adult').addEventListener('change', ev => { br.adult = ev.target.checked; store.set('browse.adult', br.adult); br.page = 1; search(); });
 const turn = d => { br.page = Math.max(1, br.page + d); search().then(() => { $('#page-browse').scrollTop = 0; }); };
 $('#browse-prev').addEventListener('click', () => turn(-1));
 $('#browse-next').addEventListener('click', () => turn(1));
@@ -186,7 +185,6 @@ pageHooks.browse = () => {
   br.loaded = true;
   $('#browse-sort').value = br.sort;
   $('#browse-per').value = String(br.perPage);
-  $('#browse-adult').checked = br.adult;
   loadCategories();
   search();
   setTimeout(() => $('#browse-q').focus());
