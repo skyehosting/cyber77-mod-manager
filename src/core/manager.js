@@ -189,6 +189,28 @@ class ModManager extends EventEmitter {
     return mod.files.map(f => ({ dest: f, deployed: owners[f.toLowerCase()] === id, owner: owners[f.toLowerCase()] || null }));
   }
 
+  /**
+   * Who put each file in the game folder: files (lower-case path → { mod, by }) for the copies this
+   * app and Vortex placed, and roots (a mod's own folder → { mod, by }) for files a mod writes there.
+   */
+  fileOwners() {
+    const files = new Map();
+    const roots = new Map();
+    const add = (f, mod, by) => {
+      if (!files.has(f.toLowerCase())) files.set(f.toLowerCase(), { mod, by });
+      const r = ownerRoot(f).toLowerCase();
+      if (r && !roots.has(r)) roots.set(r, { mod, by });
+    };
+    for (const [k, id] of Object.entries(this.deployer.owners())) if (this.data.mods[id]) add(k, this.data.mods[id].name, 'Cyber Mod Manager');
+    for (const m of Object.values(this.data.mods)) for (const f of m.files) { const r = ownerRoot(f).toLowerCase(); if (r && !roots.has(r)) roots.set(r, { mod: m.name, by: 'Cyber Mod Manager' }); }
+    try {
+      const vx = this.vortex.read();
+      const names = new Map((vx.mods || []).map(v => [v.vortexId, v.name]));
+      for (const [f, src] of vx.deployedPaths || []) add(f, names.get(src) || src, 'Vortex');
+    } catch { /* no Vortex */ }
+    return { files, roots };
+  }
+
   // ---------------------------------------------------------------- downloading
 
   async validateKey() {

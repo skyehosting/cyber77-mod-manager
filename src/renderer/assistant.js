@@ -16,27 +16,107 @@ const SUGGESTIONS = [
   'Is my load order OK?',
 ];
 
-// ---- a small, safe markdown: paragraphs, lists, **bold**, `code`, code blocks, links (built as DOM, never HTML)
+// ---- a small, safe markdown, built as DOM (never HTML): headings, paragraphs, nested lists, tables,
+// callouts (> [!WARNING]), code blocks, rules, **bold**, *italic*, ~~struck~~, `code`, links, and
+// colour tags {error|…} {warn|…} {ok|…} {info|…} {mod|…} {muted|…} mapped to the theme's colours.
+
+const COLOR = { error: 'error', red: 'error', warn: 'warn', warning: 'warn', yellow: 'warn', orange: 'warn', ok: 'ok', green: 'ok', info: 'info', blue: 'info', mod: 'mod', muted: 'muted', gray: 'muted', grey: 'muted' };
+const CALLOUT = {
+  note: ['info', 'info', 'Note'], info: ['info', 'info', 'Info'],
+  tip: ['ok', 'check', 'Tip'], ok: ['ok', 'check', 'OK'], success: ['ok', 'check', 'Fixed'], fixed: ['ok', 'check', 'Fixed'],
+  warning: ['warn', 'alert', 'Warning'], warn: ['warn', 'alert', 'Warning'], caution: ['warn', 'alert', 'Caution'],
+  error: ['error', 'alert', 'Error'], danger: ['error', 'alert', 'Danger'],
+  important: ['mod', 'sparkle', 'Important'],
+};
+
+const INLINE = new RegExp([
+  '(`[^`\\n]+`)', // 1 code
+  '\\{([a-zA-Z]+)\\|([^{}\\n]+)\\}', // 2, 3 colour tag
+  '\\*\\*(.+?)\\*\\*', // 4 bold
+  '~~(.+?)~~', // 5 struck
+  '(?<![\\w*])\\*(?![\\s*])([^*\\n]+?)\\*(?![\\w*])', // 6 italic
+  '(?<![\\w])_(?![\\s_])([^_\\n]+?)_(?![\\w])', // 7 italic
+  '\\[([^\\]]+)\\]\\((https?:\\/\\/[^)\\s]+)\\)', // 8, 9 link
+  '(https?:\\/\\/[^\\s)<>]+[^\\s)<>.,;:!?])', // 10 bare link
+].join('|'), 'g');
+
+function link(label, url) {
+  return h('a', { href: '#', title: url, onclick: ev => { ev.preventDefault(); api.openLink(url); } }, label);
+}
 
 function inline(text) {
   const out = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\)|https?:\/\/[^\s)]+)/g;
+  const re = new RegExp(INLINE.source, 'g');
   let last = 0;
   let m;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    const t = m[0];
-    if (t.startsWith('**')) out.push(h('strong', {}, t.slice(2, -2)));
-    else if (t.startsWith('`')) out.push(h('code', {}, t.slice(1, -1)));
-    else {
-      const label = t.startsWith('[') ? t.slice(1, t.indexOf('](')) : t;
-      const url = t.startsWith('[') ? m[2] : t;
-      out.push(h('a', { href: '#', title: url, onclick: ev => { ev.preventDefault(); api.openLink(url); } }, label));
-    }
-    last = m.index + t.length;
+    if (m[1]) out.push(h('code', {}, m[1].slice(1, -1)));
+    else if (m[2]) {
+      const c = COLOR[m[2].toLowerCase()];
+      out.push(c ? h('span', { class: 'ai-c ai-c-' + c }, inline(m[3])) : m[0]);
+    } else if (m[4]) out.push(h('strong', {}, inline(m[4])));
+    else if (m[5]) out.push(h('s', {}, inline(m[5])));
+    else if (m[6] || m[7]) out.push(h('em', {}, inline(m[6] || m[7])));
+    else if (m[8]) out.push(link(m[8], m[9]));
+    else out.push(link(m[10], m[10]));
+    last = m.index + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
   return out;
+}
+
+const RE = {
+  fence: /^\s*```/,
+  heading: /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/,
+  rule: /^\s{0,3}([-*_])(\s*\1){2,}\s*$/,
+  quote: /^\s{0,3}>/,
+  item: /^(\s*)([-*+]|\d+[.)])\s+(.*)$/,
+  tableSep: /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/,
+};
+const indentOf = s => s.replace(/\t/g, '  ').match(/^ */)[0].length;
+const isTableStart = (lines, i) => lines[i].includes('|') && i + 1 < lines.length && RE.tableSep.test(lines[i + 1]) && lines[i + 1].includes('-');
+const startsBlock = (lines, i) => RE.fence.test(lines[i]) || RE.heading.test(lines[i]) || RE.rule.test(lines[i]) || RE.quote.test(lines[i]) || RE.item.test(lines[i]) || isTableStart(lines, i);
+/** A table row's cells. A "|" inside a colour tag {warn|…} or `code` does not split. */
+function cells(line) {
+  const out = [''];
+  let depth = 0;
+  let code = false;
+  for (const ch of line.trim().replace(/^\|/, '').replace(/\|$/, '')) {
+    if (ch === '`') code = !code;
+    else if (!code && ch === '{') depth++;
+    else if (!code && ch === '}' && depth) depth--;
+    if (ch === '|' && !depth && !code) out.push('');
+    else out[out.length - 1] += ch;
+  }
+  return out.map(c => c.trim());
+}
+
+/** A list starting at lines[i]; deeper-indented items become nested lists. Returns [element, next i]. */
+function list(lines, i) {
+  const base = indentOf(lines[i]);
+  const ordered = /\d/.test(RE.item.exec(lines[i])[2]);
+  const items = [];
+  while (i < lines.length) {
+    const m = RE.item.exec(lines[i]);
+    if (!m || indentOf(lines[i]) < base) break;
+    if (indentOf(lines[i]) > base) { // a nested list under the previous item
+      const [sub, next] = list(lines, i);
+      if (items.length) items[items.length - 1].append(sub); else items.push(h('li', {}, sub));
+      i = next;
+      continue;
+    }
+    if (/\d/.test(m[2]) !== ordered) break;
+    const text = [m[3]];
+    // Continuation lines: indented text that is not a new item.
+    for (i++; i < lines.length && lines[i].trim() && !RE.item.test(lines[i]) && indentOf(lines[i]) > base && !startsBlock(lines, i); i++) text.push(lines[i].trim());
+    const task = /^\[([ xX])\]\s+/.exec(text[0]);
+    if (task) text[0] = text[0].slice(task[0].length);
+    const li = h('li', { class: task ? 'ai-task-item' : null },
+      task ? h('span', { class: 'ai-task ' + (task[1] === ' ' ? 'open' : 'done') }, icon(task[1] === ' ' ? 'minus-circle' : 'check')) : null, inline(text.join('\n')));
+    items.push(li);
+  }
+  return [h(ordered ? 'ol' : 'ul', {}, items), i];
 }
 
 function markdown(text) {
@@ -44,21 +124,47 @@ function markdown(text) {
   const lines = String(text).replace(/\r/g, '').split('\n');
   for (let i = 0; i < lines.length;) {
     const line = lines[i];
-    if (/^```/.test(line)) {
+    if (!line.trim()) { i++; continue; }
+    if (RE.fence.test(line)) {
       const code = [];
-      for (i++; i < lines.length && !/^```/.test(lines[i]); i++) code.push(lines[i]);
+      for (i++; i < lines.length && !RE.fence.test(lines[i]); i++) code.push(lines[i]);
       i++;
       blocks.push(h('pre', { class: 'ai-code' }, h('code', {}, code.join('\n'))));
-    } else if (/^\s*([-*]|\d+[.)])\s+/.test(line)) {
-      const ordered = /^\s*\d/.test(line);
-      const items = [];
-      for (; i < lines.length && /^\s*([-*]|\d+[.)])\s+/.test(lines[i]); i++) items.push(h('li', {}, inline(lines[i].replace(/^\s*([-*]|\d+[.)])\s+/, ''))));
-      blocks.push(h(ordered ? 'ol' : 'ul', {}, items));
-    } else if (!line.trim()) {
+    } else if (RE.heading.test(line)) {
+      const [, hashes, title] = RE.heading.exec(line);
+      const level = Math.min(hashes.length, 3);
+      blocks.push(h('h' + (level + 2), { class: 'ai-h ai-h' + level }, inline(title)));
       i++;
+    } else if (RE.rule.test(line)) {
+      blocks.push(h('hr', { class: 'ai-rule' }));
+      i++;
+    } else if (RE.quote.test(line)) {
+      const body = [];
+      for (; i < lines.length && RE.quote.test(lines[i]); i++) body.push(lines[i].replace(/^\s{0,3}>\s?/, ''));
+      const tag = /^\[!(\w+)\]\s*(.*)$/.exec(body[0] || '');
+      const kind = tag && CALLOUT[tag[1].toLowerCase()];
+      if (kind) {
+        const [tone, glyph, label] = kind;
+        blocks.push(h('div', { class: 'ai-callout ai-callout-' + tone, role: 'note' },
+          h('div', { class: 'ai-callout-head' }, icon(glyph), h('span', {}, tag[2] ? inline(tag[2]) : label)),
+          markdown(body.slice(1).join('\n'))));
+      } else blocks.push(h('blockquote', { class: 'ai-quote' }, markdown(body.join('\n'))));
+    } else if (isTableStart(lines, i)) {
+      const head = cells(line);
+      const align = cells(lines[i + 1]).map(c => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : ''));
+      const rows = [];
+      for (i += 2; i < lines.length && lines[i].includes('|') && lines[i].trim(); i++) rows.push(cells(lines[i]));
+      const cell = (tag, c, k) => h(tag, align[k] ? { class: 'ai-al-' + align[k] } : {}, inline(c));
+      blocks.push(h('div', { class: 'ai-table-wrap' }, h('table', { class: 'ai-table' },
+        h('thead', {}, h('tr', {}, head.map((c, k) => cell('th', c, k)))),
+        h('tbody', {}, rows.map(r => h('tr', {}, head.map((_, k) => cell('td', r[k] || '', k))))))));
+    } else if (RE.item.test(line)) {
+      const [el, next] = list(lines, i);
+      blocks.push(el);
+      i = next;
     } else {
       const para = [];
-      for (; i < lines.length && lines[i].trim() && !/^```/.test(lines[i]) && !/^\s*([-*]|\d+[.)])\s+/.test(lines[i]); i++) para.push(lines[i].replace(/^#+\s*/, ''));
+      for (; i < lines.length && lines[i].trim() && (!para.length || !startsBlock(lines, i)); i++) para.push(lines[i].trim());
       blocks.push(h('p', {}, inline(para.join('\n'))));
     }
   }

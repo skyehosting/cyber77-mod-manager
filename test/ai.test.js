@@ -209,3 +209,45 @@ test('main builds the AI tools only after the game-log monitor exists', () => {
   assert.ok(created > 0 && tools > 0);
   assert.ok(created < tools, 'makeTools must come after gameLogs is created');
 });
+
+test('game files: find, search and read mod files, each named with its mod, never outside the game folder', async () => {
+  const fsx = require('fs');
+  const pathx = require('path');
+  const { GameFiles } = require('../src/core/gameFiles');
+  const { ownerRoot } = require('../src/core/gameLogs');
+  const game = fsx.mkdtempSync(pathx.join(require('os').tmpdir(), 'cmm-gamefiles-'));
+  const put = (rel, body) => { fsx.mkdirSync(pathx.dirname(pathx.join(game, rel)), { recursive: true }); fsx.writeFileSync(pathx.join(game, rel), body); };
+  put('archive/pc/mod/RainOverhaul.archive', Buffer.from([0, 1, 2, 3]));
+  put('archive/pc/mod/RainOverhaul.archive.xl', 'resource:\n  - bad\n');
+  put('r6/tweaks/bikes/sportbike.yaml', 'Vehicle.v_sportbike2_arch_inline1:\n  detachableParts: []\n');
+  put('bin/x64/plugins/cyber_engine_tweaks/mods/NCMapTest/init.lua', 'print("AddGroup")\n');
+  put('bin/x64/plugins/cyber_engine_tweaks/mods/NCMapTest/NCMapTest.log', 'AddGroup failed\n');
+  fsx.writeFileSync(pathx.join(game, '..', 'cmm-secret.txt'), 'outside');
+  const owners = () => ({
+    files: new Map([['archive/pc/mod/rainoverhaul.archive.xl', { mod: 'Rain Overhaul', by: 'Vortex' }]]),
+    roots: new Map([['bin/x64/plugins/cyber_engine_tweaks/mods/ncmaptest', { mod: 'NC Map Test', by: 'Cyber Mod Manager' }]]),
+  });
+  const gf = new GameFiles({ getGameDir: () => game, owners, ownerRoot });
+
+  const found = gf.find({ name: 'rainoverhaul xl' });
+  assert.equal(found.total, 1);
+  assert.equal(found.files[0].path, 'archive/pc/mod/RainOverhaul.archive.xl');
+  assert.equal(found.files[0].mod, 'Rain Overhaul (Vortex)');
+
+  const s = await gf.search({ text: 'detachableparts' });
+  assert.equal(s.matches.length, 1);
+  assert.deepEqual([s.matches[0].path, s.matches[0].line], ['r6/tweaks/bikes/sportbike.yaml', 2]);
+  assert.match(s.matches[0].mod, /not managed/);
+  // A mod folder's files (and only logs when asked) belong to that mod.
+  assert.deepEqual((await gf.search({ text: 'AddGroup' })).matches.map(m => [m.path.split('/').pop(), m.mod]), [['init.lua', 'NC Map Test (Cyber Mod Manager)']]);
+  assert.equal((await gf.search({ text: 'AddGroup', ext: 'log' })).matches.length, 1);
+
+  const r = await gf.read({ file: 'archive/pc/mod/RainOverhaul.archive.xl', from: 2, count: 1 });
+  assert.equal(r.text, '   2|   - bad');
+  assert.equal(r.totalLines, 3);
+  await assert.rejects(gf.read({ file: '../cmm-secret.txt' }), /inside the game folder/);
+  await assert.rejects(gf.read({ file: pathx.join(game, '..', 'cmm-secret.txt') }), /inside the game folder/);
+  await assert.rejects(gf.read({ file: 'archive/pc/mod/RainOverhaul.archive' }), /binary/);
+  fsx.rmSync(pathx.join(game, '..', 'cmm-secret.txt'), { force: true });
+  fsx.rmSync(game, { recursive: true, force: true });
+});

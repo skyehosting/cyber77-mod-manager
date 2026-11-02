@@ -7,13 +7,14 @@ const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, storeOf, isGameDir } = require('./core/gameFinder');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods } = require('./core/launcher');
-const { GameLogMonitor } = require('./core/gameLogs');
+const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
 const { AppUpdater } = require('./core/updater');
 const { Assistant } = require('./core/ai');
 const { makeTools } = require('./core/aiTools');
 const { WebReader } = require('./core/web');
+const { GameFiles } = require('./core/gameFiles');
 
 let win = null;
 let settings = null;
@@ -189,6 +190,7 @@ async function boot() {
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
   const tools = makeTools({
     manager, gameLogs, logger, web: new WebReader(),
+    files: new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot }),
     allMods: () => {
       const snap = manager.snapshot();
       return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
