@@ -1336,8 +1336,8 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 #page-browse { gap: 0; }
 .browse-list { display: flex; flex-direction: column; min-width: 0; }
 .browse-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); }
-.browse-bar select { height: var(--control-h); width: auto; min-width: 0; max-width: 16rem; font-size: var(--fs-sm); }
-.search.browse-search { flex: 1 1 22rem; width: auto; max-width: none; }
+.browse-bar select { height: var(--control-h); width: auto; min-width: 0; max-width: 13rem; font-size: var(--fs-sm); }
+.search.browse-search { flex: 1 1 14rem; min-width: 12rem; width: auto; max-width: none; } /* small enough that the filters share its row; it grows into what is left */
 .browse-search input { height: calc(var(--control-h) + 0.25rem); font-size: var(--fs-md); }
 .browse-adult { margin: 0; align-items: center; font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
 .browse-status { min-height: 1.4rem; margin-bottom: var(--sp-3); color: var(--muted); font-size: var(--fs-sm); }
