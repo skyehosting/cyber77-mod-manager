@@ -421,6 +421,8 @@ function activeProfileEl(x, p) {
   const all = state.snap.mods || [];
   const on = modNames(x.mods || []);
   const onIds = new Set(x.mods || []);
+  const vx = state.snap.vortex;
+  const vxOn = vx?.installed ? (vx.mods || []).filter(m => m.enabled).length : 0;
   const off = all.filter(m => !onIds.has(m.id)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   const LIMIT = 30;
   const shown = prof.showAll ? on : on.slice(0, LIMIT);
@@ -434,6 +436,9 @@ function activeProfileEl(x, p) {
         h('span', { class: 'prof-meta' }, [x.created ? `Created ${fmtDay(x.created)}` : '', 'Follows what you turn on and off on the Mods page'].filter(Boolean).join(' · '))),
       h('div', { class: 'prof-hero-stats' },
         h('div', { class: 'prof-stat' }, h('b', {}, `${on.length}`, h('small', {}, ` / ${all.length}`)), h('span', {}, 'of this app\'s mods on')),
+        // Vortex's enabled mods load too, but follow Vortex's own profile: shown apart, so the totals add up.
+        vxOn ? h('button', { class: 'prof-stat prof-stat-link', title: 'Vortex\'s mods follow Vortex\'s own profile, not this one. Show them on the Mods page.', onclick: () => { goTo('mods'); setModFilter('vortex'); } },
+          h('b', {}, `+${vxOn}`), h('span', {}, 'on in Vortex, outside profiles')) : null,
         x.codeTag ? h('div', { class: 'prof-stat', title: 'This tag changes whenever the profile\'s mods change: a code you copy is always the profile as it is now' }, h('b', { class: 'code-tag' }, x.codeTag), h('span', {}, 'share code')) : null)),
     h('div', { class: 'prof-mods' },
       h('div', { class: 'prof-mods-label' }, `On in this profile (${on.length})`),

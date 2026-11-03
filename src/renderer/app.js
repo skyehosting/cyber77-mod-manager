@@ -486,7 +486,8 @@ function renderMods() {
   }
 
   // The subtitle summarises what needs attention; each part filters the list to it.
-  const enabled = all.filter(m => m.enabled).length;
+  // This app's mods and Vortex's are counted apart: profiles hold only this app's (as the Profiles page counts them).
+  const enabled = state.snap.mods.filter(m => m.enabled).length;
   const conflicts = Object.keys(state.snap.conflicts).length;
   const updates = groupedMods().map(rowUpdateId).filter(Boolean); // one per row, as listed
   const broken = all.filter(m => m.health).length;
@@ -496,8 +497,15 @@ function renderMods() {
   const rows = groupedMods();
   const vxCount = rows.filter(m => m.vortex).length;
   const own = rows.length - vxCount;
-  sub.replaceChildren(all.length ? `${plural(own, 'mod')} here${vxCount ? '' : ''} · ${enabled} enabled` : 'Nothing installed yet');
-  if (vxCount) sub.append(' · ', h('button', { class: 'link-btn quiet', onclick: () => setModFilter('vortex') }, `${vxCount} in Vortex (${state.snap.vortex.activeProfileName || 'profile'})`));
+  sub.replaceChildren(all.length ? `${plural(own, 'mod')} here · ${enabled} enabled` : 'Nothing installed yet');
+  if (vxCount) {
+    const vxOn = rows.filter(m => m.vortex && m.enabled).length;
+    const prof = state.snap.vortex.activeProfileName;
+    sub.append(' · ', h('button', {
+      class: 'link-btn quiet', onclick: () => setModFilter('vortex'),
+      title: 'Vortex\'s mods follow Vortex\'s own profile, not this app\'s profiles. Settings → Vortex can move them here.',
+    }, `${vxCount} in Vortex (${vxOn} on${prof ? `, its profile "${prof}"` : ''})`));
+  }
   $('#mods-filter-vortex').hidden = !vxCount;
   $('#mods-vx-count').textContent = vxCount || '';
   $('#mods-open-vortex').hidden = !state.snap.vortex?.installed;
@@ -524,10 +532,12 @@ function renderMods() {
   $('#mods-import').hidden = all.length === 0;
   $('#mods-purge').hidden = all.length === 0;
   $('#mods-running').hidden = !state.gameRunning;
+  // The sidebar counts everything that loads: this app's mods and Vortex's.
+  const allOn = all.filter(m => m.enabled).length;
   const nav = $('#nav-mods-count');
-  nav.textContent = all.length ? `${enabled}/${all.length}` : '';
+  nav.textContent = all.length ? `${allOn}/${all.length}` : '';
   nav.classList.toggle('attn', broken > 0);
-  nav.title = all.length ? `${enabled} of ${all.length} mods enabled${broken ? ` · ${broken} need repair` : ''}` : '';
+  nav.title = all.length ? `${allOn} of ${all.length} mods enabled${vxCount ? ` (${enabled} here, ${allOn - enabled} in Vortex)` : ''}${broken ? ` · ${broken} need repair` : ''}` : '';
   paintModSelection();
 }
 function setModFilter(f) {

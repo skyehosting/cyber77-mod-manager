@@ -1766,3 +1766,6 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .ed-find-field input { height: var(--control-h-sm); width: 100%; }
 .ed-head .ed-find-count { min-width: 4.5rem; text-align: right; }
 @container (max-width: 44rem) { .ed-head .ed-find-count { display: none; } }
+.prof-stat-link { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.prof-stat-link b { color: var(--info); }
+.prof-stat-link:hover span { color: var(--text); text-decoration: underline; }
