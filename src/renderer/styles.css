@@ -1912,3 +1912,9 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .pcard-actions { display: flex; align-items: center; gap: var(--sp-2); margin-top: auto; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 .pcard-actions .spacer { flex: 1; }
 .pcard-inuse { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--ok); font-size: var(--fs-sm); }
+
+/* Game log toolbar: five tabs, search, level and source share one row. The search and the source
+   list give up width (not the tabs), so nothing runs past the edge. */
+#page-gamelog .toolbar { min-width: 0; }
+#page-gamelog .toolbar .search { flex: 1 1 14rem; width: auto; min-width: 8rem; max-width: 22rem; }
+#page-gamelog #gl-source { flex: 0 1 13rem; width: auto; min-width: 7.5rem; text-overflow: ellipsis; }
