@@ -221,7 +221,11 @@ async function boot() {
   gameLogs.on('game', status => { send('gamestatus', status); pushSnapshot(); updater?.gameChanged(!!status.running); });
   gameLogs.on('reset', () => send('gamelog-reset'));
   // Each play's logs as their own set (before start: the first news can be that the game runs).
-  plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger, keep: () => settings.get('playsKeep') });
+  plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger, keep: () => settings.get('playsKeep'), profile: () => {
+    const pr = manager.data.profiles;
+    const p = pr?.list?.[pr.active];
+    return p ? { id: pr.active, name: p.name } : null;
+  } });
   plays.on('plays', list => send('plays', list));
   gameLogs.start();
   plays.recover(); // a play the app was closed during: finish it now that the logs are found

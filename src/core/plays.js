@@ -27,10 +27,14 @@ const stamp = t => {
 const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 class PlayHistory extends EventEmitter {
-  /** dir: where plays are kept. logs: the GameLogMonitor (its 'game', 'entries' and 'crash' events, and its files). */
-  constructor({ dir, logs, log, keep = () => KEEP }) {
+  /**
+   * dir: where plays are kept. logs: the GameLogMonitor (its 'game', 'entries' and 'crash' events, and
+   * its files). profile: returns the active profile, which each play remembers.
+   */
+  constructor({ dir, logs, log, keep = () => KEEP, profile = () => null }) {
     super();
     this.dir = dir;
+    this.profile = profile; // the active profile ({ id, name }) when a play starts
     this.keep = keep; // how many plays to keep
     this.logs = logs;
     this.log = log;
@@ -79,11 +83,15 @@ class PlayHistory extends EventEmitter {
     fs.mkdirSync(dir, { recursive: true });
     // The app opened while the game was already running: the lines from before are in the copied files.
     const late = Date.now() - this.startedAt < 30e3;
-    this.current = { id, dir, meta: { id, start, end: 0, outcome: '', crash: '', errors: 0, warns: 0, lines: 0, pid: s.pid || 0, joinedLate: !!late } };
+    this.current = { id, dir, meta: { id, start, end: 0, outcome: '', crash: '', errors: 0, warns: 0, lines: 0, pid: s.pid || 0, joinedLate: !!late, profile: this.currentProfile() } };
     this.writeMeta(this.current);
     // "Cyberpunk 2077 started" was sent just before this news: it opens the play.
     this.onEntries((this.logs.entries || []).filter(e => e.time >= start - 2000));
     this.emit('plays', this.list());
+  }
+
+  currentProfile() {
+    try { const p = this.profile(); return p?.id ? { id: String(p.id), name: String(p.name || '') } : null; } catch { return null; }
   }
 
   onEntries(batch) {

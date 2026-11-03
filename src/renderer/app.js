@@ -114,63 +114,89 @@ function goTo(page) {
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   $$('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-  // Settings drops down its sections under it in the sidebar while it is open.
-  const onSettings = page === 'settings';
-  $('#nav-settings-sub').hidden = !onSettings;
-  $('.nav-item[data-page="settings"]').setAttribute('aria-expanded', String(onSettings));
   // Back on Settings with changes not saved yet: they stay (only a clean form is read again).
-  if (onSettings) { showSettingsSection(state.settingsSec); if (!isDirty()) loadSettings(); }
+  if (page === 'settings') {
+    if (!isDirty()) loadSettings();
+    if (state.settingsJump) { showSettingsSection(state.settingsJump, false); state.settingsJump = ''; } else spySettings();
+  }
   pageHooks[page]?.();
 }
 
-// ---- Settings sections (the sub-tabs under Settings)
+// ---- Settings sections: one scrolling column, and a list of its sections that follows the scroll
 
-const SETTINGS_SECS = {
-  nexus: 'Your Nexus Mods account: the API key that lets the app download',
-  ai: 'Your own AI provider for the AI Assistant',
-  game: 'Where the game is, how mods are placed and how Play starts it',
-  downloads: 'What gets downloaded and installed, and Nexus links',
-  vortex: 'Mods Vortex manages, and moving them into this app',
-  display: 'How large the app is: its own scale, or the one Windows sets',
-  app: 'Folders, 7-Zip and updates of this app',
-};
-state.settingsSec = SETTINGS_SECS[store.get('settings.section', 'nexus')] ? store.get('settings.section', 'nexus') : 'nexus';
-
-function showSettingsSection(sec) {
-  const avail = [...$$('.nav-subitem')].filter(b => !b.hidden).map(b => b.dataset.sec);
-  const s = avail.includes(sec) ? sec : avail[0];
-  state.settingsSec = s;
-  store.set('settings.section', s);
-  $$('.settings-sec').forEach(el => el.classList.toggle('on', el.dataset.sec === s));
-  $$('.nav-subitem').forEach(b => {
-    const on = b.dataset.sec === s;
-    b.classList.toggle('active', on);
-    if (on) { b.setAttribute('aria-current', 'true'); b.scrollIntoView({ block: 'nearest' }); } else b.removeAttribute('aria-current');
-  });
-  $('#settings-sub').textContent = SETTINGS_SECS[s];
-  $('#page-settings').scrollTop = 0;
+/** Scroll Settings to a section (smoothly when asked from its own list). */
+function showSettingsSection(sec, smooth = true) {
+  const el = $(`#sec-${sec}`);
+  if (!el || el.hidden) return;
+  const body = $('#set-body');
+  body.scrollTo({ top: el.offsetTop - body.offsetTop, behavior: smooth ? 'smooth' : 'auto' });
+  markSettingsSection(sec);
 }
 
-$$('.nav-item').forEach(btn => btn.addEventListener('click', () => {
-  // Settings again while it is open folds its sections away (or back out).
-  if (btn.dataset.page === 'settings' && $('#page-settings').classList.contains('active')) {
-    const open = $('#nav-settings-sub').hidden;
-    $('#nav-settings-sub').hidden = !open;
-    btn.setAttribute('aria-expanded', String(open));
-    return;
-  }
-  goTo(btn.dataset.page);
-}));
-$$('.nav-subitem').forEach(btn => btn.addEventListener('click', () => {
-  state.settingsSec = btn.dataset.sec;
-  if (!$('#page-settings').classList.contains('active')) goTo('settings'); else showSettingsSection(btn.dataset.sec);
-}));
+function markSettingsSection(sec) {
+  $$('.set-nav-item').forEach(b => {
+    const on = b.dataset.sec === sec;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+}
+
+/** The section at the top of the column (the last one once the column is scrolled to its end). */
+function spySettings() {
+  const body = $('#set-body');
+  const secs = [...$$('.set-sec')].filter(s => !s.hidden);
+  if (!secs.length) return;
+  const top = body.scrollTop + 24;
+  let cur = secs[0];
+  for (const s of secs) if (s.offsetTop - body.offsetTop <= top) cur = s;
+  if (body.scrollTop + body.clientHeight >= body.scrollHeight - 4) cur = secs[secs.length - 1];
+  markSettingsSection(cur.dataset.sec);
+}
+$('#set-body').addEventListener('scroll', () => spySettings(), { passive: true });
+$$('.set-nav-item').forEach(btn => btn.addEventListener('click', () => showSettingsSection(btn.dataset.sec)));
+
+$$('.nav-item').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.page)));
 document.addEventListener('click', ev => {
   const go = ev.target.closest('[data-goto]');
   if (!go) return;
-  if (go.dataset.sec) state.settingsSec = go.dataset.sec;
+  if (go.dataset.sec) state.settingsJump = go.dataset.sec;
   goTo(go.dataset.goto);
 });
+
+// ---- Sidebar: full width, or a narrow rail of icons (remembered; Ctrl+B switches)
+
+function setSidebar(collapsed, remember = true) {
+  $('#shell').classList.toggle('side-collapsed', collapsed);
+  const t = $('#side-toggle');
+  const label = collapsed ? 'Expand the sidebar' : 'Collapse the sidebar';
+  t.title = `${label} (Ctrl+B)`;
+  t.setAttribute('aria-label', label);
+  t.setAttribute('aria-expanded', String(!collapsed));
+  t.querySelector('use').setAttribute('href', collapsed ? '#i-panel-open' : '#i-panel');
+  if (remember) store.set('side.collapsed', collapsed);
+}
+// Narrow windows fold it to the rail by themselves; widening the window brings back the remembered state.
+const narrowWindow = matchMedia('(max-width: 1080px)');
+const sideWanted = () => narrowWindow.matches || store.get('side.startCollapsed', false) || store.get('side.collapsed', false);
+setSidebar(sideWanted(), false);
+narrowWindow.addEventListener('change', () => setSidebar(sideWanted(), false));
+$('#side-toggle').addEventListener('click', () => setSidebar(!$('#shell').classList.contains('side-collapsed')));
+document.addEventListener('keydown', ev => {
+  if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'b' && !ev.target.closest?.('input, textarea, [contenteditable="true"]')) {
+    ev.preventDefault();
+    setSidebar(!$('#shell').classList.contains('side-collapsed'));
+  }
+});
+// Settings → Interface: kept on this PC (not in the settings file), applied at once.
+$('#s-side-collapsed').checked = !!store.get('side.startCollapsed', false);
+$('#s-side-collapsed').addEventListener('change', ev => { store.set('side.startCollapsed', ev.target.checked); if (ev.target.checked) setSidebar(true); });
+function setActivityLine(show) {
+  document.body.classList.toggle('no-activity', !show);
+  store.set('activity.show', show);
+}
+$('#s-activity-line').checked = store.get('activity.show', true) !== false;
+setActivityLine($('#s-activity-line').checked);
+$('#s-activity-line').addEventListener('change', ev => setActivityLine(ev.target.checked));
 
 // ---------------------------------------------------------------- dialogs
 
@@ -430,13 +456,13 @@ function conflictCell(m, byId) {
     class: 'tag tag-warn', title: `Shares files with Vortex mods: ${vxHits.map(id => byId[id]?.name || id.slice(3)).join(', ')}. One app will overwrite the other's files.`,
     onclick: ev => { ev.stopPropagation(); openDrawer(m.id); },
   }, `Vortex ${vxHits.length}`) : null;
-  if (!c) return vxTag || h('span', { class: 'muted' }, '—');
+  if (!c) return vxTag;
   const others = c.with.map(id => byId[id]?.name || id).join(', ');
   const open = ev => { ev.stopPropagation(); openDrawer(m.id, 'conflicts'); };
-  return h('span', {},
+  return h('span', { class: 'chips-row' },
     vxTag,
-    c.wins ? h('button', { class: 'tag tag-ok', title: `Wins ${plural(c.wins, 'file')} over ${others} — click to review`, onclick: open }, `wins ${c.wins}`) : null,
-    c.loses ? h('button', { class: 'tag tag-warn', title: `Loses ${plural(c.loses, 'file')} to ${others} — click to resolve`, onclick: open }, `loses ${c.loses}`) : null);
+    c.wins ? h('button', { class: 'tag tag-ok', title: `Wins ${plural(c.wins, 'file')} over ${others} — click to review`, onclick: open }, `Wins ${c.wins}`) : null,
+    c.loses ? h('button', { class: 'tag tag-warn', title: `Loses ${plural(c.loses, 'file')} to ${others} — click to resolve`, onclick: open }, `Loses ${c.loses}`) : null);
 }
 
 function versionMenu(m) {
@@ -447,6 +473,46 @@ function versionMenu(m) {
     onchange: ev => pickVersion(m, ev.target.value),
   }, m.versions.map(v => h('option', { value: v.id, selected: v.id === m.id }, label(v))));
 }
+
+/** Right-click on a mod: its common actions at the pointer. Esc, a click outside or a scroll closes it. */
+function modContextMenu(m, x, y) {
+  closeContextMenu();
+  const item = (ico, label, fn, extra = {}) => h('button', {
+    class: `menu-item${extra.danger ? ' danger' : ''}`, role: 'menuitem',
+    onclick: () => { closeContextMenu(true); fn(); },
+  }, icon(ico), h('span', { class: 'menu-label' }, label), extra.kbd ? h('span', { class: 'kbd' }, extra.kbd) : null);
+  const sep = () => h('div', { class: 'menu-sep', role: 'separator' });
+  const menu = h('div', { class: 'menu ctx-menu', id: 'ctx-menu', role: 'menu', 'aria-label': m.name },
+    h('div', { class: 'menu-head', title: m.name }, m.name),
+    m.enabled ? item('ban', m.vortex ? 'Disable in Vortex' : 'Disable', () => modAction('disable', [m.id]))
+      : item('check', m.vortex ? 'Enable in Vortex' : 'Enable', () => modAction('enable', [m.id])),
+    item('info', 'Properties', () => openDrawer(m.id), { kbd: 'Enter' }),
+    state.modLogProblems[m.id] ? item('activity', 'Show its game log errors', () => openDrawer(m.id, 'logs')) : null,
+    item('sparkle', 'Ask AI', () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`)),
+    sep(),
+    m.modId ? item('external', 'Open on Nexus', () => api.openNexus(m.game, m.modId)) : null,
+    item('file-code', 'Show files', () => openConfigFor(m.vortex ? `vx:${m.vortexId}` : `app:${m.id}`)),
+    m.vortex ? null : sep(),
+    m.vortex ? item('download', 'Move to this app', () => moveFromVortex([m.id])) : item('minus-circle', 'Uninstall', () => modAction('uninstall', [m.id]), { danger: true }));
+  document.body.append(menu);
+  // At the pointer, kept inside the window.
+  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - menu.offsetHeight - 8))}px`;
+  const opener = document.activeElement;
+  menu.querySelector('.menu-item')?.focus();
+  menu.addEventListener('keydown', ev => {
+    const list = [...menu.querySelectorAll('.menu-item')];
+    const i = list.indexOf(document.activeElement);
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeContextMenu(); opener?.focus?.(); }
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    if (ev.key === 'ArrowUp') { ev.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    if (ev.key === 'Tab') closeContextMenu();
+  });
+}
+function closeContextMenu() { $('#ctx-menu')?.remove(); }
+document.addEventListener('mousedown', ev => { if (!ev.target.closest('#ctx-menu')) closeContextMenu(); });
+window.addEventListener('blur', () => closeContextMenu());
+document.addEventListener('scroll', () => closeContextMenu(), true);
 
 function paintModSelection() {
   paintSelection($('#mods-table tbody'), state.modSel, $('#mods-all'), visibleMods().map(m => m.id), $('#mods-bulk'), $('#mods-sel-count'), $('#mods-toolbar'));
@@ -499,15 +565,19 @@ function renderMods() {
     });
     const when = SORT_TIME[state.modSort];
     const stamp = when && m[when[0]] ? `${when[1]} ${ago(m[when[0]])}` : when ? `not ${when[1]} since this was recorded` : '';
-    const sub = [stamp, m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
+    const who = m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ');
+    const kind = [m.vortex ? 'Vortex' : '', m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
+    const sub = [who, kind, stamp].filter(Boolean).join(' · ');
     return h('tr', {
       class: 'row', tabindex: '0', dataset: { id: m.id, key: `${m.id}:row` }, 'aria-selected': 'false',
       onclick: ev => {
-        if (ev.target.closest('input,button')) return;
-        clickSelect(state.modSel, ids, m.id, ev, 'lastModClick');
-        paintModSelection();
+        if (ev.target.closest('input,button,select')) return;
+        // Ctrl or Shift picks several for the selection bar; a plain click shows the mod in the panel.
+        if (ev.ctrlKey || ev.metaKey || ev.shiftKey) { clickSelect(state.modSel, ids, m.id, ev, 'lastModClick'); paintModSelection(); return; }
+        state.lastModClick = m.id;
+        openDrawer(m.id, '', false);
       },
-      ondblclick: ev => { if (!ev.target.closest('input,button')) openDrawer(m.id); },
+      oncontextmenu: ev => { if (!ev.target.closest('input,select')) { ev.preventDefault(); modContextMenu(m, ev.clientX, ev.clientY); } },
       onkeydown: ev => rowKeys(ev, state.modSel, m.id, () => openDrawer(m.id), paintModSelection),
     },
     h('td', {}, h('input', {
@@ -517,23 +587,19 @@ function renderMods() {
     h('td', {}, switchBtn),
     h('td', {}, h('div', { class: 'cell-name' },
       h('div', { class: 'name-line' },
-        h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name),
+        h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name)),
+      sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
+    h('td', { class: 'status-cell' }, h('div', { class: 'chips-row' },
         state.snap.vortex?.twins?.[m.id] ? h('span', { class: 'tag tag-vortex', title: `Also installed in Vortex. While it is enabled here, Vortex's copy is switched off${state.snap.vortex.twins[m.id].enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}.` }, 'Also in Vortex') : null,
         m.warnings?.length ? tagBtn('tag-warn tag-icon', `${plural(m.warnings.length, 'install warning')} — click to see`, 'warnings', icon('alert'), { 'aria-label': plural(m.warnings.length, 'install warning') }) : null,
         logIssues ? tagBtn('tag-err', 'Errors in this mod\'s game logs — click to see them', 'logs', `${logIssues} log error${logIssues === 1 ? '' : 's'}`) : null,
         m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
-        upd ? tagBtn('tag-info', `Update available: ${upd.name}${upd.version ? ` v${upd.version}` : ''} — click for details`, 'update', upd.version ? `↑ ${upd.version}` : 'Update') : null),
-      sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
-    h('td', { title: m.vortex ? `Managed by Vortex · ${m.type}` : m.type }, h('span', { class: 'type-cell' },
-      m.vortex ? h('span', { class: 'tag tag-vortex' }, 'Vortex') : null,
-      h('span', { class: 'type-text' }, m.type))),
-    h('td', { class: 'dim', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : m.version || '—'),
-    h('td', { class: 'dim col-cat', title: m.dependencyOf ? `Installed because ${m.dependencyOf} requires it` : '' }, m.vortex ? '—' : m.dependencyOf ? 'Dependency' : CAT_LABEL[m.category] || m.category),
-    h('td', { class: 'num dim col-files' }, m.fileCount),
-    h('td', { class: 'num dim col-prio', title: m.vortex ? 'Vortex orders its own mods' : '' }, m.vortex ? '—' : m.priority),
-    h('td', {}, conflictCell(m, byId)));
+        upd ? tagBtn('tag-info', `Update available: ${upd.name}${upd.version ? ` v${upd.version}` : ''} — click for details`, 'update', upd.version ? `${upd.version} available` : 'Update', { 'aria-label': `Update to ${upd.version || 'a newer version'}` }) : null,
+        conflictCell(m, byId))),
+    h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : m.version || ''));
   })), null);
 
+  markInspected();
   // Empty states: nothing installed vs nothing matching.
   $('#mods-empty').hidden = mods.length > 0;
   $('#mods-card').classList.toggle('is-empty', mods.length === 0);
@@ -787,9 +853,19 @@ const drawerSections = [];
 let drawerOpener = null;
 let drawerOpenerKey = '';
 
+/** The panel is shown or not; the page makes room for it, and the mod it shows is marked in the list. */
+function setDrawerShown(on) {
+  $('#drawer').hidden = !on;
+  document.body.classList.toggle('drawer-open', on);
+  markInspected();
+}
+function markInspected() {
+  for (const tr of $$('#mods-table tbody tr.row')) tr.classList.toggle('inspect', !$('#drawer').hidden && tr.dataset.id === state.drawerMod);
+}
+
 function closeDrawer() {
-  $('#drawer').hidden = true;
   state.drawerMod = null;
+  setDrawerShown(false);
   state.drawerSig = '';
   if (drawerOpener) restoreFocus(drawerOpener, drawerOpenerKey);
   drawerOpener = null;
@@ -800,10 +876,10 @@ const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedA
 
 let drawerSeq = 0;
 
-async function openDrawer(id, focusSection = '') {
+async function openDrawer(id, focusSection = '', takeFocus = true) {
   const m = allMods().find(x => x.id === id);
   if (!m) return;
-  if (m.vortex) { openVortexDrawer(m); return; }
+  if (m.vortex) { openVortexDrawer(m, takeFocus); return; }
   const seq = ++drawerSeq;
   const wasOpen = !$('#drawer').hidden && state.drawerMod === id;
   if (!wasOpen && $('#drawer').hidden) {
@@ -863,14 +939,14 @@ async function openDrawer(id, focusSection = '') {
     ].filter(Boolean));
   }, '#drawer-close');
 
-  drawer.hidden = false;
+  setDrawerShown(true);
   if (focusSection) body.querySelector(`[data-section="${focusSection}"]`)?.scrollIntoView({ block: 'start' });
   else body.scrollTop = keepScroll;
-  if (!wasOpen && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
+  if (!wasOpen && takeFocus && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
 }
 
 /** A Vortex mod: what Vortex knows about it, and what can be done from here. */
-function openVortexDrawer(m) {
+function openVortexDrawer(m, takeFocus = true) {
   const drawer = $('#drawer');
   if (drawer.hidden) { drawerOpener = document.activeElement; drawerOpenerKey = drawerOpener?.closest?.('[data-key]')?.dataset.key || ''; }
   state.drawerMod = m.id;
@@ -909,8 +985,8 @@ function openVortexDrawer(m) {
       ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
     ].filter(Boolean));
   }, '#drawer-close');
-  drawer.hidden = false;
-  if (!drawer.contains(document.activeElement)) $('#drawer-close').focus();
+  setDrawerShown(true);
+  if (takeFocus && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
 }
 
 /** For each other mod sharing files with this one: who wins, which files, and one-click fixes. */
@@ -1054,7 +1130,7 @@ function renderDlCounts() {
   $('#dl-failed-count').textContent = failed || '';
   $('#dl-clear').disabled = !jobs.some(j => ['done', 'cancelled', 'error'].includes(j.status));
   const nav = $('#nav-dl-count');
-  nav.textContent = active ? `${active}` : (state.snap.downloads.length || '');
+  nav.textContent = active ? `${active} active` : '';
   nav.classList.toggle('live', active > 0);
   nav.title = active ? `${active} downloading` : `${state.snap.downloads.length} downloaded`;
 }
@@ -1273,12 +1349,8 @@ $('#s-vx-move').addEventListener('click', () => moveFromVortex());
 
 function renderVortexMove() {
   const vx = state.snap.vortex;
-  $('#s-vx-block').hidden = !vx?.installed;
-  const vxTab = $('.nav-subitem[data-sec="vortex"]');
-  if (vxTab.hidden !== !vx?.installed) {
-    vxTab.hidden = !vx?.installed;
-    if ($('#page-settings').classList.contains('active')) showSettingsSection(state.settingsSec);
-  }
+  $('#sec-vortex').hidden = !vx?.installed;
+  $('.set-nav-item[data-sec="vortex"]').hidden = !vx?.installed;
   if (!vx?.installed) return;
   const n = vx.mods?.length || 0;
   $('#s-vx-text').textContent = n
@@ -1477,25 +1549,28 @@ $$('[data-open]').forEach(b => b.addEventListener('click', () => run(api.openPat
 function renderStatus() {
   const g = state.snap.game || {};
   $('#st-game-dot').className = `dot ${g.valid ? 'ok' : 'bad'}`;
-  $('#st-game').textContent = g.valid ? 'Game folder found' : 'Game folder not set';
+  $('#st-game').textContent = g.valid ? 'Game folder' : 'No game folder';
   $('#st-game-row').title = g.valid ? `Game folder: ${g.path}` : 'Set the Cyberpunk 2077 folder in Settings';
   const s = state.settings;
   const hasKey = s?.hasApiKey;
-  $('#st-key-dot').className = `dot ${hasKey ? 'ok' : 'bad'}`;
-  const keyText = state.keyUser ? `${state.keyUser.name}${state.keyUser.isPremium ? ' · Premium' : ''}` : hasKey ? 'API key saved' : 'No API key';
-  $('#st-key').textContent = keyText;
-  $('#st-key-row').title = keyText;
-  const prof = state.snap.profiles?.list.find(p => p.id === state.snap.profiles.active);
-  $('#st-prof').textContent = prof ? `Profile: ${prof.name}` : 'Profile';
-  $('#st-prof-row').title = prof ? `Active profile: ${prof.name} (${plural(prof.count, 'mod')} enabled)` : '';
+  const user = state.keyUser;
+  $('#st-key').textContent = user ? user.name : hasKey ? 'API key saved' : 'No API key';
+  $('#st-premium').hidden = !user?.isPremium;
+  $('#st-avatar').textContent = user ? (String(user.name).trim()[0] || '?').toUpperCase() : '?';
+  $('#st-avatar').classList.toggle('bad', !hasKey);
   const vx = state.snap.vortex;
   $('#st-vx-row').hidden = !vx?.installed;
   if (vx?.installed) {
-    $('#st-vx').textContent = `Vortex: ${vx.busy ? 'applying…' : vx.running ? 'open' : 'closed'}`;
+    $('#st-vx').textContent = `Vortex ${vx.busy ? 'applying…' : vx.running ? 'open' : 'closed'}`;
+    $('#st-vx-dot').className = `dot ${vx.running || vx.busy ? 'warn' : ''}`;
     $('#st-vx-row').title = `Vortex profile: ${vx.activeProfileName || '—'} · ${plural(vx.mods.length, 'mod')}`;
   }
   const r = state.snap.rate || {};
   $('#st-rate').textContent = r.hourly != null ? `API ${r.hourly}/h · ${r.daily}/day left` : '';
+  // The collapsed rail shows only the avatar: everything above is its tooltip.
+  $('#side-foot').title = [user ? `${user.name}${user.isPremium ? ' · Premium' : ''}` : hasKey ? 'Nexus API key saved' : 'No Nexus API key',
+    g.valid ? 'Game folder found' : 'Game folder not set', vx?.installed ? $('#st-vx').textContent : '', $('#st-rate').textContent].filter(Boolean).join(' · ');
+  renderProfileSwitch();
   const gs = $('#s-game-status');
   gs.className = g.valid ? 'hint ok' : 'hint bad';
   gs.textContent = g.valid ? 'Cyberpunk2077.exe found' : 'bin\\x64\\Cyberpunk2077.exe was not found in this folder';
@@ -1509,6 +1584,75 @@ function renderStatus() {
     : 'Add your Nexus Mods API key in Settings before downloading.';
   $('#dl-keybanner [data-goto]').hidden = !!hasKey;
 }
+
+// ---------------------------------------------------------------- profile quick switcher
+
+/** Under Play: the active profile; it opens a list of the others, to switch in one click. */
+function renderProfileSwitch() {
+  const p = state.snap.profiles;
+  const active = p?.list.find(x => x.id === p.active);
+  $('#prof-switch-name').textContent = active?.name || 'Default';
+  $('#prof-switch').title = active ? `Profile: ${active.name} (${plural(active.count ?? 0, 'mod')} on). Click to switch.` : 'Switch profile';
+  if (!$('#prof-menu').hidden) paintProfileMenu();
+}
+
+function paintProfileMenu() {
+  const p = state.snap.profiles;
+  const list = p?.list || [];
+  const total = (state.snap.mods || []).length;
+  $('#prof-menu').replaceChildren(
+    h('div', { class: 'menu-head' }, 'Switch profile'),
+    ...list.map(x => {
+      const on = x.id === p.active;
+      return h('button', {
+        class: `menu-item prof-menu-item${on ? ' on' : ''}`, role: 'menuitemradio', 'aria-checked': String(on), dataset: { id: x.id },
+        onclick: async () => {
+          closeProfileMenu(true);
+          if (!on) await switchTo(x);
+        },
+      }, h('span', { class: 'prof-menu-check' }, on ? icon('check') : null),
+      h('span', { class: 'menu-label' }, x.name),
+      h('span', { class: 'menu-meta' }, `${x.count ?? 0}/${total}`));
+    }),
+    h('div', { class: 'menu-sep', role: 'separator' }),
+    h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { closeProfileMenu(); goTo('profiles'); } }, icon('users'), h('span', { class: 'menu-label' }, 'Manage profiles…')));
+}
+
+function openProfileMenu() {
+  const menu = $('#prof-menu');
+  const btn = $('#prof-switch');
+  paintProfileMenu();
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  // Below the button in the sidebar; beside it on the narrow rail. Kept inside the window.
+  const r = btn.getBoundingClientRect();
+  const rail = $('#shell').classList.contains('side-collapsed');
+  const w = menu.offsetWidth;
+  const hgt = menu.offsetHeight;
+  const left = rail ? r.right + 8 : r.left;
+  const top = rail ? r.top : r.bottom + 6;
+  menu.style.left = `${Math.max(8, Math.min(left, innerWidth - w - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(top, innerHeight - hgt - 8))}px`;
+  (menu.querySelector('.menu-item.on') || menu.querySelector('.menu-item'))?.focus();
+}
+
+function closeProfileMenu(refocus = false) {
+  if ($('#prof-menu').hidden) return;
+  $('#prof-menu').hidden = true;
+  $('#prof-switch').setAttribute('aria-expanded', 'false');
+  if (refocus) $('#prof-switch').focus();
+}
+$('#prof-switch').addEventListener('click', () => ($('#prof-menu').hidden ? openProfileMenu() : closeProfileMenu()));
+$('#prof-menu').addEventListener('keydown', ev => {
+  const list = [...$('#prof-menu').querySelectorAll('.menu-item')];
+  const i = list.indexOf(document.activeElement);
+  if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeProfileMenu(true); }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+  if (ev.key === 'ArrowUp') { ev.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+  if (ev.key === 'Tab') closeProfileMenu();
+});
+document.addEventListener('mousedown', ev => { if (!ev.target.closest('#prof-menu, #prof-switch')) closeProfileMenu(); });
+window.addEventListener('resize', () => closeProfileMenu());
 
 // ---------------------------------------------------------------- "More" menu
 
@@ -1560,10 +1704,11 @@ function renderPlay() {
   btn.disabled = !g.valid;
   btn.classList.toggle('running', running);
   btn.classList.toggle('armed', running && stopArmed);
-  btn.querySelector('use').setAttribute('href', running ? '#i-x' : '#i-play');
-  $('#play-label').textContent = running ? (stopArmed ? 'Click again to close' : 'Stop') : 'Play';
-  $('#play-sub').textContent = !g.valid ? 'Set the game folder' : running ? (stopArmed ? 'Unsaved progress is lost' : 'Cyberpunk 2077 is running') : `Cyberpunk 2077 · ${here?.label || 'launch'}`;
-  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? 'Close the game (click twice)' : `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
+  btn.querySelector('use').setAttribute('href', running ? '#i-stop' : '#i-play');
+  $('#play-label').textContent = running ? (stopArmed ? 'Close the game?' : 'Running') : 'Play';
+  $('#play-sub').textContent = !g.valid ? 'No game folder' : running ? (stopArmed ? 'Click again' : 'Stop') : here?.label || '';
+  $('#brand-sub').textContent = here ? `Cyberpunk 2077 · ${here.label}` : 'Cyberpunk 2077';
+  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? (stopArmed ? 'Click again to close the game: unsaved progress is lost' : 'Cyberpunk 2077 is running. Click twice to close it.') : `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
 }
 // Stop asks twice: the first click arms it for a few seconds, the second closes the game.
 let stopArmed = false;
@@ -1654,7 +1799,7 @@ $('#play-btn').addEventListener('click', async () => {
 api.onRedmod(e => {
   if (e.stage === 'deploying') {
     $('#play-label').textContent = 'Deploying REDmods…';
-    if (e.line) $('#play-sub').textContent = e.line.slice(0, 60);
+    if (e.line) $('#play-btn').title = e.line.slice(0, 200);
   } else if (e.stage === 'done') {
     toast('REDmods deployed', 'success');
     renderPlay();
@@ -1791,6 +1936,8 @@ function addLog(e) {
   while (body.childElementCount > 2000) body.firstElementChild.remove();
   if (atEnd) body.scrollTop = body.scrollHeight;
   $('#console-last').textContent = e.message;
+  $('#console-time').textContent = new Date(e.time || Date.now()).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  $('#console-dot').className = `dot ${e.level === 'error' ? 'bad' : e.level === 'warn' ? 'warn' : 'ok'}`;
   updateBadges();
   if (e.level === 'error' && !document.body.classList.contains('console-open')) setConsoleOpen(true);
 }
@@ -1818,6 +1965,8 @@ $('#console-clear').addEventListener('click', () => {
   updateBadges();
   setConsoleFilter(con.filter);
   $('#console-last').textContent = '';
+  $('#console-time').textContent = '';
+  $('#console-dot').className = 'dot';
 });
 /** Both export buttons save one report: every error and warning, and every mod with its state. */
 async function exportReport() {

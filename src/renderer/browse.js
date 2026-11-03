@@ -75,7 +75,7 @@ function renderResults() {
         h('div', { class: 'mod-foot' },
           h('span', { class: 'mod-stat', title: `${m.endorsements.toLocaleString()} endorsements` }, icon('heart'), fmtCount(m.endorsements)),
           h('span', { class: 'mod-stat', title: `${m.downloads.toLocaleString()} downloads` }, icon('download'), fmtCount(m.downloads)),
-          h('button', { class: 'btn btn-sm btn-primary mod-get', title: `Choose files of ${m.name} to download`, onclick: ev => { ev.stopPropagation(); quickDownload(m.modId); } }, icon('download'), h('span', {}, 'Download')))));
+          h('button', { class: 'btn btn-sm mod-get', title: `Choose files of ${m.name} to download`, onclick: ev => { ev.stopPropagation(); quickDownload(m.modId); } }, icon('download'), h('span', {}, 'Download')))));
   }));
   $('#browse-pager').hidden = pages <= 1;
   $('#browse-page').textContent = `Page ${r.page} of ${pages.toLocaleString()}`;

@@ -103,3 +103,20 @@ test('a play whose last minute the app did not see (closed right after the game)
   assert.strictEqual(p.files, 1);
   assert.strictEqual(p.outcome, 'exited', 'how it ended is kept');
 });
+
+test('each play remembers the profile that was active when the game started', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: new Date(2026, 10, 3, 4, 0, 0).getTime() });
+  const logs = fakeLogs(tmp('game'));
+  let active = { id: 'p1', name: 'Photo mode' };
+  const plays = new PlayHistory({ dir: tmp('plays'), logs, profile: () => active });
+  logs.emit('game', { running: true, since: Date.now(), pid: 7 });
+  active = { id: 'p2', name: 'Vanilla+' }; // switching during the play does not move it
+  assert.deepStrictEqual(plays.list()[0].profile, { id: 'p1', name: 'Photo mode' });
+  logs.emit('game', { running: false });
+  t.mock.timers.tick(AFTER_MS + 1);
+  assert.deepStrictEqual(plays.list()[0].profile, { id: 'p1', name: 'Photo mode' });
+
+  const none = new PlayHistory({ dir: tmp('plays'), logs: fakeLogs(tmp('game')), profile: () => { throw new Error('not ready'); } });
+  none.logs.emit('game', { running: true, since: Date.now() + 5000, pid: 8 });
+  assert.strictEqual(none.list()[0].profile, null);
+});

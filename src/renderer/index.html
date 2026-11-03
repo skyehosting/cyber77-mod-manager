@@ -65,69 +65,87 @@
       <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
       <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4M3.5 18a10 10 0 1 1 17 0"/></symbol>
       <symbol id="i-vortex" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><circle cx="12" cy="12" r="1.2"/></symbol>
+      <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M16 10l-2 2 2 2"/></symbol>
+      <symbol id="i-panel-open" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M14 10l2 2-2 2"/></symbol>
+      <symbol id="i-updown" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
       <symbol id="i-brand" viewBox="0 0 24 24"><path d="M4 4h16v11l-5 5H4Z"/><path d="M9 9h6M9 13h4"/></symbol>
     </defs>
   </svg>
 
   <div class="shell" id="shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><svg class="i"><use href="#i-brand"/></svg></span>
         <span class="brand-text">
           <span class="brand-name">Cyber Mod Manager</span>
-          <span class="brand-sub">Cyberpunk 2077</span>
+          <span class="brand-sub" id="brand-sub">Cyberpunk 2077</span>
         </span>
+        <button class="side-toggle" id="side-toggle" title="Collapse the sidebar" aria-label="Collapse the sidebar" aria-expanded="true" aria-controls="sidebar"><svg class="i"><use href="#i-panel"/></svg></button>
       </div>
-      <button class="play-btn" id="play-btn" title="Launch Cyberpunk 2077">
-        <span class="play-icon" aria-hidden="true"><svg class="i"><use href="#i-play"/></svg></span>
-        <span class="play-text"><span class="play-label" id="play-label">Play</span><span class="play-sub" id="play-sub">Cyberpunk 2077</span></span>
-      </button>
+      <div class="play-card">
+        <button class="play-btn" id="play-btn" title="Launch Cyberpunk 2077">
+          <span class="play-icon" aria-hidden="true"><svg class="i"><use href="#i-play"/></svg></span>
+          <span class="play-label" id="play-label">Play</span>
+          <span class="play-sub" id="play-sub"></span>
+        </button>
+        <button class="prof-switch" id="prof-switch" aria-haspopup="menu" aria-expanded="false" aria-controls="prof-menu" title="Switch profile">
+          <svg class="i"><use href="#i-users"/></svg><span class="prof-switch-label">Profile</span><span class="prof-switch-name" id="prof-switch-name">Default</span><svg class="i prof-switch-chev"><use href="#i-updown"/></svg>
+        </button>
+      </div>
       <nav class="nav" aria-label="Main navigation">
-        <button class="nav-item" data-page="browse" title="Browse Nexus">
-          <svg class="i"><use href="#i-globe"/></svg><span class="nav-label">Browse</span>
-        </button>
-        <button class="nav-item" data-page="downloads" title="Downloads">
-          <svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span><span class="count" id="nav-dl-count">0</span>
-        </button>
-        <button class="nav-item active" data-page="mods" title="Mods">
-          <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="count" id="nav-mods-count">0</span>
-        </button>
-        <button class="nav-item" data-page="config" title="Mod config">
-          <svg class="i"><use href="#i-file-code"/></svg><span class="nav-label">Mod config</span>
-        </button>
-        <button class="nav-item" data-page="loadorder" title="Load order">
-          <svg class="i"><use href="#i-sort"/></svg><span class="nav-label">Load order</span>
-        </button>
-        <button class="nav-item" data-page="gamelog" title="Game log">
-          <svg class="i"><use href="#i-activity"/></svg><span class="nav-label">Game log</span><span class="count" id="nav-log-count">0</span>
-        </button>
-        <button class="nav-item" data-page="ai" title="AI Assistant">
-          <svg class="i"><use href="#i-sparkle"/></svg><span class="nav-label">AI Assistant</span>
-        </button>
-        <button class="nav-item" data-page="profiles" title="Profiles">
-          <svg class="i"><use href="#i-users"/></svg><span class="nav-label">Profiles</span><span class="count" id="nav-prof-count"></span>
-        </button>
-        <button class="nav-item" data-page="settings" title="Settings" aria-expanded="false" aria-controls="nav-settings-sub">
-          <svg class="i"><use href="#i-sliders"/></svg><span class="nav-label">Settings</span><svg class="i nav-caret"><use href="#i-chevron"/></svg>
-        </button>
-        <div class="nav-sub" id="nav-settings-sub" role="group" aria-label="Settings sections" hidden>
-          <button class="nav-subitem" data-sec="nexus" title="Nexus account"><svg class="i"><use href="#i-key"/></svg><span class="nav-label">Nexus account</span></button>
-          <button class="nav-subitem" data-sec="ai" title="AI assistant"><svg class="i"><use href="#i-sparkle"/></svg><span class="nav-label">AI assistant</span></button>
-          <button class="nav-subitem" data-sec="game" title="Game &amp; Play"><svg class="i"><use href="#i-monitor"/></svg><span class="nav-label">Game &amp; Play</span></button>
-          <button class="nav-subitem" data-sec="downloads" title="Downloads"><svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span></button>
-          <button class="nav-subitem" data-sec="vortex" title="Vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span class="nav-label">Vortex</span></button>
-          <button class="nav-subitem" data-sec="display" title="Display"><svg class="i"><use href="#i-eye"/></svg><span class="nav-label">Display</span></button>
-          <button class="nav-subitem" data-sec="app" title="App &amp; folders"><svg class="i"><use href="#i-folder"/></svg><span class="nav-label">App &amp; folders</span></button>
+        <div class="nav-group" role="group" aria-labelledby="ng-lib">
+          <span class="nav-group-label" id="ng-lib">Library</span>
+          <button class="nav-item" data-page="mods" title="Mods" data-short="Mods">
+            <svg class="i"><use href="#i-layers"/></svg><span class="nav-label">Mods</span><span class="nav-meta" id="nav-mods-count"></span>
+          </button>
+          <button class="nav-item" data-page="loadorder" title="Load order" data-short="Order">
+            <svg class="i"><use href="#i-sort"/></svg><span class="nav-label">Load order</span>
+          </button>
+          <button class="nav-item" data-page="config" title="Mod files" data-short="Files">
+            <svg class="i"><use href="#i-folder"/></svg><span class="nav-label">Mod files</span>
+          </button>
+        </div>
+        <div class="nav-group" role="group" aria-labelledby="ng-get">
+          <span class="nav-group-label" id="ng-get">Get mods</span>
+          <button class="nav-item" data-page="browse" title="Browse Nexus" data-short="Browse">
+            <svg class="i"><use href="#i-globe"/></svg><span class="nav-label">Browse Nexus</span>
+          </button>
+          <button class="nav-item" data-page="downloads" title="Downloads" data-short="Downloads">
+            <svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span><span class="nav-meta" id="nav-dl-count"></span>
+          </button>
+        </div>
+        <div class="nav-group" role="group" aria-labelledby="ng-fix">
+          <span class="nav-group-label" id="ng-fix">Troubleshoot</span>
+          <button class="nav-item" data-page="gamelog" title="Game log" data-short="Game log">
+            <svg class="i"><use href="#i-activity"/></svg><span class="nav-label">Game log</span><span class="count" id="nav-log-count"></span>
+          </button>
+          <button class="nav-item" data-page="ai" title="AI Assistant" data-short="AI">
+            <svg class="i"><use href="#i-sparkle"/></svg><span class="nav-label">AI Assistant</span>
+          </button>
         </div>
       </nav>
-      <div class="side-status">
-        <div class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span class="status-text" id="st-game">Game folder</span></div>
-        <div class="status-row" id="st-key-row"><span class="dot" id="st-key-dot"></span><span class="status-text" id="st-key">API key</span></div>
-        <div class="status-row" id="st-prof-row"><svg class="i status-icon"><use href="#i-users"/></svg><span class="status-text" id="st-prof">Profile</span></div>
-        <div class="status-row" id="st-vx-row" hidden><svg class="i status-icon"><use href="#i-vortex"/></svg><span class="status-text" id="st-vx">Vortex</span></div>
-        <div class="status-row status-rate" id="st-rate"></div>
+      <div class="nav nav-bottom">
+          <button class="nav-item" data-page="profiles" title="Profiles" data-short="Profiles">
+            <svg class="i"><use href="#i-users"/></svg><span class="nav-label">Profiles</span><span class="nav-meta" id="nav-prof-count"></span>
+          </button>
+          <button class="nav-item" data-page="settings" title="Settings" data-short="Settings">
+            <svg class="i"><use href="#i-sliders"/></svg><span class="nav-label">Settings</span>
+          </button>
+      </div>
+      <div class="side-foot" id="side-foot">
+        <span class="avatar" id="st-avatar" aria-hidden="true">?</span>
+        <div class="side-foot-text">
+          <div class="side-user"><span class="side-user-name" id="st-key">No API key</span><span class="tag tag-premium" id="st-premium" hidden>Premium</span></div>
+          <div class="side-dots">
+            <span class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span id="st-game">Game folder</span></span>
+            <span class="status-row" id="st-vx-row" hidden><span class="dot" id="st-vx-dot"></span><span id="st-vx">Vortex</span></span>
+          </div>
+          <div class="status-rate" id="st-rate"></div>
+        </div>
       </div>
     </aside>
+    <div class="menu prof-menu" id="prof-menu" role="menu" aria-label="Profiles" hidden></div>
 
     <main class="main">
       <!-- MODS -->
@@ -201,21 +219,14 @@
 
         <div class="table-card" id="mods-card">
           <table class="grid" id="mods-table" aria-label="Installed mods">
-            <colgroup>
-              <col class="w-check"><col class="w-toggle"><col class="w-name"><col class="w-type"><col class="w-version">
-              <col class="w-cat col-cat"><col class="w-num col-files"><col class="w-num col-prio"><col class="w-conflict">
-            </colgroup>
+            <colgroup><col class="w-check"><col class="w-toggle"><col class="w-name"><col class="w-status"><col class="w-version"></colgroup>
             <thead>
               <tr>
                 <th><input type="checkbox" id="mods-all" aria-label="Select all"></th>
                 <th>On</th>
                 <th>Name</th>
-                <th>Type</th>
-                <th>Version</th>
-                <th class="col-cat">Category</th>
-                <th class="num col-files">Files</th>
-                <th class="num col-prio" title="Higher wins file conflicts">Priority</th>
-                <th>Conflicts</th>
+                <th>Status</th>
+                <th class="num">Version</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -384,7 +395,7 @@
       <section class="page" id="page-config" aria-labelledby="h-config">
         <header class="page-head">
           <div class="page-title">
-            <h1 id="h-config">Mod config</h1>
+            <h1 id="h-config">Mod files</h1>
             <p class="page-sub" id="cfg-sub">Every mod's files, enabled or not. Point at a text file and click the pencil to edit it.</p>
           </div>
           <div class="head-actions">
@@ -439,14 +450,20 @@
         <header class="page-head">
           <div class="page-title">
             <h1 id="h-lo">Load order</h1>
-            <p class="page-sub">Archive mods load top to bottom. When two change the same thing, the one higher up wins.</p>
+            <p class="page-sub">Archives load top to bottom. When two change the same file, the higher one wins.</p>
           </div>
           <div class="head-actions">
             <button class="btn btn-ghost collapsible" id="lo-reset" title="Remove the custom order: the game loads archives alphabetically by file name" aria-label="Reset to alphabetical"><svg class="i"><use href="#i-rotate"/></svg><span>Reset to alphabetical</span></button>
             <button class="btn btn-primary collapsible" id="lo-auto" title="Put every mod above the mods it needs (from Nexus), so add-ons and patches win; the rest keeps its place" aria-label="Auto-sort"><svg class="i"><use href="#i-sort"/></svg><span>Auto-sort</span></button>
           </div>
         </header>
-        <p class="lo-status" id="lo-status"></p>
+        <div class="toolbar">
+          <label class="search">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="lo-search" placeholder="Search archives or mods" type="search" aria-label="Search archives">
+          </label>
+          <span class="lo-status" id="lo-status"></span>
+        </div>
         <div class="card lo-card"><div class="lo-list" id="lo-list" role="list" aria-label="Archive load order"></div></div>
         <p class="hint lo-hint">Drag a row, or use the arrows (Alt+↑ / Alt+↓). Changes apply at once, through archive\pc\mod\modlist.txt, which lists every archive. REDmods load after all archives, by folder name.</p>
       </section>
@@ -456,7 +473,7 @@
         <header class="page-head">
           <div class="page-title">
             <h1 id="h-gamelog">Game log</h1>
-            <p class="page-sub">Every log your game and its mods write, merged live: CET, RED4ext, redscript, ArchiveXL, TweakXL, Codeware and more</p>
+            <p class="page-sub" id="gl-sub" title="Every log your game and its mods write, merged live: CET, RED4ext, redscript, ArchiveXL, TweakXL, Codeware and more">Not running</p>
           </div>
           <div class="head-actions">
             <div class="play-pick" id="gl-play-pick">
@@ -465,7 +482,7 @@
             </div>
             <button class="btn collapsible" id="gl-follow" aria-pressed="true" title="Pause or resume live updates" aria-label="Pause live updates"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
             <button class="btn btn-ghost collapsible" id="gl-export" title="Save every error and warning, and every mod with its state, as one JSON report" aria-label="Export report"><svg class="i"><use href="#i-share"/></svg><span>Export report</span></button>
-            <button class="btn collapsible" id="gl-clear" title="Hide everything logged so far" aria-label="Clear view"><svg class="i"><use href="#i-trash"/></svg><span>Clear view</span></button>
+            <button class="btn btn-ghost collapsible" id="gl-clear" title="Hide everything logged so far" aria-label="Clear view"><svg class="i"><use href="#i-trash"/></svg><span>Clear view</span></button>
           </div>
         </header>
 
@@ -478,7 +495,7 @@
           <button class="btn btn-sm btn-primary" id="gl-play-live">Back to live</button>
         </div>
 
-        <div class="stat-row">
+        <div class="stat-row" hidden>
           <div class="stat" id="gl-stat-game">
             <span class="stat-icon"><svg class="i"><use href="#i-monitor"/></svg></span>
             <span class="stat-body"><span class="stat-value"><span class="dot" aria-hidden="true"></span><span id="gl-game">Not running</span></span><span class="stat-label" id="gl-game-sub">Cyberpunk 2077</span></span>
@@ -581,18 +598,18 @@
             <button class="btn btn-primary collapsible" id="prof-new" title="Create a profile" aria-label="New profile"><svg class="i"><use href="#i-plus"/></svg><span>New profile</span></button>
           </div>
         </header>
-        <div class="prof-active" id="prof-active" hidden></div>
-        <div class="section-head" id="prof-others-head" hidden>
-          <h2>Other profiles</h2>
-          <span class="section-note">Activate one to switch which of this app's mods are on (and which wins each conflict)</span>
+        <div class="split">
+          <div class="split-main">
+            <div class="prof-list" id="prof-grid" role="list" aria-label="Profiles"></div>
+            <div id="prof-outside"></div>
+            <div class="section-head" id="vx-prof-head" hidden>
+              <h2>Vortex profiles</h2>
+              <span class="section-note">Read from Vortex. Switch them in Vortex; their mods show up on the Mods page.</span>
+            </div>
+            <div class="vx-list" id="vx-prof-grid" role="list" aria-label="Vortex profiles" hidden></div>
+          </div>
+          <aside class="side-panel" id="prof-panel" aria-label="Profile details"></aside>
         </div>
-        <div class="prof-grid" id="prof-grid"></div>
-        <div id="prof-outside"></div>
-        <div class="section-head" id="vx-prof-head" hidden>
-          <h2>Vortex profiles</h2>
-          <span class="section-note">Read from Vortex. Switch them in Vortex; their mods appear on the Mods page.</span>
-        </div>
-        <div class="prof-grid" id="vx-prof-grid"></div>
       </section>
 
       <!-- SETTINGS -->
@@ -600,201 +617,274 @@
         <header class="page-head">
           <div class="page-title">
             <h1 id="h-settings">Settings</h1>
-            <p class="page-sub" id="settings-sub">Your Nexus account, the game folder and how mods are downloaded</p>
+            <p class="page-sub" id="settings-sub">The game, your Nexus account, downloads and how the app looks. Save applies your changes.</p>
           </div>
         </header>
         <form id="settings-form" class="settings" autocomplete="off">
-          <div class="settings-grid">
-            <section class="card settings-sec" data-sec="nexus" id="sec-nexus">
-              <h2 class="card-title"><svg class="i"><use href="#i-key"/></svg>Nexus Mods account</h2>
-              <label class="label" for="s-apikey">Personal API key</label>
-              <div class="field-row">
-                <input id="s-apikey" type="password" spellcheck="false">
-                <button type="button" class="btn" id="s-validate">Validate</button>
-              </div>
-              <p class="hint" id="s-key-status"></p>
-              <p class="hint">Get it from <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">nexusmods.com → API keys</a>. It is stored encrypted and never shown again.</p>
-            </section>
+          <nav class="set-nav" aria-label="Settings sections">
+            <button type="button" class="set-nav-item" data-sec="game"><svg class="i"><use href="#i-monitor"/></svg><span>Game</span></button>
+            <button type="button" class="set-nav-item" data-sec="nexus"><svg class="i"><use href="#i-globe"/></svg><span>Nexus Mods</span></button>
+            <button type="button" class="set-nav-item" data-sec="downloads"><svg class="i"><use href="#i-download"/></svg><span>Downloads</span></button>
+            <button type="button" class="set-nav-item" data-sec="vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span>Vortex</span></button>
+            <button type="button" class="set-nav-item" data-sec="ai"><svg class="i"><use href="#i-sparkle"/></svg><span>AI Assistant</span></button>
+            <button type="button" class="set-nav-item" data-sec="display"><svg class="i"><use href="#i-eye"/></svg><span>Interface</span></button>
+            <button type="button" class="set-nav-item" data-sec="app"><svg class="i"><use href="#i-wrench"/></svg><span>Advanced</span></button>
+          </nav>
+          <div class="set-body" id="set-body">
 
-            <section class="card settings-sec" data-sec="ai" id="sec-ai">
-              <h2 class="card-title"><svg class="i"><use href="#i-sparkle"/></svg>AI assistant</h2>
-              <div class="field-grid">
-                <div>
-                  <label class="label" for="s-ai-provider">Format</label>
-                  <select id="s-ai-provider">
-                    <option value="openai" title="OpenAI, OpenRouter, Groq, Ollama, LM Studio, llama.cpp, vLLM and others">OpenAI-compatible (most providers)</option>
-                    <option value="anthropic">Anthropic (Claude)</option>
-                  </select>
+            <section class="set-sec" data-sec="game" id="sec-game" aria-labelledby="sh-game">
+              <h2 class="set-title" id="sh-game"><svg class="i"><use href="#i-monitor"/></svg>Game</h2>
+              <div class="set-card">
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-game">Game folder</label><p class="set-desc">Where Cyberpunk 2077 is installed</p></div>
+                  <div class="set-ctl">
+                    <div class="field-row">
+                      <input id="s-game" class="path mono" type="text" spellcheck="false">
+                      <button type="button" class="btn" id="s-game-browse">Change</button>
+                      <button type="button" class="btn" id="s-game-detect">Detect</button>
+                    </div>
+                    <p class="hint" id="s-game-status"></p>
+                  </div>
                 </div>
-                <div>
-                  <label class="label" for="s-ai-model">Model</label>
-                  <input id="s-ai-model" type="text" spellcheck="false">
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><span class="set-name">Detected installs</span><p class="set-desc">Steam, GOG, Epic Games and Xbox copies on this PC</p></div>
+                  <div class="set-ctl"><div class="installs" id="s-installs"><span class="hint">Looking for Steam, GOG, Epic Games and Xbox installs…</span></div></div>
                 </div>
-              </div>
-              <label class="label" for="s-ai-endpoint">API endpoint</label>
-              <input id="s-ai-endpoint" type="text" spellcheck="false">
-              <label class="label" for="s-ai-key">API key</label>
-              <div class="field-row">
-                <input id="s-ai-key" type="password" spellcheck="false">
-                <button type="button" class="btn" id="s-ai-test">Test</button>
-              </div>
-              <label class="label" for="s-ai-timeout">Time limit per answer step</label>
-              <div class="field-row ai-timeout-row">
-                <input id="s-ai-timeout" type="number" min="1" max="60" step="1" aria-describedby="s-ai-timeout-hint">
-                <span class="hint">minutes</span>
-              </div>
-              <p class="hint" id="s-ai-timeout-hint">How long to wait for the model before giving up (1 to 60). Local models can need several minutes for a long chat; Stop ends a wait at any time.</p>
-              <label class="label" for="s-ai-context">Context window</label>
-              <div class="field-row ai-timeout-row">
-                <input id="s-ai-context" type="number" min="0" step="1024" placeholder="Automatic" aria-describedby="s-ai-context-hint">
-                <span class="hint">tokens</span>
-              </div>
-              <p class="hint" id="s-ai-context-hint">How much the model can read at once. Empty: asked of your provider (llama.cpp, llama-swap, Ollama, LM Studio, vLLM, KoboldCpp, TabbyAPI, LocalAI, Anthropic, OpenRouter, Groq and others say it; Test shows what was found). Set it if your server does not say, e.g. 262144. Near the limit, the older part of the chat is summarized (goals, findings, what was done) so the assistant carries on without forgetting.</p>
-              <p class="hint" id="s-ai-status">Your own provider and key: the assistant reads your mods and logs, searches the web, and can only change things you approve. The key is stored encrypted.</p>
-            </section>
-
-            <section class="card settings-sec" data-sec="game" id="sec-game">
-              <h2 class="card-title"><svg class="i"><use href="#i-monitor"/></svg>Game &amp; Play</h2>
-              <label class="label" for="s-game">Cyberpunk 2077 folder</label>
-              <div class="field-row">
-                <input id="s-game" class="path" type="text" spellcheck="false">
-                <button type="button" class="btn" id="s-game-browse">Browse</button>
-                <button type="button" class="btn" id="s-game-detect">Detect</button>
-              </div>
-              <p class="hint" id="s-game-status"></p>
-              <span class="label">Detected installs</span>
-              <div class="installs" id="s-installs"><span class="hint">Looking for Steam, GOG, Epic Games and Xbox installs…</span></div>
-              <label class="label" for="s-deploy">Deploy method</label>
-              <select id="s-deploy">
-                <option value="hardlink">Hardlinks — fast, no extra disk space</option>
-                <option value="copy">Copy files</option>
-              </select>
-              <p class="hint">Hardlinks need the data folder on the same drive as the game.</p>
-              <label class="label" for="s-launch">When you press Play</label>
-              <select id="s-launch">
-                <option value="direct">Start the game directly: no Steam prompt, no launcher</option>
-                <option value="steam">Start it through Steam, with the Steam overlay</option>
-              </select>
-              <p class="hint" id="s-launch-steam" hidden></p>
-              <p class="hint">REDmods are deployed first whenever they changed. Epic Games copies always start through the Epic launcher.</p>
-            </section>
-
-            <section class="card settings-sec" data-sec="downloads" id="sec-downloads">
-              <h2 class="card-title"><svg class="i"><use href="#i-download"/></svg>Downloads</h2>
-              <fieldset class="plain">
-              <legend class="label">Files ticked for you when you download a mod</legend>
-              <p class="hint">Only these categories start ticked in the file picker; tick any other file yourself. A link to one file ticks just that file.</p>
-              <div class="chips" id="s-cats">
-                <label class="chip"><input type="checkbox" value="MAIN"><span>Main</span></label>
-                <label class="chip"><input type="checkbox" value="UPDATE"><span>Update</span></label>
-                <label class="chip"><input type="checkbox" value="OPTIONAL"><span>Optional</span></label>
-                <label class="chip"><input type="checkbox" value="MISCELLANEOUS"><span>Miscellaneous</span></label>
-                <label class="chip"><input type="checkbox" value="OLD_VERSION"><span>Old versions</span></label>
-                <label class="chip"><input type="checkbox" value="ARCHIVED"><span>Archived</span></label>
-              </div>
-              </fieldset>
-              <div class="field-grid">
-                <div>
-                  <label class="label" for="s-conc">Parallel downloads</label>
-                  <input id="s-conc" type="number" min="1" max="10">
+                <div class="set-row">
+                  <div class="set-label"><label for="s-launch">When you press Play</label><p class="set-desc">REDmods are deployed first whenever they changed. Epic Games copies always start through the Epic launcher.</p><p class="hint" id="s-launch-steam" hidden></p></div>
+                  <div class="set-ctl">
+                    <select id="s-launch">
+                      <option value="direct">Start the game directly</option>
+                      <option value="steam">Start it through Steam (with the overlay)</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label class="label" for="s-auto">When a download finishes</label>
-                  <select id="s-auto">
-                    <option value="main">Install Main files</option>
-                    <option value="all">Install every file</option>
-                    <option value="off">Don't install</option>
-                  </select>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-deploy">Deploy method</label><p class="set-desc">Hardlinks need the data folder on the same drive as the game.</p></div>
+                  <div class="set-ctl">
+                    <select id="s-deploy">
+                      <option value="hardlink">Hardlinks: fast, no extra disk space</option>
+                      <option value="copy">Copy files</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-              <label class="check"><input type="checkbox" id="s-autoenable"><span>Enable mods right after an automatic install</span></label>
-              <label class="check"><input type="checkbox" id="s-deps"><span>Download, install and enable required mods (and what they require)</span></label>
-              <label class="check"><input type="checkbox" id="s-nxm"><span>Handle Nexus "Mod Manager Download" buttons<span class="check-sub">Clicking one on nexusmods.com starts the download here. Applies at once; turning it off gives the links back to the program that had them.</span><span class="check-sub nxm-state" id="s-nxm-state"></span></span></label>
-              <label class="check"><input type="checkbox" id="s-adblock"><span>Block ads and trackers on Nexus pages in Browse<span class="check-sub">Uses the same kind of filter lists as Brave and uBlock Origin. Only the pages shown inside this app are affected.</span></span></label>
             </section>
 
-            <section class="card settings-sec" data-sec="vortex" id="sec-vortex">
-              <h2 class="card-title"><svg class="i"><use href="#i-vortex"/></svg>Vortex</h2>
-              <div id="s-vx-block">
-              <div class="field-row vx-move-row">
-                <span class="vx-move-text" id="s-vx-text"></span>
-                <button type="button" class="btn" id="s-vx-move"><svg class="i"><use href="#i-vortex"/></svg><span>Move my Vortex mods here</span></button>
-              </div>
-              <label class="label" for="s-vx-auto">Mods added in Vortex</label>
-              <select id="s-vx-auto">
-                <option value="on">Move them into this app automatically (while Vortex is closed)</option>
-                <option value="ask">Ask me</option>
-                <option value="off">Leave them in Vortex</option>
-              </select>
-              <p class="hint">Profiles and share codes cover this app's mods only. Moving switches them off in Vortex (it keeps them) and links their files: no downloads.</p>
+            <section class="set-sec" data-sec="nexus" id="sec-nexus" aria-labelledby="sh-nexus">
+              <h2 class="set-title" id="sh-nexus"><svg class="i"><use href="#i-globe"/></svg>Nexus Mods</h2>
+              <div class="set-card">
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-apikey">Personal API key</label><p class="set-desc">From <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">nexusmods.com → API keys</a>. Stored encrypted and never shown again.</p></div>
+                  <div class="set-ctl">
+                    <div class="field-row">
+                      <input id="s-apikey" type="password" spellcheck="false">
+                      <button type="button" class="btn" id="s-validate">Validate</button>
+                    </div>
+                    <p class="hint" id="s-key-status"></p>
+                  </div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Handle Mod Manager download links</span><span class="set-desc">The "Mod Manager Download" button on nexusmods.com sends files here. Applies at once; turning it off gives the links back to the program that had them.</span><span class="set-desc nxm-state" id="s-nxm-state"></span></span>
+                  <input type="checkbox" class="toggle" id="s-nxm">
+                </label>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Block ads and trackers on Nexus pages in Browse</span><span class="set-desc">The same kind of filter lists as Brave and uBlock Origin. Only the pages shown inside this app are affected.</span></span>
+                  <input type="checkbox" class="toggle" id="s-adblock">
+                </label>
               </div>
             </section>
 
-            <section class="card settings-sec" data-sec="display" id="sec-display">
-              <h2 class="card-title"><svg class="i"><use href="#i-eye"/></svg>Display</h2>
-              <label class="label" for="s-ui-scale">Interface scale</label>
-              <select id="s-ui-scale" aria-describedby="s-ui-scale-now s-ui-scale-hint">
-                <option value="0">Automatic: follow Windows</option>
-                <option value="75">75%</option>
-                <option value="90">90%</option>
-                <option value="100">100%</option>
-                <option value="110">110%</option>
-                <option value="125">125%</option>
-                <option value="150">150%</option>
-                <option value="175">175%</option>
-                <option value="200">200%</option>
-                <option value="225">225%</option>
-                <option value="250">250%</option>
-              </select>
-              <p class="hint scale-now" id="s-ui-scale-now"></p>
-              <p class="hint" id="s-ui-scale-hint">The size of text and everything else in the app. Automatic uses the scale Windows sets for your display (Settings → System → Display → Scale). A percentage is used instead of it, on every display. Ctrl + and Ctrl − change it at any time; Ctrl 0 goes back to Automatic.</p>
+            <section class="set-sec" data-sec="downloads" id="sec-downloads" aria-labelledby="sh-downloads">
+              <h2 class="set-title" id="sh-downloads"><svg class="i"><use href="#i-download"/></svg>Downloads</h2>
+              <div class="set-card">
+                <fieldset class="set-row set-row-wide plain">
+                  <legend class="sr-only">Files ticked for you when you download a mod</legend>
+                  <div class="set-label"><span class="set-name">Files ticked for you</span><p class="set-desc">Only these categories start ticked in the file picker. A link to one file ticks just that file.</p></div>
+                  <div class="set-ctl">
+                    <div class="chips" id="s-cats">
+                      <label class="chip"><input type="checkbox" value="MAIN"><span>Main</span></label>
+                      <label class="chip"><input type="checkbox" value="UPDATE"><span>Update</span></label>
+                      <label class="chip"><input type="checkbox" value="OPTIONAL"><span>Optional</span></label>
+                      <label class="chip"><input type="checkbox" value="MISCELLANEOUS"><span>Miscellaneous</span></label>
+                      <label class="chip"><input type="checkbox" value="OLD_VERSION"><span>Old versions</span></label>
+                      <label class="chip"><input type="checkbox" value="ARCHIVED"><span>Archived</span></label>
+                    </div>
+                  </div>
+                </fieldset>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-conc">Parallel downloads</label><p class="set-desc">How many files download at once (1 to 10)</p></div>
+                  <div class="set-ctl set-ctl-sm"><input id="s-conc" type="number" min="1" max="10"></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-auto">When a download finishes</label></div>
+                  <div class="set-ctl">
+                    <select id="s-auto">
+                      <option value="main">Install Main files</option>
+                      <option value="all">Install every file</option>
+                      <option value="off">Don't install</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Enable mods right after an automatic install</span></span>
+                  <input type="checkbox" class="toggle" id="s-autoenable">
+                </label>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Get required mods too</span><span class="set-desc">Download, install and enable the mods a mod needs (and what they need)</span></span>
+                  <input type="checkbox" class="toggle" id="s-deps">
+                </label>
+              </div>
             </section>
 
-            <section class="card settings-sec" data-sec="app" id="sec-app">
-              <h2 class="card-title"><svg class="i"><use href="#i-folder"/></svg>App &amp; folders</h2>
-              <label class="label" for="s-data">Data folder (downloads, staging, backups)</label>
-              <div class="field-row">
-                <input id="s-data" class="path" type="text" spellcheck="false">
-                <button type="button" class="btn" id="s-data-browse">Browse</button>
+            <section class="set-sec" data-sec="vortex" id="sec-vortex" aria-labelledby="sh-vortex">
+              <h2 class="set-title" id="sh-vortex"><svg class="i"><use href="#i-vortex"/></svg>Vortex</h2>
+              <div class="set-card" id="s-vx-block">
+                <div class="set-row">
+                  <div class="set-label"><span class="set-name">Vortex mods</span><p class="set-desc" id="s-vx-text"></p></div>
+                  <div class="set-ctl set-ctl-auto"><button type="button" class="btn" id="s-vx-move"><svg class="i"><use href="#i-vortex"/></svg><span>Move my Vortex mods here</span></button></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-vx-auto">Mods added in Vortex</label><p class="set-desc">Profiles and share codes cover this app's mods only. Moving switches them off in Vortex (it keeps them) and links their files: no downloads.</p></div>
+                  <div class="set-ctl">
+                    <select id="s-vx-auto">
+                      <option value="on">Move them here automatically (while Vortex is closed)</option>
+                      <option value="ask">Ask me</option>
+                      <option value="off">Leave them in Vortex</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <p class="hint">Takes effect after a restart. Existing downloads are not moved.</p>
-              <label class="label" for="s-7z">7-Zip program (7z.exe)</label>
-              <div class="field-row">
-                <input id="s-7z" class="path" type="text" spellcheck="false">
-                <button type="button" class="btn" id="s-7z-browse">Browse</button>
+            </section>
+
+            <section class="set-sec" data-sec="ai" id="sec-ai" aria-labelledby="sh-ai">
+              <h2 class="set-title" id="sh-ai"><svg class="i"><use href="#i-sparkle"/></svg>AI Assistant</h2>
+              <div class="set-card">
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ai-provider">Format</label><p class="set-desc">OpenAI-compatible covers OpenAI, OpenRouter, Groq, Ollama, LM Studio, llama.cpp, vLLM and others</p></div>
+                  <div class="set-ctl">
+                    <select id="s-ai-provider">
+                      <option value="openai">OpenAI-compatible (most providers)</option>
+                      <option value="anthropic">Anthropic (Claude)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ai-model">Model</label></div>
+                  <div class="set-ctl"><input id="s-ai-model" class="mono" type="text" spellcheck="false"></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ai-endpoint">Endpoint</label></div>
+                  <div class="set-ctl"><input id="s-ai-endpoint" class="mono" type="text" spellcheck="false"></div>
+                </div>
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-ai-key">API key</label><p class="set-desc">Stored encrypted</p></div>
+                  <div class="set-ctl">
+                    <div class="field-row">
+                      <input id="s-ai-key" type="password" spellcheck="false">
+                      <button type="button" class="btn" id="s-ai-test">Test</button>
+                    </div>
+                    <p class="hint" id="s-ai-status">Your own provider and key: the assistant reads your mods and logs, searches the web, and can only change things you approve.</p>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ai-timeout">Time limit per answer step</label><p class="set-desc" id="s-ai-timeout-hint">How long to wait for the model before giving up (1 to 60). Local models can need several minutes for a long chat; Stop ends a wait at any time.</p></div>
+                  <div class="set-ctl set-ctl-sm"><div class="field-row unit-row"><input id="s-ai-timeout" type="number" min="1" max="60" step="1" aria-describedby="s-ai-timeout-hint"><span class="unit">minutes</span></div></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ai-context">Context window</label><p class="set-desc" id="s-ai-context-hint">How much the model can read at once. Empty: asked of your provider (Test shows what was found). Set it if your server does not say, e.g. 262144. Near the limit, the older part of the chat is summarized so the assistant carries on without forgetting.</p></div>
+                  <div class="set-ctl set-ctl-sm"><div class="field-row unit-row"><input id="s-ai-context" type="number" min="0" step="1024" placeholder="Automatic" aria-describedby="s-ai-context-hint"><span class="unit">tokens</span></div></div>
+                </div>
+                <div class="set-row set-toggle set-locked" title="Always on: the assistant never changes a file without your approval">
+                  <span class="set-label"><span class="set-name"><svg class="i"><use href="#i-shield"/></svg>Ask before changing files</span><span class="set-desc">Always on</span></span>
+                  <input type="checkbox" class="toggle" checked disabled aria-label="Ask before changing files (always on)">
+                </div>
               </div>
-              <span class="label">Open folder</span>
-              <div class="folder-links">
-                <button type="button" class="btn btn-sm" data-open="game">Game</button>
-                <button type="button" class="btn btn-sm" data-open="downloads">Downloads</button>
-                <button type="button" class="btn btn-sm" data-open="staging">Staging</button>
-                <button type="button" class="btn btn-sm" data-open="backups">Backups</button>
-                <button type="button" class="btn btn-sm" data-open="logs">Logs</button>
+            </section>
+
+            <section class="set-sec" data-sec="display" id="sec-display" aria-labelledby="sh-display">
+              <h2 class="set-title" id="sh-display"><svg class="i"><use href="#i-eye"/></svg>Interface</h2>
+              <div class="set-card">
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ui-scale">Interface scale</label><p class="set-desc" id="s-ui-scale-hint">Automatic uses the scale Windows sets for your display. Ctrl + and Ctrl − change it at any time; Ctrl 0 goes back to Automatic.</p><p class="hint scale-now" id="s-ui-scale-now"></p></div>
+                  <div class="set-ctl">
+                    <select id="s-ui-scale" aria-describedby="s-ui-scale-now s-ui-scale-hint">
+                      <option value="0">Automatic: follow Windows</option>
+                      <option value="75">75%</option>
+                      <option value="90">90%</option>
+                      <option value="100">100%</option>
+                      <option value="110">110%</option>
+                      <option value="125">125%</option>
+                      <option value="150">150%</option>
+                      <option value="175">175%</option>
+                      <option value="200">200%</option>
+                      <option value="225">225%</option>
+                      <option value="250">250%</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Start with the sidebar collapsed</span><span class="set-desc">The button next to the app name, or Ctrl+B, folds it at any time</span></span>
+                  <input type="checkbox" class="toggle" id="s-side-collapsed">
+                </label>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Show the Activity line at the bottom</span><span class="set-desc">This app's own messages: downloads, installs, errors. Errors still show as a notice when it is hidden.</span></span>
+                  <input type="checkbox" class="toggle" id="s-activity-line">
+                </label>
               </div>
-              <label class="label" for="s-plays-keep">Game log: plays to keep</label>
-              <div class="field-row ai-timeout-row">
-                <input id="s-plays-keep" type="number" min="1" max="500" step="1" aria-describedby="s-plays-keep-hint">
-                <span class="hint">plays</span>
+            </section>
+
+            <section class="set-sec" data-sec="app" id="sec-app" aria-labelledby="sh-app">
+              <h2 class="set-title" id="sh-app"><svg class="i"><use href="#i-wrench"/></svg>Advanced</h2>
+              <div class="set-card">
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-data">Data folder</label><p class="set-desc">Downloads, staging and backups. Takes effect after a restart; existing downloads are not moved.</p></div>
+                  <div class="set-ctl"><div class="field-row"><input id="s-data" class="path mono" type="text" spellcheck="false"><button type="button" class="btn" id="s-data-browse">Change</button></div></div>
+                </div>
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-7z">7-Zip program</label><p class="set-desc">7z.exe, used for .7z and .rar archives</p></div>
+                  <div class="set-ctl"><div class="field-row"><input id="s-7z" class="path mono" type="text" spellcheck="false"><button type="button" class="btn" id="s-7z-browse">Change</button></div></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><span class="set-name">Open folder</span></div>
+                  <div class="set-ctl set-ctl-auto folder-links">
+                    <button type="button" class="btn btn-sm" data-open="game">Game</button>
+                    <button type="button" class="btn btn-sm" data-open="downloads">Downloads</button>
+                    <button type="button" class="btn btn-sm" data-open="staging">Staging</button>
+                    <button type="button" class="btn btn-sm" data-open="backups">Backups</button>
+                    <button type="button" class="btn btn-sm" data-open="logs">Logs</button>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-plays-keep">Game log: plays to keep</label><p class="set-desc" id="s-plays-keep-hint">Each launch of the game keeps its own logs (1 to 500). Older plays are removed once there are more than this.</p></div>
+                  <div class="set-ctl set-ctl-sm"><div class="field-row unit-row"><input id="s-plays-keep" type="number" min="1" max="500" step="1" aria-describedby="s-plays-keep-hint"><span class="unit">plays</span></div></div>
+                </div>
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><span class="set-name" id="s-upd-label">App updates</span><p class="set-desc" id="s-upd-state"></p></div>
+                  <div class="set-ctl">
+                    <div class="field-row upd-row" role="group" aria-labelledby="s-upd-label">
+                      <span class="unit">Check every</span>
+                      <input type="number" id="s-upd-every" min="1" max="999" step="1" aria-label="Check for updates every">
+                      <select id="s-upd-unit" aria-label="Unit">
+                        <option value="minutes">minutes</option>
+                        <option value="hours">hours</option>
+                        <option value="days">days</option>
+                      </select>
+                      <button type="button" class="btn" id="s-upd-check">Check now</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-upd-mode">New versions</label></div>
+                  <div class="set-ctl">
+                    <select id="s-upd-mode">
+                      <option value="auto">Install automatically (when idle, never while you play)</option>
+                      <option value="ask">Download, then ask before restarting</option>
+                      <option value="off">Off: don't check (Check now still works)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <p class="hint" id="s-plays-keep-hint">Each launch of the game keeps its own logs (1 to 500). Older plays are removed once there are more than this.</p>
-              <span class="label" id="s-upd-label">App updates</span>
-              <div class="field-row upd-row" role="group" aria-labelledby="s-upd-label">
-                <span class="upd-text">Check every</span>
-                <input type="number" id="s-upd-every" min="1" max="999" step="1" aria-label="Check for updates every">
-                <select id="s-upd-unit" aria-label="Unit">
-                  <option value="minutes">minutes</option>
-                  <option value="hours">hours</option>
-                  <option value="days">days</option>
-                </select>
-                <button type="button" class="btn" id="s-upd-check">Check now</button>
-              </div>
-              <label class="label" for="s-upd-mode">New versions</label>
-              <select id="s-upd-mode">
-                <option value="auto">Install automatically (restarts when idle, never while you play)</option>
-                <option value="ask">Download, then ask before restarting</option>
-                <option value="off">Off: don't check (Check now still works)</option>
-              </select>
-              <p class="hint" id="s-upd-state"></p>
             </section>
           </div>
 
@@ -810,26 +900,32 @@
     <!-- CONSOLE -->
     <section class="console" id="console" aria-label="Activity">
       <div class="console-resize" id="console-resize" title="Drag to resize"></div>
-      <div class="console-head">
-        <button class="console-toggle" id="console-toggle" aria-expanded="false" aria-controls="console-body" title="This app's own messages: downloads, installs, errors">
-          <svg class="i chevron"><use href="#i-chevron"/></svg>
-          <svg class="i"><use href="#i-terminal"/></svg>
-          <span>Activity</span>
-        </button>
-        <button class="badge badge-err" id="console-errs" hidden title="Show errors"></button>
-        <span class="console-last" id="console-last"></span>
-        <div class="console-tools">
-          <div class="seg seg-sm" id="console-filter" role="group" aria-label="Console filter">
+      <div class="console-drawer">
+        <div class="console-dhead">
+          <span class="console-dtitle">Manager activity</span>
+          <div class="seg seg-sm" id="console-filter" role="group" aria-label="Activity filter">
             <button class="seg-btn active" data-f="all" aria-pressed="true">All</button>
             <button class="seg-btn" data-f="warn">Warnings</button>
             <button class="seg-btn" data-f="error">Errors</button>
           </div>
-          <button class="btn btn-sm btn-icon" id="console-export" title="Export a JSON report: every error and warning, and every mod" aria-label="Export report"><svg class="i"><use href="#i-share"/></svg></button>
-          <button class="btn btn-sm btn-icon" id="console-copy" title="Copy" aria-label="Copy activity log"><svg class="i"><use href="#i-copy"/></svg></button>
-          <button class="btn btn-sm btn-icon" id="console-clear" title="Clear" aria-label="Clear activity log"><svg class="i"><use href="#i-trash"/></svg></button>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-icon btn-ghost" id="console-export" title="Export a JSON report: every error and warning, and every mod" aria-label="Export report"><svg class="i"><use href="#i-share"/></svg></button>
+          <button class="btn btn-sm btn-icon btn-ghost" id="console-copy" title="Copy" aria-label="Copy activity log"><svg class="i"><use href="#i-copy"/></svg></button>
+          <button class="btn btn-sm btn-icon btn-ghost" id="console-clear" title="Clear" aria-label="Clear activity log"><svg class="i"><use href="#i-trash"/></svg></button>
         </div>
+        <div class="console-body" id="console-body" role="log" aria-live="polite"></div>
       </div>
-      <div class="console-body" id="console-body" role="log" aria-live="polite"></div>
+      <div class="console-head">
+        <button class="console-toggle" id="console-toggle" aria-expanded="false" aria-controls="console-body" title="This app's own messages: downloads, installs, errors">
+          <svg class="i"><use href="#i-terminal"/></svg>
+          <span class="console-title">Activity</span>
+          <span class="dot" id="console-dot" aria-hidden="true"></span>
+          <span class="console-last" id="console-last"></span>
+          <span class="console-time" id="console-time"></span>
+          <svg class="i chevron"><use href="#i-chevron"/></svg>
+        </button>
+        <button class="badge badge-err" id="console-errs" hidden title="Show errors"></button>
+      </div>
     </section>
   </div>
 

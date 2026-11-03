@@ -7,7 +7,7 @@
  * The game loads archive/pc/mod/*.archive top to bottom; when two change the same thing, the
  * higher one wins. Auto-sort puts mods above what they need; dragging (or the arrows) overrides.
  */
-const lo = { view: null, dragging: null, sig: '' };
+const lo = { view: null, dragging: null, sig: '', q: '' };
 
 async function loadLoadOrder() {
   const r = await run(api.loadOrder());
@@ -35,11 +35,14 @@ function renderLoadOrder() {
   const v = lo.view;
   if (!v) return;
   $('#lo-status').textContent = !v.archives.length ? 'No archive mods in archive\\pc\\mod.'
-    : v.custom ? `Custom order (modlist.txt) · ${plural(v.archives.length, 'archive')}` : `The game's default: alphabetical by file name · ${plural(v.archives.length, 'archive')}`;
+    : v.custom ? `${plural(v.archives.length, 'archive')} · drag rows to reorder · saved to modlist.txt` : `${plural(v.archives.length, 'archive')} · the game's default: alphabetical · drag rows to reorder`;
   $('#lo-reset').disabled = !v.custom;
   $('#lo-auto').disabled = !v.archives.length;
   const SRC = { app: '', vortex: 'Vortex', other: 'Not from a mod manager' };
-  $('#lo-list').replaceChildren(...v.archives.map((a, i) => {
+  // A search shows the matching rows at their real places (their numbers stay).
+  const q = lo.q;
+  const shown = v.archives.map((a, i) => [a, i]).filter(([a]) => !q || `${a.name} ${a.mod || ''}`.toLowerCase().includes(q));
+  $('#lo-list').replaceChildren(...(shown.length ? [] : [h('p', { class: 'empty-text lo-none' }, q ? 'No archives match.' : 'No archive mods.')]), ...shown.map(([a, i]) => {
     const needs = a.modId && v.needs[a.modId];
     const row = h('div', {
       class: 'lo-row', draggable: 'true', tabindex: '0', role: 'listitem', dataset: { key: a.name },
@@ -100,6 +103,7 @@ $('#lo-reset').addEventListener('click', async () => {
   if (r) { lo.view = r; renderLoadOrder(); toast('Back to the game\'s default order (alphabetical)', 'success'); }
 });
 
+$('#lo-search').addEventListener('input', ev => { lo.q = ev.target.value.trim().toLowerCase(); renderLoadOrder(); });
 pageHooks.loadorder = () => loadLoadOrder();
 // Installs and removals change the archives: refresh while the page is open.
 snapshotHooks.push(snap => {

@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, askAi, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus, confirmBox, modal, $$ */
+/* global renderProfilesPage, store, api, $, h, askAi, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus, confirmBox, modal, $$ */
 
 // ---------------------------------------------------------------- game log page
 
@@ -28,6 +28,7 @@ const gl = {
   follow: true, // show Live while the game runs and Latest after; false once an older play is picked
   liveFromId: 0, // Live shows this play only: lines from its "started" line on (0: the app opened mid-play, or no game)
   plays: [],
+  profile: store.get('gl.profile', ''), // plays of this profile only ('' = every profile)
 };
 
 /** The lines on show: a past play's, or the live ones. */
@@ -308,7 +309,22 @@ function renderStats() {
   nav.title = navErrs ? `${plural(navErrs, 'error')} in ${gl.status.running ? 'this play' : latest ? 'the latest play' : 'the game logs'}` : '';
   const nProb = gl.play ? new Set(gl.play.entries.filter(isProblem).map(problemKey)).size : live.problems;
   $('#gl-prob-count').textContent = nProb ? String(nProb) : '';
+  paintLogFacts(errs, warns);
 }
+
+/** Under the title: how the play went, its errors and warnings, its logs and its profile. */
+function paintLogFacts(errs, warns) {
+  const p = gl.play;
+  const s = gl.status;
+  const first = p
+    ? (p.outcome === 'crashed' ? h('span', { class: 'fact-bad' }, `Crashed after ${playLength(p)}`) : `${PLAY_HOW[p.outcome] || 'Ended'} after ${playLength(p)}`)
+    : s.running ? h('span', { class: 'fact-ok' }, s.since ? `Running for ${playLength({ start: s.since })}` : 'Running') : 'Not running';
+  const files = p ? p.files.length : s.followed ?? gl.sources.size;
+  const prof = p ? p.profile?.name : s.running ? activeProfileName() : '';
+  const parts = [first, plural(errs || 0, 'error'), plural(warns || 0, 'warning'), plural(files || 0, 'log file'), prof ? `Profile: ${prof}` : ''].filter(Boolean);
+  $('#gl-sub').replaceChildren(...parts.flatMap((x, i) => (i ? [' · ', x] : [x])));
+}
+const activeProfileName = () => state.snap.profiles?.list.find(x => x.id === state.snap.profiles.active)?.name || '';
 
 function renderGameStatus() {
   const s = gl.status;
@@ -319,12 +335,14 @@ function renderGameStatus() {
     $('#gl-game-sub').textContent = `Played ${fmtWhen(p.start)} · ${playLength(p)}`;
     $('#gl-stat-game').classList.remove('is-live');
     $('#gl-srcs').textContent = p.files.length;
+    renderStats();
     return;
   }
   $('#gl-game').textContent = s.running ? 'Running' : 'Not running';
   $('#gl-game-sub').textContent = s.running && s.since ? `Cyberpunk 2077 · since ${fmtTime(s.since)}` : 'Cyberpunk 2077';
   $('#gl-stat-game').classList.toggle('is-live', !!s.running);
   $('#gl-srcs').textContent = s.followed ?? 0;
+  renderStats();
 }
 
 function syncSourceOptions(force) {
@@ -433,7 +451,9 @@ function updatePauseLabel() {
   const label = gl.paused ? `Resume${gl.held ? ` (${gl.held} new)` : ''}` : 'Pause';
   btn.setAttribute('aria-pressed', String(gl.paused));
   btn.setAttribute('aria-label', gl.paused ? 'Resume live updates' : 'Pause live updates');
-  btn.replaceChildren(icon(gl.paused ? 'play' : 'pause'), h('span', {}, label));
+  // Live: a green dot and Pause; paused: Resume, with how many lines wait.
+  btn.classList.toggle('is-live', !gl.paused);
+  btn.replaceChildren(...(gl.paused ? [icon('play'), h('span', {}, label)] : [h('span', { class: 'dot ok', 'aria-hidden': 'true' }), h('span', {}, 'Live'), icon('pause')]));
 }
 
 // ---------------------------------------------------------------- controls
@@ -449,6 +469,26 @@ const playLength = p => {
   return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
 };
 const playCounts = p => [plural(p.errors || 0, 'error'), plural(p.warns || 0, 'warning')].join(' · ');
+/** The plays the picker lists: every one, or one profile's (plays from before profiles were recorded have none). */
+const profilePlays = () => (gl.profile ? gl.plays.filter(p => p.profile?.id === gl.profile) : gl.plays);
+/** The profiles plays were made with, with how many plays each (under the name each has now). */
+function playProfiles() {
+  const out = new Map();
+  for (const p of gl.plays) {
+    if (!p.profile?.id) continue;
+    const x = out.get(p.profile.id) || { id: p.profile.id, name: p.profile.name, n: 0 };
+    x.n++;
+    out.set(p.profile.id, x);
+  }
+  for (const x of out.values()) x.name = state.snap.profiles?.list.find(q => q.id === x.id)?.name || x.name;
+  return [...out.values()];
+}
+function setPlayProfile(id) {
+  gl.profile = id;
+  store.set('gl.profile', id);
+  paintPlayMenu();
+  $('#gl-play-menu .play-prof-chip[aria-pressed="true"]')?.focus();
+}
 
 /** What the picker shows by itself: Live while the game runs, else the latest play ('' = the live logs). */
 const defaultPlay = () => (gl.status.running ? '' : gl.plays[0]?.id || '');
@@ -466,6 +506,7 @@ async function loadPlays() {
   renderStats();
   paintPlayButton();
   if (!$('#gl-play-menu').hidden) paintPlayMenu();
+  if ($('#page-profiles').classList.contains('active')) renderProfilesPage(); // its last played dates
 }
 
 /** Pick from the menu: the top entry follows the game again; an older play stays put. */
@@ -476,7 +517,7 @@ function choosePlay(id) {
 
 function paintPlayButton() {
   const p = gl.play;
-  const label = !p ? (gl.status.running ? 'Live' : 'Latest') : isLatest(p) ? `Latest · ${fmtWhen(p.start)}` : fmtWhen(p.start);
+  const label = !p ? (gl.status.running ? 'This play' : 'Latest') : isLatest(p) ? `Latest · ${fmtWhen(p.start)}` : fmtWhen(p.start);
   $('#gl-play-label').textContent = label;
   $('#gl-play-btn').classList.toggle('crashed', p?.outcome === 'crashed');
   $('#gl-play-btn').classList.toggle('live', !p && gl.status.running);
@@ -494,14 +535,29 @@ function paintPlayMenu() {
   h('span', { class: 'play-opt-main' }, h('span', { class: 'play-opt-title' }, label), h('span', { class: 'play-opt-sub' }, sub)),
   tag);
   const how = p => h('span', { class: `tag ${p.outcome === 'crashed' ? 'tag-err' : p.closing ? 'tag-warn' : ''}` }, p.closing ? 'Saving…' : PLAY_HOW[p.outcome] || 'Ended');
-  const playOpt = (p, label) => opt(p.id, label, `${label === 'Latest' ? `${fmtWhen(p.start)} · ${playLength(p)}` : `${playLength(p)} · ${playCounts(p)}`}`, how(p), `${p.outcome === 'crashed' ? 'crashed' : ''}${label === 'Latest' ? ' top' : ''}`);
+  const nameOf = p => state.snap.profiles?.list.find(q => q.id === p.profile.id)?.name || p.profile.name;
+  const profOf = p => (!gl.profile && p.profile?.name ? ` · ${nameOf(p)}` : '');
+  const playOpt = (p, label) => opt(p.id, label, `${label === 'Latest' ? `${fmtWhen(p.start)} · ${playLength(p)}` : `${playLength(p)} · ${playCounts(p)}`}${profOf(p)}`, how(p), `${p.outcome === 'crashed' ? 'crashed' : ''}${label === 'Latest' ? ' top' : ''}`);
   const running = gl.status.running;
-  const top = running ? opt('', 'Live', `Playing since ${fmtTime(gl.status.since)}`, h('span', { class: 'tag tag-ok' }, 'Running'), 'live running')
-    : gl.plays[0] ? playOpt(gl.plays[0], 'Latest') : opt('', 'Latest', 'Every log since the app started', null, 'live');
-  const earlier = running ? gl.plays : gl.plays.slice(1);
+  const list = profilePlays();
+  const latest = gl.plays[0];
+  const top = running ? opt('', 'Live', `Playing since ${fmtTime(gl.status.since)}${activeProfileName() ? ` · ${activeProfileName()}` : ''}`, h('span', { class: 'tag tag-ok' }, 'Running'), 'live running')
+    : !latest ? opt('', 'Latest', 'Every log since the app started', null, 'live')
+      : list.includes(latest) ? playOpt(latest, 'Latest') : null;
+  const earlier = list.filter(p => running || p !== latest);
+  // Per profile: which profile's plays are listed.
+  const profs = playProfiles();
+  const chip = (id, label, n) => h('button', {
+    class: 'play-prof-chip', type: 'button', 'aria-pressed': String(gl.profile === id),
+    title: id ? `Only the plays made with the profile "${label}"` : 'The plays of every profile', onclick: () => setPlayProfile(id),
+  }, h('span', { class: 'play-prof-name' }, label), h('span', { class: 'play-prof-n' }, String(n)));
+  const filter = profs.length > 1 || gl.profile ? h('div', { class: 'play-prof-row', role: 'group', 'aria-label': 'Show the plays of' },
+    chip('', 'All profiles', gl.plays.length), ...profs.map(x => chip(x.id, x.name, x.n))) : null;
+  const profName = profs.find(x => x.id === gl.profile)?.name || 'this profile';
   $('#gl-play-menu').replaceChildren(...[ // (null would show as the word "null")
+    filter,
     top,
-    h('div', { class: 'play-menu-sep' }, earlier.length ? `Earlier plays · ${earlier.length}` : 'Earlier plays appear here once the game exits'),
+    h('div', { class: 'play-menu-sep' }, earlier.length ? `${gl.profile ? `Plays with ${profName}` : 'Earlier plays'} · ${earlier.length}` : gl.profile ? `No ${top ? 'other ' : ''}plays with ${profName}` : 'Earlier plays appear here once the game exits'),
     ...earlier.map(p => playOpt(p, fmtWhen(p.start))),
     gl.plays.length ? h('button', { class: 'play-menu-foot', type: 'button', onclick: () => { closePlayMenu(); deletePlaysDialog(); } }, icon('trash'), h('span', {}, 'Delete plays…')) : null,
   ].filter(Boolean));
@@ -522,7 +578,7 @@ function closePlayMenu(refocus) {
 
 $('#gl-play-btn').addEventListener('click', () => ($('#gl-play-menu').hidden ? openPlayMenu() : closePlayMenu()));
 $('#gl-play-menu').addEventListener('keydown', ev => {
-  const opts = [...$$('#gl-play-menu .play-opt, #gl-play-menu .play-menu-foot')];
+  const opts = [...$('#gl-play-menu .play-prof-chip, #gl-play-menu .play-opt, #gl-play-menu .play-menu-foot')];
   const i = opts.indexOf(document.activeElement);
   if (ev.key === 'ArrowDown') { ev.preventDefault(); opts[Math.min(i + 1, opts.length - 1)]?.focus(); }
   if (ev.key === 'ArrowUp') { ev.preventDefault(); opts[Math.max(i - 1, 0)]?.focus(); }
@@ -545,7 +601,7 @@ async function showPlay(id) {
   $('#gl-play-title').textContent = isLatest(p) ? `Latest play · ${fmtWhen(p.start)}` : `The play of ${fmtWhen(p.start)}`;
   $('#gl-play-live').textContent = gl.status.running ? 'Back to live' : 'Back to latest';
   $('#gl-play-live').hidden = isLatest(p);
-  $('#gl-play-meta').textContent = [playLength(p), PLAY_HOW[p.outcome] || 'Ended', playCounts(p), `${plural(p.files.length, 'log file')} saved`].join('  ·  ');
+  $('#gl-play-meta').textContent = [playLength(p), PLAY_HOW[p.outcome] || 'Ended', playCounts(p), `${plural(p.files.length, 'log file')} saved`, p.profile?.name ? `Profile: ${p.profile.name}` : ''].filter(Boolean).join('  ·  ');
   $('#gl-play-meta').title = p.note || (p.joinedLate ? 'The app opened while the game was already running: lines from before that are only in the saved files (Sources).' : '');
   for (const sel of ['#gl-follow', '#gl-clear']) $(sel).disabled = true;
   if (gl.tab === 'manager') gl.tab = 'timeline';
@@ -590,7 +646,7 @@ function deletePlaysDialog(preset = []) {
       h('input', { type: 'checkbox', checked: picked.has(p.id), 'aria-label': `The play of ${fmtWhen(p.start)}`, onchange: ev => { if (ev.target.checked) picked.add(p.id); else picked.delete(p.id); paint(); } }),
       h('span', { class: 'pick-main' },
         h('span', { class: 'pick-name' }, h('span', { class: 'name' }, fmtWhen(p.start)), h('span', { class: `tag ${p.outcome === 'crashed' ? 'tag-err' : ''}` }, PLAY_HOW[p.outcome] || 'Ended')),
-        h('span', { class: 'pick-desc' }, `${playLength(p)} · ${playCounts(p)} · ${plural(p.files || 0, 'log file')} saved`)))));
+        h('span', { class: 'pick-desc' }, [playLength(p), playCounts(p), `${plural(p.files || 0, 'log file')} saved`, p.profile?.name || ''].filter(Boolean).join(' · '))))));
     all.textContent = picked.size && picked.size === gl.plays.length ? 'Select none' : 'Select all';
   };
   paint();
@@ -835,6 +891,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   updatePauseLabel();
   updateModProblems();
   if ($('#page-gamelog').classList.contains('active')) renderView();
+  loadPlays(); // the sidebar count, and each profile's last play
 });
 
 setInterval(() => {
