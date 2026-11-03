@@ -52,11 +52,15 @@ const store = {
 };
 
 function toast(msg, kind = 'info', action = null) {
-  const name = kind === 'error' ? 'alert' : kind === 'success' ? 'check' : 'terminal';
+  const name = kind === 'error' || kind === 'warn' ? 'alert' : kind === 'success' ? 'check' : 'terminal';
   const el = h('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status' }, icon(name), h('span', { class: 'toast-text' }, msg),
     action ? h('button', { class: 'btn btn-sm', onclick: () => { action.fn(); el.remove(); } }, action.label) : null);
   $('#toasts').append(el);
-  setTimeout(() => el.remove(), action ? 9000 : kind === 'error' ? 7000 : 3500);
+  // One with a button stays longer, and never goes while the pointer is on it.
+  const life = action ? 15000 : kind === 'error' ? 7000 : 3500;
+  let timer = setTimeout(() => el.remove(), life);
+  el.addEventListener('mouseenter', () => clearTimeout(timer));
+  el.addEventListener('mouseleave', () => { timer = setTimeout(() => el.remove(), 4000); });
 }
 
 /** Call the API; errors are already in the activity log, so just toast them. */

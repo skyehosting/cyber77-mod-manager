@@ -1081,6 +1081,7 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .toast .btn { flex: none; align-self: center; }
 .toast.success .i { color: var(--ok); }
 .toast.error .i { color: var(--err); }
+.toast.warn .i { color: var(--warn); }
 
 /* ================================================================== Play */
 .play-btn {

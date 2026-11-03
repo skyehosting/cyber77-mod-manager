@@ -333,7 +333,8 @@ const profGuard = (fn, workingLabel = '') => async ev => {
   if (prof.busy) return;
   prof.busy = true;
   const btn = ev?.currentTarget instanceof HTMLButtonElement ? ev.currentTarget : null;
-  const label = btn?.querySelector('span:last-child') || btn;
+  // Only a button with a text label shows the working label: an icon-only one would lose its icon.
+  const label = btn?.querySelector('span:last-child') || null;
   const old = label?.textContent;
   if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); if (workingLabel && label) label.textContent = workingLabel; }
   try { await fn(ev); } finally {
@@ -363,8 +364,10 @@ function copyCode(x) {
     const r = await run(api.profileCode(x.id));
     if (!r) return;
     await navigator.clipboard.writeText(r.code);
-    toast(`Copied the code for "${x.name}": ${plural(r.mods, 'mod')}${r.local ? ` (${r.local} from local files left out: a code holds Nexus mods only)` : ''}, ${r.code.length.toLocaleString()} characters`, 'success',
-      r.local ? { label: 'Export as zip', fn: () => exportProfile(x)() } : undefined);
+    // Mods from local files cannot be in a code: say so, and offer the .zip that carries them.
+    if (r.local) {
+      toast(`Copied the code for "${x.name}" with its ${plural(r.mods, 'Nexus mod')}. ${plural(r.local, 'mod')} from local files ${r.local === 1 ? 'is' : 'are'} not in it: export the profile as a .zip to include ${r.local === 1 ? 'it' : 'them'}.`, 'warn', { label: 'Export as zip', fn: () => exportProfile(x)() });
+    } else toast(`Copied the code for "${x.name}": ${plural(r.mods, 'mod')}, ${r.code.length.toLocaleString()} characters`, 'success');
   });
 }
 
