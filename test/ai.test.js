@@ -307,3 +307,16 @@ test('game files: find, search and read mod files, each named with its mod, neve
   fsx.rmSync(pathx.join(game, '..', 'cmm-secret.txt'), { force: true });
   fsx.rmSync(game, { recursive: true, force: true });
 });
+
+test('a model that loops (same words, same reads each step) is shown once and told the read is a repeat', async () => {
+  const step = { text: 'Let me check the candidates:', calls: [{ id: 'a', name: 'get_overview', args: {} }] };
+  const replies = [step, { ...step, calls: [{ id: 'b', name: 'get_overview', args: {} }] }, { text: 'Done.', calls: [] }];
+  const seen = [];
+  const tools = fakeTools();
+  const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools, file: file(), call: async req => { seen.push(req.history.at(-1)); return replies.shift(); } });
+  await a.send('check');
+  const texts = a.view().transcript.filter(x => x.type === 'assistant').map(x => x.text);
+  assert.deepStrictEqual(texts, ['Let me check the candidates:', 'Done.']);
+  assert.deepStrictEqual(tools.ran.read, ['get_overview'], 'the repeated read is not run again');
+  assert.match(seen[2].results[0].content, /already made this exact call/);
+});

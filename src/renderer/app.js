@@ -370,7 +370,8 @@ function rowUpdateId(row) {
 function visibleMods() {
   const q = $('#mods-search').value.trim().toLowerCase();
   return groupedMods().filter(m => {
-    if (q && !`${m.name} ${m.modName} ${m.type}`.toLowerCase().includes(q)) return false;
+    // By name only (its own and its Nexus mod's): a search for "red4ext" is not every RED4ext plugin.
+    if (q && ![m.name, m.modName].filter(Boolean).join(' ').toLowerCase().includes(q)) return false;
     if (state.modFilter === 'enabled') return m.enabled;
     if (state.modFilter === 'disabled') return !m.enabled;
     if (state.modFilter === 'conflicts') return !!state.snap.conflicts[m.id];

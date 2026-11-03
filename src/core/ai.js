@@ -423,6 +423,8 @@ class Assistant extends EventEmitter {
     const turn = { input: 0, output: 0, steps: 0, estimated: false };
     const usage = sending => this.emit('event', { type: 'usage', turn: { ...turn }, sending, total: this.state.usage || null, context: this.contextView() });
     let answer = null;
+    const shownTexts = new Set(); // what the model wrote in this answer
+    const ran = new Set(); // the reads it made in this answer (tool + arguments)
     try {
       const onFit = u => {
         if (u.sending) { usage(u.sending); return; }
@@ -475,17 +477,22 @@ class Assistant extends EventEmitter {
         turn.steps++;
         usage(0);
         this.state.history.push({ role: 'assistant', text: reply.text || '', calls: reply.calls });
-        if (reply.text?.trim() && reply.calls.length) answer = this.show({ type: 'assistant', text: reply.text.trim() });
-        if (!reply.calls.length) {
-          if (reply.text?.trim()) answer = this.show({ type: 'assistant', text: reply.text.trim() });
-          break;
-        }
+        // Some models loop: the same words again each step. Show them once.
+        const text = reply.text?.trim();
+        const fresh = text && !shownTexts.has(text);
+        if (fresh) shownTexts.add(text);
+        if (fresh) answer = this.show({ type: 'assistant', text });
+        if (!reply.calls.length) break;
         const results = [];
         for (const c of reply.calls) {
           const kind = this.tools.kind(c.name);
           let content;
           try {
-            if (kind === 'read') {
+            if (kind === 'read' && ran.has(`${c.name}${JSON.stringify(c.args || {})}`)) {
+              // The same read again in this answer: its result is already above. Saying so breaks a loop.
+              content = JSON.stringify({ repeated: true, note: 'You already made this exact call in this answer; its result is above. Do not call it again: use that result, try something else, or answer the user.' });
+            } else if (kind === 'read') {
+              ran.add(`${c.name}${JSON.stringify(c.args || {})}`);
               const step = this.show({ type: 'activity', text: (ACTIVITY[c.name] || (() => c.name))(c.args || {}), status: 'running' });
               try { content = await this.tools.read(c.name, c.args || {}); this.update(step, { status: 'done' }); } catch (err) { this.update(step, { status: 'failed' }); throw err; }
             } else if (kind === 'card' && c.name === 'show_file') {

@@ -321,20 +321,39 @@ function renderChat() {
   $('#ai-clear').hidden = !v?.configured;
   showChatTotal();
   if (!v?.configured) return;
+  // Follow new messages only when the reader is at the end: someone scrolled up to read stays put.
   const nearEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-  box.replaceChildren(...(ai.items.length ? ai.items.map(itemEl) : [h('div', { class: 'ai-empty' },
-    h('div', { class: 'ai-empty-title' }, 'Ask about your mods, errors or setup'),
-    h('p', { class: 'hint' }, 'The assistant reads your mods, logs and load order, searches the web, and proposes changes for you to approve.'),
-    h('div', { class: 'ai-suggest' }, SUGGESTIONS.map(s => h('button', { class: 'chip', onclick: () => sendText(s) }, s))))]));
-  if (ai.busy && ai.waiting) box.append(h('div', { class: 'ai-note' }, icon('shield'), h('span', {}, 'Waiting for your answer above')));
+  // Keep the elements of messages that did not change: rebuilding the whole chat on every step
+  // interrupts a scroll in progress (and costs a Markdown render per message).
+  const next = new Map();
+  const nodes = ai.items.map(it => {
+    const sig = JSON.stringify(it);
+    const had = ai.rendered?.get(it.id);
+    const el = had && had.sig === sig ? had.el : itemEl(it);
+    next.set(it.id, { sig, el });
+    return el;
+  });
+  ai.rendered = next;
+  if (!ai.items.length) {
+    nodes.push(h('div', { class: 'ai-empty' },
+      h('div', { class: 'ai-empty-title' }, 'Ask about your mods, errors or setup'),
+      h('p', { class: 'hint' }, 'The assistant reads your mods, logs and load order, searches the web, and proposes changes for you to approve.'),
+      h('div', { class: 'ai-suggest' }, SUGGESTIONS.map(s => h('button', { class: 'chip', onclick: () => sendText(s) }, s)))));
+  }
+  if (ai.busy && ai.waiting) nodes.push(h('div', { class: 'ai-note' }, icon('shield'), h('span', {}, 'Waiting for your answer above')));
   else if (ai.busy) {
-    box.append(h('div', { class: 'ai-thinking-row' },
+    ai.thinkingEl ||= h('div', { class: 'ai-thinking-row' },
       h('div', { class: 'ai-thinking' }, h('span', {}), h('span', {}), h('span', {})),
       h('span', { class: 'ai-tokens', id: 'ai-live-tokens', 'aria-live': 'off' }),
-      h('button', { class: 'btn btn-sm btn-ghost ai-stop-inline', title: 'Stop this answer', onclick: () => api.aiStop() }, icon('x'), h('span', {}, 'Stop'))));
-    showLiveTokens();
+      h('button', { class: 'btn btn-sm btn-ghost ai-stop-inline', title: 'Stop this answer', onclick: () => api.aiStop() }, icon('x'), h('span', {}, 'Stop')));
+    nodes.push(ai.thinkingEl);
   }
-  if (nearEnd || ai.busy) box.scrollTop = box.scrollHeight;
+  // Put the nodes in place, moving only what moved.
+  nodes.forEach((el, i) => { if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null); });
+  while (box.children.length > nodes.length) box.lastElementChild.remove();
+  if (ai.busy && !ai.waiting) showLiveTokens();
+  if (nearEnd || ai.stickToEnd) box.scrollTop = box.scrollHeight;
+  ai.stickToEnd = false;
   $('#ai-send').hidden = ai.busy;
   $('#ai-stop').hidden = !ai.busy;
   $('#ai-input').disabled = false;
@@ -450,6 +469,7 @@ async function sendText(text) {
   if (!t || ai.busy) return;
   $('#ai-input').value = '';
   growInput();
+  ai.stickToEnd = true; // your own message: show it, wherever you had scrolled
   const r = await api.aiSend(t);
   if (r.error) toast(r.error, 'error');
 }
