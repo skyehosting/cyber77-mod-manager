@@ -297,3 +297,18 @@ test('a code looks up the files of mods moved from Vortex, so they are Nexus mod
   await mgr.profileCode('default');
   assert.strictEqual(asked, 1, 'looked up once');
 });
+
+test('a local mod named like its archive ("X.zip") is packed once as X.zip, and its installer choices go with it', { skip: !has7z && 'no 7-Zip' }, async () => {
+  const sender = makeManager();
+  const id = await sender.installAs('MFG Unlocker 1.7.0.zip', { 'mfg.archive': 'M' }, 0, 0);
+  sender.mgr.data.mods[id].fomod = true;
+  sender.mgr.data.mods[id].fomodChoices = [[[0]]];
+  const out = path.join(os.tmpdir(), `cmm-profile-${Date.now()}-n.zip`);
+  await sender.mgr.exportProfileZip('default', out);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-unzip-'));
+  execFileSync(SEVEN_ZIP, ['x', '-y', '-bso0', '-bsp0', `-o${dir}`, out]);
+  assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'local')), ['001-MFG Unlocker 1.7.0.zip']);
+  const doc = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8'));
+  assert.deepStrictEqual(doc.mods[0].fomodChoices, [[[0]]], 'the original archive keeps its installer choices');
+  fs.rmSync(out, { force: true });
+});

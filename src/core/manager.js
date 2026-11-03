@@ -1506,7 +1506,9 @@ class ModManager extends EventEmitter {
               const keys = await this.importArchives(bundled.map(r => r.archive));
               // The sender's names and versions, not the packed file names ("002-Name.zip").
               keys.forEach((k, i) => { const rec = this.data.downloads[k]; if (rec) Object.assign(rec, { name: bundled[i].name, modName: bundled[i].modName || bundled[i].name, version: bundled[i].version || rec.version }); });
-              await this.install(keys, { forProfiles: [id] });
+              // The sender's installer choices, for archives with an installer (FOMOD).
+              const choices = Object.fromEntries(keys.map((k, i) => [k, bundled[i].fomodChoices]).filter(([, c]) => c));
+              await this.install(keys, { forProfiles: [id], fomodChoices: choices });
             }
           } catch (err) {
             this.log.error('Could not install the mods from the profile zip', err.message);
@@ -1544,7 +1546,7 @@ class ModManager extends EventEmitter {
       for (const [i, m] of mods.entries()) {
         const entry = doc.mods[i];
         if (entry.source !== 'local' && entry.fileId) continue;
-        const safe = `${String(i + 1).padStart(3, '0')}-${String(m.name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').slice(0, 60) || 'mod'}`;
+        const safe = `${String(i + 1).padStart(3, '0')}-${String(m.name).replace(/\.(zip|7z|rar)$/i, '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').slice(0, 60) || 'mod'}`;
         const rec = this.data.downloads[m.id];
         let rel;
         if (rec?.path && fs.existsSync(rec.path)) {
@@ -1556,9 +1558,12 @@ class ModManager extends EventEmitter {
           if (!fs.existsSync(staged)) continue;
           rel = `local/${safe}.zip`;
           await archiveTools.pack(seven, staged, path.join(tmp, rel));
+          // The files the installer already chose: there is nothing to choose again.
+          entry.fomodChoices = undefined;
+          entry.fomod = false;
         }
+        // An original archive keeps the sender's installer choices: the receiver's installer starts with them.
         entry.archive = rel;
-        entry.fomodChoices = undefined; // the receiver installs the very files packed here
         local++;
       }
       fs.writeFileSync(path.join(tmp, 'profile.json'), JSON.stringify(doc, null, 2));
