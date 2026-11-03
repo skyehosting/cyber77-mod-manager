@@ -165,8 +165,11 @@ async function boot() {
   updater = new AppUpdater({
     autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
     enabled: app.isPackaged && !process.env.CMM_CAPTURE,
-    getSchedule: () => ({ every: settings.get('updateEvery'), unit: settings.get('updateUnit') }),
+    getSchedule: () => ({ every: settings.get('updateEvery'), unit: settings.get('updateUnit'), mode: settings.get('updateMode') }),
     isBusy: () => manager.busy,
+    // No checks and no restarts while the game runs; a restart only while the window can be seen.
+    gameRunning: () => !!gameLogs?.status().running,
+    inView: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
     log: logger,
   });
   updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
@@ -186,7 +189,7 @@ async function boot() {
   logger.on('entry', e => {
     if (e.level === 'warn' || e.level === 'error') gameLogs.report(e.level, e.detail ? `${e.message}: ${e.detail.split('\n')[0]}` : e.message);
   });
-  gameLogs.on('game', status => { send('gamestatus', status); pushSnapshot(); });
+  gameLogs.on('game', status => { send('gamestatus', status); pushSnapshot(); updater?.gameChanged(!!status.running); });
   gameLogs.on('reset', () => send('gamelog-reset'));
   gameLogs.start();
   app.on('before-quit', () => gameLogs.stop());
@@ -228,7 +231,7 @@ async function boot() {
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
     if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
     if ('blockAds' in patch) applyAdBlock();
-    if ('updateEvery' in patch || 'updateUnit' in patch) updater?.start();
+    if ('updateEvery' in patch || 'updateUnit' in patch || 'updateMode' in patch) updater?.start();
     logger.success('Settings saved');
     pushSnapshot();
     return settings.publicView();

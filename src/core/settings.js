@@ -25,6 +25,7 @@ class Settings {
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
       updateEvery: 2, // how often the app looks for a new version of itself…
       updateUnit: 'minutes', // …in 'minutes' | 'hours' | 'days'
+      updateMode: 'auto', // 'auto' install with a restart | 'ask' before restarting | 'off' no checks by itself
       launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'steam': through Steam, with its overlay
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       redmodLast: null, // the last REDmod deploy this app ran: { ok, at, reason }
@@ -110,6 +111,7 @@ class Settings {
     if ('blockAds' in patch) d.blockAds = !!patch.blockAds;
     if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 2));
     if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
+    if (['auto', 'ask', 'off'].includes(patch.updateMode)) d.updateMode = patch.updateMode;
     if ('launchMode' in patch && ['direct', 'steam', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode === 'store' ? 'steam' : patch.launchMode;
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;

@@ -1147,7 +1147,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1159,9 +1159,9 @@ function renderUpdate(st) {
   const when = upd.lastCheck ? `last checked ${new Date(upd.lastCheck).toLocaleTimeString()}` : '';
   const line = {
     dev: `Version ${upd.current}. Updates are checked in the installed app only (this copy runs from its source folder).`,
-    idle: `Version ${upd.current}.`,
+    idle: upd.mode === 'off' ? `Version ${upd.current}. Automatic update checks are off.` : `Version ${upd.current}.`,
     checking: `Version ${upd.current} · checking…`,
-    current: `Version ${upd.current} is the newest${when ? ` · ${when}` : ''}.`,
+    current: `Version ${upd.current} is the newest${when ? ` · ${when}` : ''}${upd.heldForGame ? ' · checks wait while the game runs' : ''}.`,
     downloading: `Downloading version ${upd.available}… ${upd.progress || 0}%`,
     ready: `Version ${upd.available} is downloaded and installs with a restart.`,
     error: `Version ${upd.current} · could not check for updates (${upd.error})${when ? ` · ${when}` : ''}.`,
@@ -1171,20 +1171,29 @@ function renderUpdate(st) {
   el.className = `hint${upd.status === 'error' ? ' bad' : upd.status === 'ready' ? ' ok' : ''}`;
   $('#s-upd-check').disabled = upd.status === 'dev' || upd.status === 'checking' || upd.status === 'downloading';
 
-  // The bar: a new version is ready.
+  // The bar: from the moment a new version is found, until it installs.
   const bar = $('#update-bar');
   clearInterval(updTick);
-  bar.hidden = upd.status !== 'ready';
+  bar.hidden = !['downloading', 'ready'].includes(upd.status);
   if (bar.hidden) return;
+  const WAIT = {
+    game: 'It installs after you close the game.',
+    busy: 'The app restarts to install it when downloads and installs finish.',
+    view: 'The app restarts to install it when you come back to it.',
+  };
   const text = () => {
     const left = upd.restartAt ? Math.max(0, Math.ceil((upd.restartAt - Date.now()) / 1000)) : 0;
-    $('#update-text').textContent = upd.postponed ? `Version ${upd.available} installs when you close the app.`
-      : upd.waiting ? `Version ${upd.available} is ready. The app restarts to install it when downloads and installs finish.`
-        : `Version ${upd.available} is ready. Restarting to install it in ${left} s.`;
+    $('#update-text').textContent = upd.status === 'downloading' ? `Version ${upd.available} found · downloading ${upd.progress || 0}%`
+      : upd.postponed ? `Version ${upd.available} installs when you close the app.`
+        : upd.mode === 'ask' ? `Version ${upd.available} is ready to install.`
+          : upd.waiting ? `Version ${upd.available} is ready. ${WAIT[upd.waitingFor] || WAIT.busy}`
+            : `Version ${upd.available} is ready. Restarting to install it in ${left} s.`;
   };
   text();
-  $('#update-later').hidden = !!upd.postponed;
-  if (upd.restartAt && !upd.postponed) updTick = setInterval(text, 1000);
+  const ready = upd.status === 'ready';
+  $('#update-later').hidden = !ready || !!upd.postponed;
+  $('#update-now').hidden = !ready;
+  if (ready && upd.restartAt && !upd.postponed) updTick = setInterval(text, 1000);
 }
 api.onUpdate(renderUpdate);
 // The account type, checked when the app starts.

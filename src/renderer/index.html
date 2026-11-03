@@ -735,6 +735,12 @@
                 </select>
                 <button type="button" class="btn" id="s-upd-check">Check now</button>
               </div>
+              <label class="label" for="s-upd-mode">New versions</label>
+              <select id="s-upd-mode">
+                <option value="auto">Install automatically (restarts when idle, never while you play)</option>
+                <option value="ask">Download, then ask before restarting</option>
+                <option value="off">Off: don't check (Check now still works)</option>
+              </select>
               <p class="hint" id="s-upd-state"></p>
             </section>
           </div>
