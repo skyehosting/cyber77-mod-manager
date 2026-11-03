@@ -9,6 +9,7 @@ const { findCyberpunk, findInstalls, storeOf, isGameDir, steamLaunchOptions, mis
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { PlayHistory } = require('./core/plays');
+const { scaleFor, stepScale } = require('./core/scale');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
 const { AppUpdater } = require('./core/updater');
@@ -61,7 +62,25 @@ function handle(channel, fn) {
 // A separate profile (screenshots, tests) never touches the real settings or library.
 if (process.env.CMM_USER_DATA) app.setPath('userData', process.env.CMM_USER_DATA);
 
-const ZOOM_STEPS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+let scaleState = null;
+
+/**
+ * Scale the window's content (src/core/scale.js): Windows' scale for the display the window is on, or
+ * the one chosen in Settings → Display instead of it.
+ */
+function applyScale() {
+  if (!win || win.isDestroyed()) return null;
+  const display = screen.getDisplayMatching(win.getBounds());
+  const { zoom, min, state } = scaleFor({ want: Number(settings?.get('uiScale')) || 0, system: display.scaleFactor, area: display.workAreaSize });
+  if (Math.abs(win.webContents.getZoomFactor() - zoom) > 0.001) win.webContents.setZoomFactor(zoom);
+  win.setMinimumSize(min.width, min.height);
+  // A larger scale needs a larger window: grow it to the new minimum (Windows does not do it itself).
+  const [w, h] = win.getSize();
+  if (!win.isMaximized() && !win.isFullScreen() && (w < min.width || h < min.height)) win.setSize(Math.max(w, min.width), Math.max(h, min.height));
+  scaleState = state;
+  send('scale', scaleState);
+  return scaleState;
+}
 
 /** Last window bounds, kept only if they still fit on a connected display. */
 function savedBounds(file) {
@@ -118,20 +137,24 @@ function createWindow() {
   };
   win.on('close', saveBounds);
 
-  // Ctrl + / Ctrl - / Ctrl 0 zoom the whole UI (the menu bar, which normally provides this, is hidden).
+  // Ctrl + / Ctrl - step the app's scale (kept in Settings → Display); Ctrl 0 goes back to Windows' scale.
   win.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || !(input.control || input.meta)) return;
-    const wc = win.webContents;
-    const cur = wc.getZoomFactor();
+    if (input.type !== 'keyDown' || !(input.control || input.meta) || input.alt) return;
+    const cur = scaleState?.effective || 100;
     let next = null;
-    if (input.key === '=' || input.key === '+') next = ZOOM_STEPS.find(z => z > cur + 0.001);
-    else if (input.key === '-') next = [...ZOOM_STEPS].reverse().find(z => z < cur - 0.001);
-    else if (input.key === '0') next = 1;
-    if (next) {
-      wc.setZoomFactor(next);
-      event.preventDefault();
-    }
+    if (input.key === '=' || input.key === '+') next = stepScale(cur, 1);
+    else if (input.key === '-') next = stepScale(cur, -1);
+    else if (input.key === '0') next = 0;
+    if (next === null) return;
+    event.preventDefault();
+    settings.update({ uiScale: next });
+    applyScale();
+    send('settings-changed');
   });
+  // The content's scale: once loaded, and again when the window moves to a display with another scale.
+  win.webContents.on('did-finish-load', applyScale);
+  let movedTimer = null;
+  win.on('moved', () => { clearTimeout(movedTimer); movedTimer = setTimeout(applyScale, 300); });
   win.webContents.on('will-navigate', ev => ev.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
@@ -170,7 +193,7 @@ async function boot() {
     autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
     enabled: app.isPackaged && !process.env.CMM_CAPTURE,
     getSchedule: () => ({ every: settings.get('updateEvery'), unit: settings.get('updateUnit'), mode: settings.get('updateMode') }),
-    isBusy: () => manager.busy,
+    isBusy: () => manager.busy || !!redmodRunning || manager.exporting > 0, // a restart would cut these off
     aiBusy: () => !!(assistant?.busy || assistant?.waiting),
     // No checks and no restarts while the game runs; a restart only while the window can be seen.
     gameRunning: () => !!gameLogs?.status().running || !!plays?.current, // and while a play is still saving its logs
@@ -202,7 +225,13 @@ async function boot() {
   plays.on('plays', list => send('plays', list));
   gameLogs.start();
   plays.recover(); // a play the app was closed during: finish it now that the logs are found
-  app.on('before-quit', () => gameLogs.stop());
+  screen.on('display-metrics-changed', () => applyScale());
+  screen.on('display-removed', () => applyScale());
+  app.on('before-quit', () => {
+    gameLogs.stop();
+    // A play the game has left (its last minute of logs not saved yet) is saved now, not lost.
+    if (plays?.current?.closeTimer) { clearTimeout(plays.current.closeTimer); plays.finish(); }
+  });
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
   const gameFiles = new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot });
   crashes = new CrashReports({ dir: () => path.join(process.env.LOCALAPPDATA || '', 'REDEngine', 'ReportQueue'), gameDir: () => manager.gameDir(), gameLogs, files: gameFiles });
@@ -229,20 +258,26 @@ async function boot() {
   handle('crash:details', id => crashes.details(String(id || 'latest')));
   handle('crash:open', id => { const c = crashes.list(50).find(x => x.id === id); if (c) shell.openPath(c.folder); });
   handle('crash:delete', ids => crashes.remove(ids));
+  handle('scale:get', () => applyScale() || scaleState);
   handle('plays:list', () => plays.list());
   handle('plays:get', id => { const p = plays.get(String(id)); if (!p) throw new Error("That play's logs are no longer here."); return { ...p, entries: p.entries.slice(-8000) }; });
   handle('plays:delete', ids => plays.remove(Array.isArray(ids) ? ids.map(String) : [String(ids)]));
   handle('plays:openFile', (id, rel) => shell.openPath(plays.filePath(String(id), String(rel))));
   handle('plays:revealFile', (id, rel) => shell.showItemInFolder(plays.filePath(String(id), String(rel))));
   handle('plays:openFolder', id => shell.openPath(plays.folder(String(id))));
-  handle('gamelog:reveal', rel => {
-    const full = path.join(settings.get('gamePath'), String(rel));
-    if (!full.startsWith(path.resolve(settings.get('gamePath')))) throw new Error('Not a game file');
-    shell.showItemInFolder(full);
-  });
+  // A file inside the game folder (not a sibling folder named like it), by its path relative to it.
+  const gameFile = rel => {
+    const root = path.resolve(settings.get('gamePath') || '');
+    const full = path.resolve(root, String(rel));
+    const inside = path.relative(root, full);
+    if (!settings.get('gamePath') || !inside || inside.startsWith('..') || path.isAbsolute(inside) || inside.includes(':')) throw new Error('Not a game file');
+    return full;
+  };
+  handle('gamelog:reveal', rel => shell.showItemInFolder(gameFile(rel)));
+  // Opening runs the file's program: logs and text files only, never a program in the game folder.
   handle('gamelog:open', rel => {
-    const full = path.join(settings.get('gamePath'), String(rel));
-    if (!full.startsWith(path.resolve(settings.get('gamePath')))) throw new Error('Not a game file');
+    const full = gameFile(rel);
+    if (!/\.(log|txt|json|ini|toml|yaml|yml|xml|cfg|csv|md)$/i.test(full)) throw new Error('Only log and text files open from here.');
     return shell.openPath(full);
   });
   handle('settings:get', () => settings.publicView());
@@ -255,6 +290,7 @@ async function boot() {
     if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
     if ('blockAds' in patch) applyAdBlock();
     if ('playsKeep' in patch) plays?.prune();
+    if ('uiScale' in patch) applyScale();
     if ('updateEvery' in patch || 'updateUnit' in patch || 'updateMode' in patch) updater?.start();
     logger.success('Settings saved');
     pushSnapshot();
@@ -680,6 +716,8 @@ function guardWebviews() {
     };
     wc.on('will-navigate', (ev, url) => { if (!NEXUS_PAGE.test(url)) { ev.preventDefault(); route(url); } });
     wc.on('will-frame-navigate', ev => { if (ev.isMainFrame && !NEXUS_PAGE.test(ev.url)) { ev.preventDefault(); route(ev.url); } });
+    // A server redirect off Nexus is not followed in the page either (it opens in the browser).
+    wc.on('will-redirect', (ev, url, _inPlace, isMainFrame) => { if (isMainFrame !== false && !NEXUS_PAGE.test(url)) { ev.preventDefault(); route(url); } });
     wc.setWindowOpenHandler(({ url }) => {
       // A Nexus link meant for a new tab stays in the page view; anything else goes to the browser.
       if (NEXUS_PAGE.test(url)) wc.loadURL(url); else route(url);
@@ -687,6 +725,25 @@ function guardWebviews() {
     });
   });
   const nexusSession = session.fromPartition(NEXUS_PARTITION);
+  // Keep the Nexus login across restarts, as a browser that restores its session does: Nexus's
+  // session-only cookies (no expiry) are given 30 days so they are saved to disk, and the cookie
+  // store is written out soon after a change and on quit (an update restart included).
+  let flushTimer = null;
+  const flush = () => nexusSession.cookies.flushStore().catch(() => {});
+  nexusSession.cookies.on('changed', (_e, cookie, _cause, removed) => {
+    const host = String(cookie.domain || '').replace(/^\./, '');
+    if (!/(^|\.)nexusmods\.com$/i.test(host)) return;
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flush, 2000);
+    if (removed || !cookie.session || !cookie.value) return;
+    nexusSession.cookies.set({
+      url: `https://${host}${cookie.path || '/'}`, name: cookie.name, value: cookie.value,
+      domain: String(cookie.domain).startsWith('.') ? cookie.domain : undefined, // host-only stays host-only
+      path: cookie.path, secure: cookie.secure, httpOnly: cookie.httpOnly, sameSite: cookie.sameSite,
+      expirationDate: Math.floor(Date.now() / 1000) + 30 * 86400,
+    }).catch(() => {});
+  });
+  app.on('before-quit', flush);
   nexusSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
     if (permission === 'openExternal') {
       const url = String(details?.externalURL || '');

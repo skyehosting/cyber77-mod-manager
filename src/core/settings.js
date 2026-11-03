@@ -39,6 +39,7 @@ class Settings {
       aiTimeout: 5, // minutes one request to the AI provider may take (local models can be slow)
       aiContext: 0, // the model's context window in tokens; 0: ask the provider
       playsKeep: 25, // how many plays (each launch's logs) the Game log keeps
+      uiScale: 0, // the app's scale in percent, used instead of Windows' scale; 0: follow Windows
       aiKeyEnc: '',
       aiKeyPlain: '',
     });
@@ -49,6 +50,9 @@ class Settings {
       d.categoriesV2 = true;
       this.store.save();
     }
+    // The data folder in use: one chosen in Settings takes over after a restart (the library and the
+    // deployment record were read from this one, so files keep going here until then).
+    this.activeDataDir = this.get('dataDir');
   }
 
   get(key) {
@@ -113,8 +117,20 @@ class Settings {
     for (const k of ['aiEndpoint', 'aiModel']) if (typeof patch[k] === 'string') d[k] = patch[k].trim().slice(0, 300);
     if ('aiContext' in patch) d.aiContext = Math.min(10e6, Math.max(0, Math.round(Number(patch.aiContext) || 0)));
     if ('aiTimeout' in patch && Number.isFinite(Number(patch.aiTimeout)) && patch.aiTimeout !== '') d.aiTimeout = Math.min(60, Math.max(1, Math.round(Number(patch.aiTimeout))));
-    for (const k of ['gamePath', 'dataDir', 'sevenZipPath', 'autoInstall', 'deployMethod']) {
+    for (const k of ['gamePath', 'autoInstall', 'deployMethod']) {
       if (typeof patch[k] === 'string') d[k] = patch[k].trim();
+    }
+    // The data folder must be a full path (an empty or relative one would point at wherever the app
+    // runs from); 7-Zip must be 7-Zip's program, since it is run.
+    if (typeof patch.dataDir === 'string') {
+      const v = patch.dataDir.trim();
+      if (!v || !path.isAbsolute(v)) throw new Error('The data folder must be a full path, like D:\\Mods\\Cyber Mod Manager.');
+      d.dataDir = v;
+    }
+    if (typeof patch.sevenZipPath === 'string') {
+      const v = patch.sevenZipPath.trim();
+      if (v && !/(^|[\\/])7z[az]?\.exe$/i.test(v)) throw new Error('Choose 7-Zip\'s program: 7z.exe.');
+      d.sevenZipPath = v;
     }
     if ('autoEnable' in patch) d.autoEnable = !!patch.autoEnable;
     if ('installDependencies' in patch) d.installDependencies = !!patch.installDependencies;
@@ -127,6 +143,7 @@ class Settings {
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
+    if ('uiScale' in patch) { const v = Math.round(Number(patch.uiScale) || 0); d.uiScale = v ? Math.min(300, Math.max(50, v)) : 0; }
     if ('playsKeep' in patch) d.playsKeep = Math.min(500, Math.max(1, parseInt(patch.playsKeep, 10) || 25));
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
@@ -135,10 +152,10 @@ class Settings {
     this.store.save();
   }
 
-  get downloadsDir() { return path.join(this.get('dataDir'), 'downloads'); }
-  get stagingDir() { return path.join(this.get('dataDir'), 'staging'); }
-  get backupDir() { return path.join(this.get('dataDir'), 'backups'); }
-  get tempDir() { return path.join(this.get('dataDir'), 'temp'); }
+  get downloadsDir() { return path.join(this.activeDataDir, 'downloads'); }
+  get stagingDir() { return path.join(this.activeDataDir, 'staging'); }
+  get backupDir() { return path.join(this.activeDataDir, 'backups'); }
+  get tempDir() { return path.join(this.activeDataDir, 'temp'); }
 }
 
 module.exports = { Settings };

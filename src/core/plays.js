@@ -47,12 +47,18 @@ class PlayHistory extends EventEmitter {
    */
   recover() {
     for (const p of this.list()) {
-      if (p.end) continue;
+      if (p.live || p.closing || (p.end && p.files !== undefined)) continue;
       const d = path.join(this.dir, p.id);
+      // Ended (the app closed within the minute after the game): its logs were just not copied yet.
+      if (p.end) {
+        const files = this.copyFiles(d, p.start, p.end + AFTER_MS);
+        fs.writeFileSync(path.join(d, 'play.json'), JSON.stringify({ ...p, files: files.count, size: files.bytes }, null, 2));
+        continue;
+      }
       const lines = this.readTimeline(p.id);
       const last = lines.length ? lines[lines.length - 1].time : p.start;
-      this.copyFiles(d, p.start, last + AFTER_MS);
-      fs.writeFileSync(path.join(d, 'play.json'), JSON.stringify({ ...p, end: last, outcome: p.outcome === 'crashed' ? 'crashed' : 'unknown', note: 'Cyber Mod Manager was closed before the game, so the end is the last log line it saw.' }, null, 2));
+      const files = this.copyFiles(d, p.start, last + AFTER_MS);
+      fs.writeFileSync(path.join(d, 'play.json'), JSON.stringify({ ...p, end: last, files: files.count, size: files.bytes, outcome: p.outcome === 'crashed' ? 'crashed' : 'unknown', note: 'Cyber Mod Manager was closed before the game, so the end is the last log line it saw.' }, null, 2));
     }
   }
 

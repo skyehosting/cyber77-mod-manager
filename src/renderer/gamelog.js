@@ -161,7 +161,7 @@ function renderProblems() {
   keepFocus(tbody, () => tbody.replaceChildren(...list.map(p => h('tr', {
     class: 'row', tabindex: '0', title: 'Open in the timeline (Enter)', dataset: { key: problemKey(p.last) },
     onclick: () => jumpToProblem(p.last),
-    onkeydown: ev => { if (ev.key === 'Enter') { ev.preventDefault(); jumpToProblem(p.last); } },
+    onkeydown: ev => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) { ev.preventDefault(); jumpToProblem(p.last); } }, // a button in the row does its own thing
   },
   h('td', { class: 'num' }, h('span', { class: 'count-pill' }, String(p.count))),
   h('td', {}, h('span', { class: `lvl lvl-${p.last.level}` }, LEVEL_SHORT[p.last.level])),
@@ -368,7 +368,8 @@ drawerSections.push(m => {
     h('div', { class: 'mini-log' }, list.map(p => h('button', {
       class: `mini-row lv-${p.last.level}`,
       title: `${p.last.source} · ${new Date(p.last.time).toLocaleString()}\nOpen in the game log`,
-      onclick: () => { closeDrawer(); jumpToProblem(p.last); goTo('gamelog'); },
+      // These come from the live lines: show those, not a past play (where it would not be found).
+      onclick: () => { closeDrawer(); if (gl.play) { gl.follow = false; showLive(); } jumpToProblem(p.last); goTo('gamelog'); },
     },
     h('span', { class: `tag ${LEVEL_TAG[p.last.level]}` }, LEVEL_TEXT[p.last.level]),
     h('span', { class: 'mini-text' }, p.last.text.split('\n')[0]),
@@ -532,8 +533,10 @@ $('#gl-play-menu').addEventListener('keydown', ev => {
 document.addEventListener('mousedown', ev => { if (!ev.target.closest('#gl-play-pick')) closePlayMenu(); });
 
 async function showPlay(id) {
+  const seq = gl.playSeq = (gl.playSeq || 0) + 1; // a later pick wins over a slower earlier one
   if (!id) { showLive(); return; }
   const r = await api.playGet(id);
+  if (seq !== gl.playSeq) return;
   if (r.error) { toast(r.error, 'error'); loadPlays(); return; }
   gl.play = r.ok;
   const p = gl.play;
@@ -571,7 +574,7 @@ function afterPlayChange() {
 
 async function deletePlays(ids) {
   const n = await run(api.playsDelete(ids));
-  if (n === undefined) return;
+  if (n == null) return; // the call failed (run() already said why)
   toast(`Deleted the logs of ${plural(n, 'play')}`, 'success');
   if (gl.play && ids.includes(gl.play.id)) gl.follow = true; // back to Live or Latest
   await loadPlays();
@@ -652,7 +655,7 @@ async function deleteCrashes(ids) {
     `${many ? 'Their folders are' : 'Its folder is'} removed from the game's crash report queue (%LOCALAPPDATA%\\REDEngine\\ReportQueue), dump included. The play logs are kept.`, 'Delete', true);
   if (!ok) return;
   const n = await run(api.crashDelete(ids));
-  if (n === undefined) return;
+  if (n == null) return; // the call failed (run() already said why)
   toast(`Deleted ${plural(n, 'crash report')}`, 'success');
   ids.forEach(id => crash.details.delete(id));
   if (ids.includes(crash.open)) crash.open = null;
@@ -676,13 +679,13 @@ function renderCrashes() {
     gl.play && crash.list.length > shown.length ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { crash.all = true; renderCrashes(); } }, `Show all ${crash.list.length} crashes`) : null,
     gl.play && crash.all ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { crash.all = false; renderCrashes(); } }, "Only this play's") : null,
     h('button', { class: 'btn btn-sm btn-ghost', onclick: () => deleteCrashes(shown.map(c => c.id)) }, icon('trash'), h('span', {}, shown.length > 1 ? `Delete all ${shown.length}` : 'Delete')));
-  box.replaceChildren(head, ...shown.map(c => {
+  keepFocus(box, () => box.replaceChildren(head, ...shown.map(c => {
     const isOpen = crash.open === c.id;
     const repeat = sameDll(c);
     const d = crash.details.get(c.id);
     return h('article', { class: `crash-card${isOpen ? ' open' : ''}`, dataset: { id: c.id } },
       h('div', { class: 'crash-head', role: 'button', tabindex: '0', 'aria-expanded': String(isOpen),
-        onclick: () => toggleCrash(c.id), onkeydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleCrash(c.id); } } },
+        onclick: () => toggleCrash(c.id), onkeydown: ev => { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === ev.currentTarget) { ev.preventDefault(); toggleCrash(c.id); } }, dataset: { key: `crash:${c.id}` } },
         h('span', { class: 'crash-icon' }, icon('alert')),
         h('div', { class: 'crash-titles' },
           h('div', { class: 'crash-title' }, `${crashWhat(c)} ${crashWhere(c)}`),
@@ -694,11 +697,12 @@ function renderCrashes() {
         h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Delete this crash report', 'aria-label': 'Delete this crash report', onclick: ev => { ev.stopPropagation(); deleteCrashes([c.id]); } }, icon('trash')),
         icon('chevron', `crash-chev${isOpen ? ' open' : ''}`)),
       isOpen ? crashBody(c, d) : null);
-  }));
+  }))); // the crash toggled keeps keyboard focus
 }
 
 function crashBody(c, d) {
   if (!d) return h('div', { class: 'crash-body' }, h('p', { class: 'hint' }, 'Reading the crash…'));
+  if (d.error) return h('div', { class: 'crash-body' }, h('p', { class: 'hint' }, d.error));
   const section = (title, ...kids) => h('section', { class: 'crash-sec' }, h('h4', {}, title), ...kids);
   return h('div', { class: 'crash-body' },
     section('What happened',
@@ -719,7 +723,8 @@ async function toggleCrash(id) {
   renderCrashes();
   if (crash.open && !crash.details.has(id)) {
     const r = await api.crashDetails(id);
-    if (r.ok) crash.details.set(id, r.ok);
+    // Unreadable: say so, instead of "Reading the crash…" for ever.
+    crash.details.set(id, r.ok || { error: r.error || 'This crash report can no longer be read (it may have been deleted).' });
     renderCrashes();
   }
 }
@@ -729,6 +734,7 @@ async function showCrash(id) {
   goTo('gamelog');
   setTab('crashes');
   await loadCrashes();
+  crash.all = true; // shown even while another play is open
   if (crash.open !== id) await toggleCrash(id);
   $(`#gl-crash-list [data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'start' });
 }
@@ -755,7 +761,7 @@ $$('#gl-tabs .seg-btn').forEach(b => b.addEventListener('click', () => setTab(b.
 // Tabs: arrow keys move between them.
 $('#gl-tabs').addEventListener('keydown', ev => {
   if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
-  const tabs = $$('#gl-tabs .seg-btn');
+  const tabs = $$('#gl-tabs .seg-btn').filter(b => !b.disabled); // (Manager is off while a play is shown)
   const i = tabs.findIndex(b => b.dataset.tab === gl.tab);
   const next = tabs[(i + (ev.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
   setTab(next.dataset.tab);

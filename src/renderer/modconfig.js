@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, fmtSize, plural, pageHooks, setSegActive, openEditor, goTo */
+/* global api, $, $$, h, icon, run, fmtSize, plural, pageHooks, setSegActive, openEditor, goTo, keepFocus */
 
 // ---------------------------------------------------------------- mod config
 
@@ -129,7 +129,7 @@ function folderEl(row, part, node, depth) {
     const isOpen = openSet.has(d.path);
     const toggle = () => { if (isOpen) openSet.delete(d.path); else openSet.add(d.path); renderConfig(); };
     kids.push(h('div', {
-      class: 'cfg-dir', role: 'treeitem', tabindex: '0', 'aria-expanded': String(isOpen), style: `--depth:${depth}`, title: d.path,
+      class: 'cfg-dir', role: 'treeitem', tabindex: '0', 'aria-expanded': String(isOpen), style: `--depth:${depth}`, title: d.path, dataset: { key: `dir:${part.key}:${d.path}` },
       onclick: toggle, onkeydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } },
     }, icon('chevron-right', `cfg-chev${isOpen ? ' open' : ''}`), icon('folder'), h('span', { class: 'cfg-name' }, d.name)));
     if (isOpen) kids.push(...folderEl(row, part, d, depth + 1));
@@ -151,7 +151,8 @@ function renderConfig() {
     box.replaceChildren(h('p', { class: 'empty-text cfg-empty' }, cfg.list ? 'No mods match.' : 'Reading the mod folders…'));
     return;
   }
-  box.replaceChildren(...list.map(m => {
+  // The row (or folder) toggled keeps keyboard focus through the redraw.
+  keepFocus(box, () => box.replaceChildren(...list.map(m => {
     const isOpen = cfg.open.has(m.key);
     const toggle = async () => {
       if (isOpen) cfg.open.delete(m.key);
@@ -184,7 +185,7 @@ function renderConfig() {
     };
     return h('div', { class: `cfg-group${isOpen ? ' open' : ''}` }, head,
       isOpen ? h('div', { class: 'cfg-tree', role: 'group' }, parts.map(p => h('div', { class: 'cfg-part' }, section(p)))) : null);
-  }));
+  })));
 }
 
 /** From a mod's details: show its files here. */

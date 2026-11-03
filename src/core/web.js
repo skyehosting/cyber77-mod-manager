@@ -19,6 +19,26 @@ const EXTRACT_RESULTS = `(() => [...document.querySelectorAll('.result')].slice(
 }).filter(x => x.title && /^https?:/.test(x.url) && !/duckduckgo\\.com\\/y\\.js/.test(x.url)))()`;
 const EXTRACT_TEXT = `(() => ({ title: document.title, text: (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n') }))()`;
 
+/**
+ * Only public web pages: never this PC, the local network or link-local addresses (the user's own
+ * servers, router pages). The AI picks these URLs, so text it read could try to point it there.
+ */
+function isPublicUrl(url) {
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  if (!/^https?:$/.test(u.protocol)) return false;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h.includes('.') && !h.includes(':')) return false; // localhost, intranet names
+  if (/\.(local|lan|home|internal|localhost|intranet|corp)$/.test(h)) return false;
+  const v4 = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224) return false;
+  }
+  if (h.includes(':') && (h === '::1' || h === '::' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith('::ffff:'))) return false;
+  return true;
+}
+
 class WebReader {
   constructor() {
     this.win = null;
@@ -59,6 +79,11 @@ class WebReader {
       wc.once('dom-ready', done);
       wc.on('did-fail-load', fail);
     });
+    // A redirect or navigation may not lead off the public web either.
+    const guard = (ev, to) => { if (!isPublicUrl(to)) ev.preventDefault(); };
+    wc.on('will-redirect', guard);
+    wc.on('will-navigate', guard);
+    ready.finally(() => { wc.removeListener('will-redirect', guard); wc.removeListener('will-navigate', guard); }).catch(() => {});
     wc.loadURL(url).catch(() => {}); // settles when every ad is in: not waited for
     await ready;
     await new Promise(r => setTimeout(r, settle));
@@ -80,6 +105,7 @@ class WebReader {
   page(url) {
     const u = String(url || '');
     if (!/^https?:\/\//i.test(u)) return Promise.reject(new Error('Only http(s) pages can be read.'));
+    if (!isPublicUrl(u)) return Promise.reject(new Error('Only public web pages can be read, not this PC or the local network.'));
     return this.run(async win => {
       await this.load(win, u, 2000);
       const r = await this.read(win, EXTRACT_TEXT);
@@ -89,4 +115,4 @@ class WebReader {
   }
 }
 
-module.exports = { WebReader };
+module.exports = { WebReader, isPublicUrl };

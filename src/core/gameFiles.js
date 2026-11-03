@@ -117,6 +117,8 @@ class GameFiles {
     const full = path.resolve(idx.dir, rel);
     const inside = path.relative(idx.dir, full);
     if (!rel || inside.startsWith('..') || path.isAbsolute(inside)) throw new Error('Only files inside the game folder can be read (give the path relative to it).');
+    // No alternate data streams ("file::$DATA") or trailing dots/spaces: they name a file another way.
+    if (rel.includes(':') || /[. ]$/.test(rel)) throw new Error(`${rel} is not a plain file path.`);
     const st = await fs.promises.stat(full).catch(() => null);
     if (!st?.isFile()) throw new Error(`No file at ${rel}. Use find_mod_files to get its exact path.`);
     if (st.size > MAX_TEXT_BYTES * 4) throw new Error(`${rel} is too large to read (${Math.round(st.size / 1048576)} MB).`);

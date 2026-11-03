@@ -471,7 +471,11 @@ async function sendText(text) {
   growInput();
   ai.stickToEnd = true; // your own message: show it, wherever you had scrolled
   const r = await api.aiSend(t);
-  if (r.error) toast(r.error, 'error');
+  if (r.error) {
+    toast(r.error, 'error');
+    // Not sent: the message comes back, so it need not be typed again.
+    if (!$('#ai-input').value) { $('#ai-input').value = t; growInput(); }
+  }
 }
 
 const growInput = () => { const i = $('#ai-input'); i.style.height = 'auto'; i.style.height = `${Math.min(i.scrollHeight + 2, 200)}px`; };

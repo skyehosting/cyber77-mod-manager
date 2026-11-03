@@ -145,3 +145,9 @@ test('a server that silently cuts a long chat (Ollama): noticed, its size learne
   assert.ok(sent.at(-1) < Math.max(...sent), 'asked again with the shorter chat');
   assert.ok(a.view().transcript.some(x => x.type === 'activity' && /Summarized/.test(x.text)));
 });
+
+test('the AI reads public web pages only: not this PC, the local network or link-local addresses', () => {
+  const { isPublicUrl } = require('../src/core/web');
+  for (const u of ['https://www.nexusmods.com/cyberpunk2077/mods/1', 'https://github.com/x', 'http://example.com/a?b=c']) assert.strictEqual(isPublicUrl(u), true, u);
+  for (const u of ['http://localhost:8080', 'http://127.0.0.1:3000', 'http://10.0.0.249:8080/v1', 'http://192.168.1.1', 'http://172.20.0.1', 'http://169.254.169.254/latest', 'http://[::1]/', 'http://router.lan', 'http://nas.local', 'http://intranet', 'file:///C:/x', 'ftp://example.com']) assert.strictEqual(isPublicUrl(u), false, u);
+});

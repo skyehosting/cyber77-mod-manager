@@ -106,7 +106,8 @@ function redact(text) {
 // TweakXL patches and REDmods' files are mod content, not settings.
 const CONFIG_EXT = new Set(['.json', '.ini', '.toml', '.cfg', '.conf', '.env', '.yaml', '.yml', '.xml', '.properties', '.settings', '.config']);
 function isConfigFile(rel) {
-  const p = String(rel).replace(/\\/g, '/').toLowerCase();
+  // "settings.json::$DATA", "settings.json." and "settings.json " are the same file on Windows.
+  const p = String(rel).replace(/\\/g, '/').toLowerCase().replace(/:.*$/, '').replace(/[. ]+$/, '');
   const ext = p.match(/\.[^./]+$/)?.[0] || '';
   if (!CONFIG_EXT.has(ext)) return /(^|\/)\.env$/.test(p);
   if (/^(archive\/pc\/mod|r6\/tweaks|mods)\//.test(p) && ['.yaml', '.yml', '.xl'].includes(ext)) return false;
@@ -138,9 +139,11 @@ function setJson(text, path, value) {
   let data;
   try { data = JSON.parse(text.replace(/^﻿/, '')); } catch (err) { throw new Error(`The file is not valid JSON (${err.message}); open it in the editor instead.`); }
   const keys = path.split('.');
+  // A key path from outside (the AI's form) must never reach Object.prototype.
+  if (keys.some(k => k === '__proto__' || k === 'constructor' || k === 'prototype')) throw new Error(`"${path}" is not a setting name.`);
   let obj = data;
   for (const k of keys.slice(0, -1)) {
-    if (obj[k] === undefined) obj[k] = {};
+    if (!Object.hasOwn(obj, k)) obj[k] = {};
     if (typeof obj[k] !== 'object' || obj[k] === null) throw new Error(`"${path}" does not lead to a setting in this file.`);
     obj = obj[k];
   }

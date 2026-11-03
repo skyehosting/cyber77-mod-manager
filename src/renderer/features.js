@@ -564,11 +564,13 @@ function newProfileDialog() {
         h('label', { class: 'label' }, 'Name', nameInput),
         h('label', { class: 'check' }, copyBox, h('span', {}, 'Start with the mods enabled now'), h('span', { class: 'check-sub' }, 'Untick for an empty profile. Nothing changes in the game folder until you activate it.'))),
       h('div', { class: 'modal-foot' }, err,
-        h('button', { class: 'btn', onclick: () => close(null) }, 'Cancel'),
+        h('button', { class: 'btn', onclick: () => { if (!busy) close(null); } }, 'Cancel'),
         h('button', { class: 'btn btn-primary', onclick: create }, 'Create')),
     );
-    const close = v => { hide(); resolve(v); };
-    const hide = showModal({ focus: 'input[type=text]', onDismiss: () => close(null) });
+    // Closed once only, and not while the profile is being created (a second close would hide the next dialog).
+    let closed = false;
+    const close = v => { if (closed) return; closed = true; hide(); resolve(v); };
+    const hide = showModal({ focus: 'input[type=text]', onDismiss: () => { if (!busy) close(null); } });
   }));
 }
 
@@ -616,6 +618,9 @@ function importReview(plan) {
           h('span', {}, `Free Nexus account: each of the ${plural(toDownload, 'file')} to download needs one click on "Slow download". After importing, the app opens each file's page in turn.`)) : null,
         plan.localCount ? h('div', { class: 'banner banner-info', role: 'status' }, icon('info'),
           h('span', {}, `The sender also has ${plural(plan.localCount, 'mod')} installed from local files. Codes and profile files can't carry those: ask them for the archives.`)) : null,
+        // Program files that came in the zip run with the game: name them before anything installs.
+        plan.mods.some(x => x.programs?.length) ? h('div', { class: 'banner banner-warn', role: 'status' }, icon('alert'),
+          h('span', {}, `Program files in the zip: ${plan.mods.filter(x => x.programs?.length).map(x => `${x.name} (${x.programs.map(f => f.split('/').pop()).join(', ')})`).join('; ')}. They run with the game. Import them only if you trust who sent this.`)) : null,
         h('label', { class: 'label' }, 'Name', nameBox),
         h('div', { class: 'imp-stats' },
           h('span', {}, h('b', {}, String(count(['installed']))), ' already installed'),

@@ -500,7 +500,12 @@ class ModManager extends EventEmitter {
       for (const p of paths) {
         const hash = crypto.createHash('sha1').update(p).digest('hex').slice(0, 10);
         const key = `local-${hash}`;
-        const dest = path.join(this.settings.downloadsDir, 'local', path.basename(p));
+        // Another archive with the same name is already there: this one gets its own name, never its place.
+        let dest = path.join(this.settings.downloadsDir, 'local', path.basename(p));
+        if (path.resolve(p) !== path.resolve(dest) && fs.existsSync(dest)) {
+          const ext = path.extname(dest);
+          dest = path.join(path.dirname(dest), `${path.basename(dest, ext)}-${hash}${ext}`);
+        }
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         if (path.resolve(p) !== path.resolve(dest)) fs.copyFileSync(p, dest);
         const base = path.basename(p).replace(/\.(zip|7z|rar)$/i, '');
@@ -776,7 +781,9 @@ class ModManager extends EventEmitter {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
-    this.data.updates = found;
+    // Only mods still here: one updated, removed or moved from Vortex during the check is not listed.
+    const vxNow = (this.vortex.read().mods || []).map(v => v.id);
+    this.data.updates = Object.fromEntries(Object.entries(found).filter(([id]) => this.data.mods[id] || vxNow.includes(id)));
     this.data.lastUpdateCheck = Date.now();
     this.library.save();
     const n = Object.keys(found).length;
@@ -855,7 +862,7 @@ class ModManager extends EventEmitter {
     if (!isGameDir(game)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
     this.data.vortexAdopted ||= {};
     const adopted = this.data.vortexAdopted;
-    const mods = (data.mods || []).filter(m => !adopted[m.vortexId] && (ids === 'all' || ids.includes(m.id)));
+    let mods = (data.mods || []).filter(m => !adopted[m.vortexId] && (ids === 'all' || ids.includes(m.id)));
     if (!mods.length) return { adopted: [] };
     const manifestFile = this.vortex.deploymentFile();
     let manifest = { files: [] };
@@ -868,6 +875,9 @@ class ModManager extends EventEmitter {
     if (live.length) await this.vortex.apply(live.map(m => ({ vortexId: m.vortexId, enabled: false })));
 
     return this.op(async () => {
+      // Another move (a double click, the automatic one) may have taken some of them meanwhile.
+      mods = mods.filter(m => !adopted[m.vortexId]);
+      if (!mods.length) return { adopted: [] };
       // 2. Their order: a mod that won a shared file in Vortex goes above the ones it beat.
       const wins = new Map(mods.map(m => [m.vortexId, 0]));
       const shippers = new Map();
@@ -1427,15 +1437,20 @@ class ModManager extends EventEmitter {
       r.name = here?.name || r.file?.name || r.file?.file_name || (r.modId ? `Nexus mod ${r.modId}` : 'Mod');
       if (!r.version) r.version = here?.version || r.file?.version || '';
     }
+    // Mods from the zip that carry program files (.dll, .asi, .exe): the review names them before anything installs.
+    for (const r of rows.filter(x => x.status === 'bundled')) {
+      try { r.programs = (await archiveTools.list(sevenZip(this.settings.get('sevenZipPath')), r.archive)).filter(f => /\.(dll|asi|exe)$/i.test(f)).slice(0, 20); } catch { r.programs = []; }
+    }
     const token = crypto.randomBytes(6).toString('hex');
     this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows, bundleDir });
-    while (this.profileImports.size > 3) this.profileImports.delete(this.profileImports.keys().next().value);
+    // Older pending imports are dropped, with the folder their zip was unpacked into.
+    while (this.profileImports.size > 3) this.cancelProfileImport(this.profileImports.keys().next().value);
     return {
       token,
       name: String(doc.name || 'Imported profile').slice(0, 60),
       // Mods the sender installed from local files: a code cannot carry them.
       localCount: Number(doc.localCount) > 0 ? Math.min(9999, Number(doc.localCount)) : 0,
-      mods: rows.map(r => ({ name: r.name, modName: r.modName, version: r.version, status: r.status, detail: r.detail || '', size: r.size || 0, fomod: r.fomod, choices: !!r.fomodChoices && r.status !== 'newer' })),
+      mods: rows.map(r => ({ name: r.name, modName: r.modName, version: r.version, status: r.status, detail: r.detail || '', size: r.size || 0, fomod: r.fomod, choices: !!r.fomodChoices && r.status !== 'newer', programs: r.programs || undefined })),
     };
   }
 
@@ -1534,6 +1549,12 @@ class ModManager extends EventEmitter {
    * profile that is not on Nexus: its original archive, or (if that is gone) the files it installed.
    */
   async exportProfileZip(id, outFile) {
+    // Counted while it runs: an update restart waits for it (see the updater's isBusy).
+    this.exporting = (this.exporting || 0) + 1;
+    try { return await this.writeProfileZip(id, outFile); } finally { this.exporting--; }
+  }
+
+  async writeProfileZip(id, outFile) {
     await this.resolveProfileFiles(id);
     const doc = this.exportProfile(id);
     const p = this.data.profiles.list[id];
@@ -1597,12 +1618,20 @@ class ModManager extends EventEmitter {
   async planProfileZip(file) {
     const seven = sevenZip(this.settings.get('sevenZipPath'));
     const dir = path.join(this.settings.tempDir, `profile-${crypto.randomBytes(4).toString('hex')}`);
-    await archiveTools.extractSome(seven, file, dir, ['profile.json']);
-    let doc = null;
-    try { doc = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* not a profile zip */ }
-    if (!doc || doc.format !== PROFILE_FORMAT) { fs.rmSync(dir, { recursive: true, force: true }); return null; }
-    await archiveTools.extract(seven, file, dir);
-    try { return await this.planProfileImport(doc, { bundleDir: dir }); } catch (err) { fs.rmSync(dir, { recursive: true, force: true }); throw err; }
+    this.exporting = (this.exporting || 0) + 1;
+    try {
+      await archiveTools.extractSome(seven, file, dir, ['profile.json']);
+      let doc = null;
+      try { doc = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* not a profile zip */ }
+      if (!doc || doc.format !== PROFILE_FORMAT) { fs.rmSync(dir, { recursive: true, force: true }); return null; }
+      await archiveTools.extract(seven, file, dir);
+      return await this.planProfileImport(doc, { bundleDir: dir });
+    } catch (err) {
+      fs.rmSync(dir, { recursive: true, force: true }); // nothing unpacked is left behind
+      throw err;
+    } finally {
+      this.exporting--;
+    }
   }
 
   /**

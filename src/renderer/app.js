@@ -56,6 +56,8 @@ function toast(msg, kind = 'info', action = null) {
   const el = h('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status' }, icon(name), h('span', { class: 'toast-text' }, msg),
     action ? h('button', { class: 'btn btn-sm', onclick: () => { action.fn(); el.remove(); } }, action.label) : null);
   $('#toasts').append(el);
+  // At most four at once: the oldest go first, so a burst never runs off the screen.
+  while ($('#toasts').childElementCount > 4) $('#toasts').firstElementChild.remove();
   // One with a button stays longer, and never goes while the pointer is on it.
   const life = action ? 15000 : kind === 'error' ? 7000 : 3500;
   let timer = setTimeout(() => el.remove(), life);
@@ -116,7 +118,8 @@ function goTo(page) {
   const onSettings = page === 'settings';
   $('#nav-settings-sub').hidden = !onSettings;
   $('.nav-item[data-page="settings"]').setAttribute('aria-expanded', String(onSettings));
-  if (onSettings) { showSettingsSection(state.settingsSec); loadSettings(); }
+  // Back on Settings with changes not saved yet: they stay (only a clean form is read again).
+  if (onSettings) { showSettingsSection(state.settingsSec); if (!isDirty()) loadSettings(); }
   pageHooks[page]?.();
 }
 
@@ -128,6 +131,7 @@ const SETTINGS_SECS = {
   game: 'Where the game is, how mods are placed and how Play starts it',
   downloads: 'What gets downloaded and installed, and Nexus links',
   vortex: 'Mods Vortex manages, and moving them into this app',
+  display: 'How large the app is: its own scale, or the one Windows sets',
   app: 'Folders, 7-Zip and updates of this app',
 };
 state.settingsSec = SETTINGS_SECS[store.get('settings.section', 'nexus')] ? store.get('settings.section', 'nexus') : 'nexus';
@@ -203,7 +207,8 @@ function showModal({ focus = '.btn-primary', onDismiss = null, backdrop = true }
     back.hidden = true;
     modalClose = null;
     modalBackdrop = true;
-    $('#shell').inert = false;
+    // The editor, if open, keeps the window behind it out of reach.
+    $('#shell').inert = !!$('#ed-back') && !$('#ed-back').hidden;
     $('#drawer').inert = false;
     restoreFocus(opener, openerKey);
   };
@@ -371,6 +376,12 @@ function rowUpdateId(row) {
   return (row.versions || []).find(v => ups[v.id])?.id || null;
 }
 
+/** The update for a mod by its id, as its row offers it (the row may show another version of it). */
+function updateIdFor(id) {
+  const row = groupedMods().find(r => r.id === id);
+  return row ? rowUpdateId(row) : (state.snap.updates?.[id] ? id : null);
+}
+
 function visibleMods() {
   const q = $('#mods-search').value.trim().toLowerCase();
   return groupedMods().filter(m => {
@@ -442,7 +453,7 @@ function paintModSelection() {
   const picked = [...state.modSel].map(id => allMods().find(m => m.id === id)).filter(Boolean);
   const onlyVx = picked.length > 0 && picked.every(m => m.vortex);
   for (const act of ['reinstall', 'uninstall', 'delete']) $(`#mods-bulk [data-act="${act}"]`).hidden = onlyVx;
-  $('#mods-bulk-update').hidden = !picked.some(m => state.snap.updates?.[m.id]);
+  $('#mods-bulk-update').hidden = !picked.some(m => updateIdFor(m.id));
   $('#mods-bulk-repair').hidden = !picked.some(m => m.health);
   const anyOff = picked.some(m => !m.enabled);
   const anyOn = picked.some(m => m.enabled);
@@ -466,7 +477,7 @@ function renderMods() {
 
   keepFocus(tbody, () => tbody.replaceChildren(...mods.map(m => {
     const logIssues = state.modLogProblems[m.id];
-    const upd = state.snap.updates?.[m.id];
+    const upd = state.snap.updates?.[rowUpdateId(m) || m.id]; // the same update the Updates filter counts
     const tagBtn = (cls, title, section, text, extra = {}) => h('button', {
       class: `tag ${cls}`, title, dataset: { key: `${m.id}:${section}` }, ...extra,
       onclick: ev => { ev.stopPropagation(); openDrawer(m.id, section); },
@@ -675,7 +686,7 @@ async function modAction(act, ids) {
     case 'disable': return setModsEnabled(ids, false);
     case 'prioritize': return run(api.prioritize(ids), n === 1 ? 'This mod now wins its file conflicts' : `${what} now win their file conflicts`);
     case 'update': {
-      const withUpdate = ids.filter(id => state.snap.updates?.[id]);
+      const withUpdate = [...new Set(ids.map(updateIdFor).filter(Boolean))];
       if (!withUpdate.length) { toast('No updates for the selected mods'); return null; }
       // Vortex mods are updated here: they move to this app first.
       const vx = withUpdate.filter(isVx);
@@ -1162,7 +1173,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1212,6 +1223,29 @@ function renderUpdate(st) {
   if (ready && upd.restartAt && !upd.postponed) updTick = setInterval(text, 1000);
 }
 api.onUpdate(renderUpdate);
+// ---- the app's scale (Settings → Display)
+
+/** What the scale is now: Windows' for this display, the one chosen, and what is shown. */
+function showScale(s) {
+  if (!s) return;
+  const el = $('#s-ui-scale-now');
+  if (!el) return;
+  el.textContent = s.chosen
+    ? `Shown at ${s.effective}% (Windows sets ${s.system}% for this display).${s.capped ? ` ${s.chosen}% does not fit this display: ${s.max}% is the most it can show.` : ''}`
+    : `Shown at ${s.system}%, the scale Windows sets for this display.`;
+  el.classList.toggle('warn-text', !!s.capped);
+}
+api.onScale(showScale);
+api.getScale().then(r => showScale(r.ok));
+// Ctrl + / Ctrl - changed it: the Display section shows the new value (other unsaved edits are kept).
+api.onSettingsChanged(async () => {
+  const r = await api.getSettings();
+  if (!r.ok || !state.settings) return;
+  state.settings.uiScale = r.ok.uiScale;
+  $('#s-ui-scale').value = String(r.ok.uiScale || 0);
+  updateDirty();
+});
+
 // The account type, checked when the app starts.
 api.onKeyUser(u => { state.keyUser = u; renderStatus(); });
 api.updateState().then(r => r.ok && renderUpdate(r.ok));
@@ -1346,6 +1380,7 @@ function readForm() {
   const patch = {};
   for (const [k, sel] of Object.entries(form)) patch[k] = $(sel).value;
   patch.aiContext = Number(patch.aiContext) || 0; // empty: automatic
+  patch.uiScale = Number(patch.uiScale) || 0; // 0: follow Windows
   for (const [k, sel] of Object.entries(checks)) patch[k] = $(sel).checked;
   patch.categories = $$('#s-cats input').filter(i => i.checked).map(i => i.value);
   const key = $('#s-apikey').value.trim();
@@ -1416,7 +1451,9 @@ $('#s-validate').addEventListener('click', async () => {
     status.textContent = `Signed in as ${r.ok.name} — ${r.ok.isPremium ? 'Premium: direct downloads' : 'free account: one click on "Slow download" per file, then the download continues here'}`;
     state.keyUser = r.ok;
   }
-  await loadSettings();
+  // The key is saved; other edits not saved yet stay in the form.
+  $('#s-apikey').value = '';
+  if (!isDirty()) await loadSettings(); else updateDirty();
 });
 $('#s-game-browse').addEventListener('click', async () => {
   const p = await run(api.pickFolder('Select the Cyberpunk 2077 folder'));
@@ -1656,8 +1693,10 @@ $('#mods-redmod').addEventListener('click', async () => {
     if (await redmodToolsBox(false) === 'get') await run(api.getRedmodTools());
     return;
   }
-  const r = await run(api.deployRedmods());
+  const res = await api.deployRedmods();
   refreshRedmod();
+  if (res.error) { toast(res.error, 'error'); return; } // a failure is not "no REDmods"
+  const r = res.ok;
   if (r === null) toast('There are no REDmods in the game folder');
   else if (r?.missingTools) { if (await redmodToolsBox(false) === 'get') await run(api.getRedmodTools()); }
   else if (r && !r.ok) modal({ title: 'REDmod deploy failed', body: h('p', { class: 'pre-wrap' }, `${r.reason}\n\nThe full output is in Game log → Manager.`), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });

@@ -246,7 +246,7 @@ test('AI: settings files are read only with approval and never with their secret
     await turn;
 
     assert.match(seen[1].at(-1).results[0].content, /\\"apiKey\\": \\"\[hidden: empty\]\\"/, 'the model saw the setting, not a value');
-    assert.match(seen[2].at(-1).results[0].content, /set \(31 characters\)/);
+    assert.match(seen[2].at(-1).results[0].content, /"result":"set"/); // the value never goes back to the model
     const everything = JSON.stringify([seen, a.view(), fs.readFileSync(path.join(root, 'chat.json'), 'utf8')]);
     assert.ok(!everything.includes('very-secret'), 'what the user typed never reaches the model or the saved chat');
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(game, 'bin/x64/plugins/cyber_engine_tweaks/mods/A/settings.json'), 'utf8')), { apiKey: `${SK}very-secret-value-1234567890` });
@@ -267,4 +267,11 @@ test('AI: settings files are read only with approval and never with their secret
     assert.strictEqual(a.view().transcript.filter(x => x.type === 'access').at(-1).status, 'expired');
     assert.strictEqual(a.view().busy, false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a form key path cannot reach Object.prototype, and a settings file named another way still needs approval', () => {
+  const { setValues, isConfigFile } = require('../src/core/secrets');
+  assert.throws(() => setValues('{"a":1}', 'x.json', [{ key: '__proto__.shell', value: 'cmd' }]), /not a setting name/);
+  assert.strictEqual(({}).shell, undefined);
+  for (const p of ['r6/config/settings.json::$DATA', 'settings.json.', 'settings.json ']) assert.strictEqual(isConfigFile(p), true, p);
 });

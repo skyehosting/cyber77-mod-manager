@@ -100,7 +100,7 @@ function showPage(url) {
     view.className = 'nexus-view';
     view.setAttribute('partition', 'persist:nexus');
     view.setAttribute('src', url);
-    view.addEventListener('did-start-loading', () => { $('#bd-load').hidden = false; });
+    view.addEventListener('did-start-loading', () => { $('#bd-load').textContent = 'Loading…'; $('#bd-load').hidden = false; }); // (not an earlier error)
     // Nexus pages keep loading ads long after the page itself is there.
     view.addEventListener('dom-ready', () => { $('#bd-load').hidden = true; });
     view.addEventListener('did-stop-loading', () => { $('#bd-load').hidden = true; });

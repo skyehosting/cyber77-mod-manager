@@ -272,9 +272,16 @@ class GameLogMonitor extends EventEmitter {
    * While the game runs: a text file that appeared or grew since it started is a log some mod writes,
    * wherever it is. Follow it from now on, and remember it for later starts.
    */
-  async discover() {
+  /** Look for logs new since the game started; a look already under way finishes first. */
+  discover() {
+    this.discoverRun = (this.discoverRun || Promise.resolve()).then(() => this.discoverOnce()).catch(err => this.log?.warn?.('Could not look for new logs', err.message));
+    return this.discoverRun;
+  }
+
+  async discoverOnce() {
     const gameDir = this.getGameDir();
-    if (this.discovering || !this.baseline || !gameDir) return;
+    const baseline = this.baseline; // the game's exit may clear it while this look runs
+    if (this.discovering || !baseline || !gameDir) return;
     this.discovering = true;
     try {
       const now = await this.possibleLogs(gameDir);
@@ -282,7 +289,7 @@ class GameLogMonitor extends EventEmitter {
       const fresh = [];
       for (const [rel, size] of now) {
         if (followed.has(rel.toLowerCase()) || this.found.has(rel)) continue;
-        const before = this.baseline.get(rel);
+        const before = baseline.get(rel);
         if (size > 0 && (before === undefined || size > before) && isText(path.join(gameDir, rel))) fresh.push(rel);
       }
       if (!fresh.length) return;
@@ -315,6 +322,9 @@ class GameLogMonitor extends EventEmitter {
           rel, full: path.join(gameDir, rel), source: sourceName(rel), root: ownerRoot(rel),
           offset: 0, size: st.size, mtime: st.mtimeMs, followed: false, errors: 0, warns: 0, partial: '',
         });
+      } else if (!this.files.get(rel).followed) {
+        // A log not followed (it was old) that the game writes again: its new time makes it followed.
+        Object.assign(this.files.get(rel), { mtime: st.mtimeMs, size: st.size });
       }
     }
     for (const [rel, f] of this.files) if (!found.includes(rel)) this.files.delete(rel);
@@ -444,7 +454,9 @@ class GameLogMonitor extends EventEmitter {
         if (dir) this.possibleLogs(dir).then(sizes => { if (this.game.running) this.baseline = sizes; }).catch(() => {});
       } else {
         // One last look for logs the run wrote (crash logs are often written on the way out).
-        this.discover().finally(() => { this.baseline = null; });
+        // (after any look under way; a relaunch meanwhile keeps its own new baseline)
+        const exitedBaseline = this.baseline;
+        this.discover().finally(() => { if (this.baseline === exitedBaseline) this.baseline = null; });
         const ran = this.game.since ? Math.round((Date.now() - this.game.since) / 60000) : 0;
         this.game = { running: false, since: null, pid: null };
         const crashed = folder => {

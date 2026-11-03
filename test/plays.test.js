@@ -87,3 +87,19 @@ test('a play the app did not see end (it was closed first) is finished on the ne
   assert.strictEqual(p.end, start + 600e3);
   assert.strictEqual(p.outcome, 'unknown');
 });
+
+test('a play whose last minute the app did not see (closed right after the game) still gets its log files', () => {
+  const dir = tmp('plays');
+  const game = tmp('game');
+  const logs = fakeLogs(game);
+  logs.addFile('r6/logs/x.log', 'run\n');
+  const d = path.join(dir, '20261103-010000');
+  fs.mkdirSync(d);
+  const start = Date.now() - 600e3;
+  fs.writeFileSync(path.join(d, 'play.json'), JSON.stringify({ id: '20261103-010000', start, end: Date.now() - 10e3, outcome: 'exited', errors: 0, warns: 0, lines: 1 }));
+  const plays = new PlayHistory({ dir, logs });
+  plays.recover();
+  const p = plays.list()[0];
+  assert.strictEqual(p.files, 1);
+  assert.strictEqual(p.outcome, 'exited', 'how it ended is kept');
+});

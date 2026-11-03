@@ -93,7 +93,7 @@ class Downloader extends EventEmitter {
 
   clearFinished() {
     for (const [id, j] of this.jobs) {
-      if (['done', 'cancelled', 'skipped'].includes(j.status)) this.jobs.delete(id);
+      if (['done', 'cancelled', 'skipped', 'error'].includes(j.status)) this.jobs.delete(id); // as the Clear button says
     }
   }
 

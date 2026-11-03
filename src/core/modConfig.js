@@ -70,7 +70,7 @@ class ModConfig {
   /** The folder a location's path is relative to. */
   root(loc) {
     if (loc.base === 'game') return this.gameDir();
-    if (loc.base === 'app' && /^[\w.-]+$/.test(String(loc.id))) return path.join(this.manager.settings.stagingDir, loc.id);
+    if (loc.base === 'app' && /^[\w.-]+$/.test(String(loc.id)) && !/^\.+$/.test(String(loc.id))) return path.join(this.manager.settings.stagingDir, loc.id);
     if (loc.base === 'vortex' && loc.id && !/[\\/]|\.\./.test(String(loc.id))) return path.join(this.vortexStaging(), loc.id);
     throw new Error('Unknown file location.');
   }
@@ -256,6 +256,7 @@ class ModConfig {
    * or the game wrote it), nothing is written unless `force`. Returns the new mtime.
    */
   write(loc, text, { mtime, eol = '\n', bom = '', force = false } = {}) {
+    if (!isTextName(loc.rel)) throw new Error('Only text files can be edited here.');
     const full = this.resolve(loc);
     const st = fs.statSync(full);
     if (!force && mtime && Math.abs(st.mtimeMs - mtime) > 1) {
@@ -273,6 +274,7 @@ class ModConfig {
 
   /** Put back the file as it was before its first save here. */
   restore(loc) {
+    if (!isTextName(loc.rel)) throw new Error('Only text files can be edited here.');
     const keep = this.backupPath(loc);
     if (!fs.existsSync(keep)) throw new Error('There is no original kept for this file.');
     fs.writeFileSync(this.resolve(loc), fs.readFileSync(keep));

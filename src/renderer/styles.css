@@ -1941,3 +1941,10 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .risk-mod { display: flex; flex-direction: column; gap: 0.2rem; }
 .risk-files { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .risk-files code { font-size: var(--fs-xs); }
+
+.scale-now { margin-top: var(--sp-2); color: var(--text-2); }
+.scale-now.warn-text { color: var(--warn-text); }
+
+/* Very wide screens (ultrawide, 32:9): the page's content stays at a readable width, centred,
+   instead of stretching rows across the whole screen. */
+.page { padding-inline: max(var(--page-pad), calc((100% - 2400px) / 2)); }

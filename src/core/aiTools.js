@@ -21,8 +21,11 @@ const redmodView = s => (!s?.count ? 'no REDmods installed' : {
  */
 
 const MAX_OUT = 14000;
+// Everything a read tool returns has key-like values hidden, whatever tool it came from (logs, crash
+// reports and mod files can hold tokens): one place, not each call site.
+const hideAll = s => String(s).split('\n').map(hide).join('\n');
 const out = v => {
-  const s = typeof v === 'string' ? v : JSON.stringify(v);
+  const s = typeof v === 'string' ? hideAll(v) : JSON.stringify(v, (_k, x) => (typeof x === 'string' ? hideAll(x) : x));
   return s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}…[cut: ask for less, e.g. a filter or a search]` : s;
 };
 const iso = t => (t ? new Date(t).toISOString() : null);
@@ -416,7 +419,7 @@ function makeTools(ctx) {
         saved: true, file: card.path,
         settings: card.fields.map(f => {
           const v = String(values[f.key] ?? '');
-          return { key: f.key, result: !v ? 'left as it was' : f.secret ? `set (${v.length} characters)` : `set to ${JSON.stringify(v)}` };
+          return { key: f.key, result: !v ? 'left as it was' : 'set' }; // never the value: the model decides which fields are "secret", so none is echoed
         }),
       });
     }

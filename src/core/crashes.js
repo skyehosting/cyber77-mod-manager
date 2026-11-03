@@ -73,6 +73,12 @@ function readDump(file) {
   }
 }
 
+/** A crash folder's minidump: Cyberpunk2077.dmp, else any .dmp in it ('' if none). */
+function dumpOf(folder) {
+  if (fs.existsSync(path.join(folder, 'Cyberpunk2077.dmp'))) return path.join(folder, 'Cyberpunk2077.dmp');
+  try { const any = fs.readdirSync(folder).find(f => /\.dmp$/i.test(f)); return any ? path.join(folder, any) : ''; } catch { return ''; }
+}
+
 const SYSTEM_DIRS = /\\windows\\(system32|syswow64|winsxs)\\|\\windows\\microsoft\.net\\/i;
 
 class CrashReports {
@@ -101,13 +107,16 @@ class CrashReports {
     const time = crashTime(name, full);
     let stack = {};
     try { stack = parseStack(fs.readFileSync(path.join(full, 'stacktrace.txt'), 'utf8')); } catch { /* none */ }
-    const dumpFile = fs.existsSync(path.join(full, 'Cyberpunk2077.dmp')) ? path.join(full, 'Cyberpunk2077.dmp') : (fs.readdirSync(full).find(f => /\.dmp$/i.test(f)) && path.join(full, fs.readdirSync(full).find(f => /\.dmp$/i.test(f))));
+    const dumpFile = dumpOf(full);
     const dump = dumpFile ? readDump(dumpFile) : null;
     // Dumps name modules by file name only: find that file in the game folder to know its mod.
     // Not there (and not Windows' own): a driver's, an overlay's or another program's.
     const module = dump?.module ? this.locate(dump.module) : null;
     const out = { id: name, time, folder: full, reason: stack.reason, expression: stack.expression, message: stack.message, module, dumpSize: dumpFile ? fs.statSync(dumpFile).size : 0 };
-    this.cache.set(name, out);
+    // The reporter writes its folder after the game is gone: remember a crash only once it is complete.
+    let fresh = true;
+    try { fresh = Date.now() - fs.statSync(full).mtimeMs < 60e3; } catch { /* gone */ }
+    if (dump && stack.reason && !fresh) this.cache.set(name, out);
     return out;
   }
 
@@ -115,7 +124,15 @@ class CrashReports {
   locate(m) {
     const name = path.win32.basename(m.path || m.name).toLowerCase();
     const out = { ...m, mod: '', file: '', system: SYSTEM_DIRS.test(m.path || ''), notInGame: false };
-    if (/[\\/]/.test(m.path || '')) out.mod = this.ownerOf(m.path);
+    const hasFolder = /[\\/]/.test(m.path || '');
+    if (hasFolder) out.mod = this.ownerOf(m.path);
+    // A module with its folder named and outside the game (Windows' own dxgi.dll, say) is not the
+    // game folder's file of the same name: no lookup by name for it.
+    const game = path.resolve(this.gameDir() || '').toLowerCase();
+    if (hasFolder && !(game && path.resolve(m.path).toLowerCase().startsWith(`${game}${path.sep}`))) {
+      out.notInGame = !out.system;
+      return out;
+    }
     try {
       const idx = this.files.index();
       const hit = idx.files.find(f => path.posix.basename(f.rel).toLowerCase() === name)
@@ -170,7 +187,7 @@ class CrashReports {
     const report = read('report.txt', 200000);
     loaded = [...report.matchAll(/^LoadedModule\[\d+\]=(.+)$/gm)].map(m => m[1].trim());
     const game = String(this.gameDir() || '').toLowerCase();
-    const modDlls = (readDump(path.join(c.folder, 'Cyberpunk2077.dmp'))?.modules || [])
+    const modDlls = (readDump(dumpOf(c.folder) || '')?.modules || [])
       .filter(p => game && p.toLowerCase().startsWith(game) && !/\\bin\\x64\\(cyberpunk2077\.exe|[^\\]*(physx|bink|amd_|libxe|nvngx|sl\.|icu|oo2|redlexer|redgalaxy|libcurl|dbghelp)[^\\]*)$/i.test(p))
       .map(p => ({ file: path.relative(this.gameDir(), p).replace(/\\/g, '/'), mod: this.ownerOf(p) }));
     // Game-log problems in the minutes before it.

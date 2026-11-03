@@ -461,11 +461,14 @@ class Assistant extends EventEmitter {
         // Only possible when the window is not known for sure, or the chat is near it.
         if (reply.usage?.input && (win.assumed || win.learned || this.tokensOf(chars) > win.tokens * 0.8) && ctx.wasCut(chars, reply.usage.input + (reply.cached || 0), this.state.tokPerChar)) {
           this.learnContext(Math.ceil((reply.usage.input + (reply.cached || 0)) * 1.1), 'the server read only part of the chat (it cuts long chats silently)');
-          turn.input += reply.usage.input; turn.output += reply.usage.output || 0; turn.steps++;
           win = await this.contextWindow();
           const before = this.requestChars();
           await this.fit(win, true, onFit);
-          if (this.requestChars() < before) reply = await ask(); // nothing to shorten: keep the answer it gave
+          if (this.requestChars() < before) {
+            // Asked again: the cut-short reply still cost its tokens (the new reply's are added below).
+            turn.input += reply.usage.input; turn.output += reply.usage.output || 0; turn.steps++;
+            reply = await ask();
+          } // else nothing could be shortened: the answer it gave is kept (and counted once, below)
         }
         // What the provider counted teaches how many characters make a token for this model.
         if (reply.usage?.input && chars && !reply.cached && !ctx.wasCut(chars, reply.usage.input, this.state.tokPerChar)) this.state.tokPerChar = Math.min(0.6, Math.max(0.15, reply.usage.input / chars));
@@ -529,7 +532,6 @@ class Assistant extends EventEmitter {
         this.state.history.push({ role: 'tool', results });
         if (round === MAX_ROUNDS - 1) this.show({ type: 'notice', text: 'The assistant stopped after many steps. Ask it to continue if needed.' });
       }
-      if (proposal.length) this.show({ type: 'proposal', status: 'pending', title: proposal.length === 1 ? proposal[0].title : `${proposal.length} changes`, actions: proposal });
     } catch (err) {
       if (err.stopped || this.abort.signal.aborted) {
         this.show({ type: 'notice', text: 'Stopped.' });
@@ -542,6 +544,9 @@ class Assistant extends EventEmitter {
         if (last?.role === 'assistant' && last.calls?.length) this.state.history.push({ role: 'tool', results: last.calls.map(c => ({ id: c.id, name: c.name, content: `{"error":${JSON.stringify(err.message)}}` })) });
       }
     } finally {
+      // Changes the model proposed (it was told "shown to the user") are shown, even if a later step
+      // failed or was stopped: the user decides on them either way.
+      if (proposal.length) this.show({ type: 'proposal', status: 'pending', title: proposal.length === 1 ? proposal[0].title : `${proposal.length} changes`, actions: proposal });
       if (turn.steps) {
         const t = this.state.usage || { input: 0, output: 0 };
         this.state.usage = { input: t.input + turn.input, output: t.output + turn.output, estimated: !!t.estimated || turn.estimated };
