@@ -99,4 +99,7 @@ async function launchGame({ gameDir, store, epicApp, mode = 'direct' }, openExte
   return { via: 'the game directly', args };
 }
 
-module.exports = { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods };
+/** Whether CD Projekt's REDmod tools (a free DLC) are installed: without them REDmods cannot be deployed. */
+const redmodToolsInstalled = gameDir => fs.existsSync(redmodTool(gameDir));
+
+module.exports = { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled };

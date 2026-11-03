@@ -1769,3 +1769,6 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .prof-stat-link { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; }
 .prof-stat-link b { color: var(--info); }
 .prof-stat-link:hover span { color: var(--text); text-decoration: underline; }
+.redmod-btn[data-state="missing"] { color: var(--warn); }
+.redmod-help ol { margin: var(--sp-2) 0; padding-left: 1.3rem; }
+.redmod-help li { margin: 0.3rem 0; }

@@ -6,7 +6,7 @@ const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
-const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods } = require('./core/launcher');
+const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
@@ -265,7 +265,7 @@ async function boot() {
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
     if (!skipDeploy) {
       const r = await runRedmodDeploy(dir, false);
-      if (r && !r.ok) return { deployFailed: true, reason: r.reason };
+      if (r && !r.ok) return { deployFailed: true, missingTools: !!r.missingTools, reason: r.reason };
     }
     const store = await storeOf(dir);
     // Through Steam: the game's Steam launch options must skip the launcher (and load REDmods).
@@ -280,6 +280,17 @@ async function boot() {
   });
   handle('redmod:deploy', () => runRedmodDeploy(settings.get('gamePath'), true));
   handle('redmod:status', () => redmodStatus());
+  // How to get the free REDmod tools for the store this copy of the game came from.
+  handle('redmod:help', async () => {
+    const store = await storeOf(settings.get('gamePath'));
+    return { store: store.store, label: store.label, ...(REDMOD_HELP[store.store] || REDMOD_HELP.other) };
+  });
+  handle('redmod:getTools', async () => {
+    const store = await storeOf(settings.get('gamePath'));
+    const help = REDMOD_HELP[store.store] || REDMOD_HELP.other;
+    await shell.openExternal(help.url);
+    return { store: store.store, url: help.url };
+  });
   handle('ai:view', () => assistant.view());
   handle('ai:send', text => { assistant.send(text).catch(err => send('ai', { type: 'item', item: { id: String(Date.now()), type: 'error', text: err.message } })); return true; });
   handle('ai:stop', () => assistant.stop());
@@ -533,15 +544,49 @@ let redmodRunning = null;
  * since the last successful deploy means Play deploys first), and how this app's last deploy went.
  */
 function redmodStatus(dir = settings.get('gamePath')) {
-  if (!isGameDir(dir)) return { count: 0, upToDate: true, last: null };
+  if (!isGameDir(dir)) return { count: 0, upToDate: true, last: null, tools: true };
   const count = hasRedmods(dir) ? redmodFolders(dir).length : 0;
-  return { count, upToDate: !count || redmodFingerprint(dir) === settings.get('redmodDeployed'), running: !!redmodRunning, last: settings.get('redmodLast') || null };
+  return {
+    count, upToDate: !count || redmodFingerprint(dir) === settings.get('redmodDeployed'), running: !!redmodRunning,
+    last: settings.get('redmodLast') || null, tools: redmodToolsInstalled(dir),
+  };
 }
+
+const REDMOD_MISSING = 'The REDmod tools are not installed (tools\\redmod\\bin\\redMod.exe). They are a free DLC from CD Projekt for Cyberpunk 2077: without them REDmods cannot be deployed, by this app or any other.';
+let redmodMissingNoted = false;
+
+/*
+ * Getting the REDmod tools, per store (CD Projekt's modding page, cyberpunk.net/en/modding-support).
+ * Every store puts them in the same place: <game>\tools\redmod\bin\redMod.exe.
+ */
+const REDMOD_HELP = {
+  steam: {
+    url: 'steam://store/2060310', button: 'Open it in Steam',
+    steps: ['In Steam, open "Cyberpunk 2077 REDmod" (free DLC) and click Install.', 'Steam downloads it into the game folder. Then press Play here again.'],
+  },
+  gog: {
+    url: 'https://www.gog.com/game/cyberpunk_2077_redmod', button: 'Open it on GOG',
+    steps: ['On GOG, add "Cyberpunk 2077 REDmod" (free DLC) to your library.', 'In GOG Galaxy: Cyberpunk 2077 → Manage installation → Configure, tick REDmod and let it install. Then press Play here again.'],
+  },
+  epic: {
+    url: 'https://www.cyberpunk.net/en/modding-support', button: 'Open CD Projekt\'s guide',
+    steps: ['On Epic, REDmod comes with the game (version 1.6 and later); it has no separate download.', 'In the Epic Games Launcher: Library → Cyberpunk 2077 → ⋯ → Manage → Verify. That puts back missing game files, the REDmod tools included.'],
+  },
+  other: {
+    url: 'https://www.cyberpunk.net/en/modding-support', button: 'Open CD Projekt\'s guide',
+    steps: ['CD Projekt offers REDmod for the Steam, GOG and Epic versions of the game (see their modding page).', 'Install it there into this game folder, then press Play here again.'],
+  },
+};
 
 async function runRedmodDeploy(dir, force) {
   if (!isGameDir(dir) || !hasRedmods(dir)) return null;
   const fp = redmodFingerprint(dir);
   if (!force && fp === settings.get('redmodDeployed')) return null;
+  // No tools: nothing can deploy. Said once per run (not as a failure each Play); installing them fixes it.
+  if (!redmodToolsInstalled(dir)) {
+    if (!redmodMissingNoted) { logger.warn('REDmod tools are missing: your REDmods are not deployed', REDMOD_MISSING); redmodMissingNoted = true; }
+    return { ok: false, missingTools: true, reason: REDMOD_MISSING };
+  }
   if (redmodRunning) return redmodRunning;
   redmodRunning = (async () => {
     logger.info(`Deploying ${redmodFolders(dir).length} REDmods (REDmod deploy)…`);

@@ -1528,6 +1528,13 @@ $('#play-btn').addEventListener('click', async () => {
     const go = await steamOptionsBox(r.steamOptions);
     r = go ? await run(api.launchGame({ skipDeploy: true, skipSteamCheck: go === 'anyway' })) : null;
   }
+  // No REDmod tools: say how to get them, once per session; after that Play just starts the game.
+  if (r?.deployFailed && r.missingTools) {
+    const go = redmodToolsAsked ? 'launch' : await redmodToolsBox(true);
+    redmodToolsAsked = true;
+    if (go === 'get') await run(api.getRedmodTools());
+    r = go === 'launch' ? await run(api.launchGame({ skipDeploy: true })) : null;
+  }
   // REDmod deploy failed: say why, and let the player decide.
   if (r?.deployFailed) {
     const go = await confirmBox('REDmod deploy failed', `Your REDmods may not load (the game uses what was last deployed successfully).\n\n${r.reason}\n\nThe full output is in Game log → Manager.`, 'Launch anyway');
@@ -1551,10 +1558,38 @@ api.onRedmod(e => {
   }
   if (e.stage === 'deploying') refreshRedmod({ ...(e.status || {}), count: 1, running: true });
 });
+/**
+ * The REDmod tools are missing: what they are, and how to get them for this store (Steam, GOG,
+ * Epic…). Resolves 'get' (open the store), 'launch' (start without them, when asked from Play) or false.
+ */
+let redmodToolsAsked = false;
+async function redmodToolsBox(fromPlay) {
+  const help = (await api.redmodHelp()).ok || { steps: [], button: 'Get REDmod' };
+  const v = await modal({
+    title: 'Install the free REDmod tools',
+    sub: help.label ? `Your game is the ${help.label} version` : '',
+    body: h('div', { class: 'redmod-help' },
+      h('p', {}, 'Some of your mods are REDmods. They need CD Projekt\'s free REDmod tools to be deployed (by this app or any other), and this copy of the game does not have them yet.'),
+      h('ol', {}, help.steps.map(s => h('li', {}, s))),
+      h('p', { class: 'hint' }, fromPlay ? 'Until then the game starts without your REDmods; your other mods work as usual. After installing, Play deploys them by itself.' : 'After installing, Play deploys them by itself.')),
+    buttons: [
+      { label: fromPlay ? 'Cancel' : 'Close', value: false, safe: true },
+      fromPlay ? { label: 'Launch without them', value: 'launch' } : null,
+      { label: help.button || 'Get REDmod', value: 'get', kind: 'btn-primary' },
+    ].filter(Boolean),
+  });
+  return v;
+}
+
 $('#mods-redmod').addEventListener('click', async () => {
+  if ($('#mods-redmod').dataset.state === 'missing') {
+    if (await redmodToolsBox(false) === 'get') await run(api.getRedmodTools());
+    return;
+  }
   const r = await run(api.deployRedmods());
   refreshRedmod();
   if (r === null) toast('There are no REDmods in the game folder');
+  else if (r?.missingTools) { if (await redmodToolsBox(false) === 'get') await run(api.getRedmodTools()); }
   else if (r && !r.ok) modal({ title: 'REDmod deploy failed', body: h('p', { class: 'pre-wrap' }, `${r.reason}\n\nThe full output is in Game log → Manager.`), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
 });
 
@@ -1562,6 +1597,7 @@ $('#mods-redmod').addEventListener('click', async () => {
  * The Mods page's REDmod button says where REDmods stand: deployed, changed since (Play deploys
  * them first), or the last deploy failed. Only REDmods need deploying; other mods work at once.
  */
+let redmodToolsWarned = false;
 async function refreshRedmod(st) {
   const s = st || (await api.redmodStatus()).ok;
   const btn = $('#mods-redmod');
@@ -1569,12 +1605,19 @@ async function refreshRedmod(st) {
   if (!s?.count) return;
   const when = s.last?.at ? new Date(s.last.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
   const failed = s.last && !s.last.ok;
-  const mode = s.running ? 'running' : failed ? 'failed' : s.upToDate ? 'ok' : 'waiting';
+  const missing = s.tools === false && !s.upToDate;
+  const mode = s.running ? 'running' : missing ? 'missing' : failed ? 'failed' : s.upToDate ? 'ok' : 'waiting';
   btn.dataset.state = mode;
   btn.disabled = s.running;
-  $('#mods-redmod-label').textContent = { running: 'Deploying REDmods…', failed: 'REDmod deploy failed', ok: 'REDmods deployed', waiting: 'Deploy REDmods' }[mode];
+  $('#mods-redmod-label').textContent = { running: 'Deploying REDmods…', missing: 'REDmod tools missing', failed: 'REDmod deploy failed', ok: 'REDmods deployed', waiting: 'Deploy REDmods' }[mode];
+  // Once per session: REDmods are here (just installed, say) but nothing can deploy them.
+  if (missing && !redmodToolsWarned) {
+    redmodToolsWarned = true;
+    toast('Your REDmods need the free REDmod tools to load', 'warn', { label: 'How to get them', fn: async () => { if (await redmodToolsBox(false) === 'get') await run(api.getRedmodTools()); } });
+  }
   btn.title = {
     running: 'REDmod deploy is running',
+    missing: 'This copy of the game has no REDmod tools (a free DLC from CD Projekt), so REDmods cannot be deployed. Click to see how to get them.',
     failed: `The last REDmod deploy failed${when ? ` (${when})` : ''}. Click to try again; Play also tries before starting the game.\n\n${s.last?.reason || ''}`,
     ok: `${s.count} REDmods, deployed${when ? ` ${when}` : ''}. Play deploys again by itself when they change. Click to deploy now anyway.`,
     waiting: `Your REDmods changed since the last deploy: Play deploys them before starting the game, or click to do it now.`,
