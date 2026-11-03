@@ -143,3 +143,25 @@ test('"Ask before restarting" waits for the user; "Off" never checks by itself, 
   off.start();
   assert.strictEqual(up2.checks, 2, 'turned back on: checks again');
 });
+
+test('a restart waits while the AI assistant is answering, also when it starts during the countdown', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'setImmediate'] });
+  const up = fakeUpdater();
+  let ai = true;
+  const u = new AppUpdater({ autoUpdater: up, enabled: true, getSchedule: () => ({ every: 1, unit: 'hours' }), isBusy: () => false, aiBusy: () => ai, log: quiet });
+  up.emit('update-available', { version: '2.2.0' });
+  up.emit('update-downloaded', { version: '2.2.0' });
+  assert.strictEqual(u.state.waitingFor, 'ai');
+  t.mock.timers.tick(10 * 60e3);
+  assert.strictEqual(up.installed, null);
+  ai = false;
+  t.mock.timers.tick(5000);
+  assert.ok(u.state.restartAt > 0);
+  ai = true; // a new question during the notice
+  t.mock.timers.tick(RESTART_DELAY_MS + 1);
+  assert.strictEqual(up.installed, null, 'the answer is not cut off');
+  ai = false;
+  t.mock.timers.tick(5000);
+  t.mock.timers.tick(RESTART_DELAY_MS + 1);
+  assert.ok(up.installed);
+});

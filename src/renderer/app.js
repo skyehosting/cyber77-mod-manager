@@ -1188,6 +1188,7 @@ function renderUpdate(st) {
   const WAIT = {
     game: 'It installs after you close the game.',
     busy: 'The app restarts to install it when downloads and installs finish.',
+    ai: 'The app restarts to install it when the AI assistant has finished.',
     view: 'The app restarts to install it when you come back to it.',
   };
   const text = () => {

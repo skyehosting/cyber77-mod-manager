@@ -31,11 +31,12 @@ class AppUpdater extends EventEmitter {
    * restart. gameRunning(): the game is open. inView(): the window can be seen (not minimized), so
    * a restart is never a surprise. autoUpdater: electron-updater's (passed in so this stays testable).
    */
-  constructor({ autoUpdater, getSchedule, isBusy, gameRunning = () => false, inView = () => true, log, enabled }) {
+  constructor({ autoUpdater, getSchedule, isBusy, aiBusy = () => false, gameRunning = () => false, inView = () => true, log, enabled }) {
     super();
     this.up = autoUpdater;
     this.getSchedule = getSchedule;
     this.isBusy = isBusy;
+    this.aiBusy = aiBusy; // the AI assistant is answering (a restart would cut it off)
     this.gameRunning = gameRunning;
     this.inView = inView;
     this.log = log;
@@ -122,7 +123,7 @@ class AppUpdater extends EventEmitter {
     clearTimeout(this.restartTimer);
     if (this.state.postponed || this.state.status !== 'ready') return;
     if (this.mode() !== 'auto') { this.set({ restartAt: 0, waiting: false, waitingFor: '' }); return; }
-    const waitingFor = this.gameRunning() ? 'game' : this.isBusy() ? 'busy' : !this.inView() ? 'view' : '';
+    const waitingFor = this.gameRunning() ? 'game' : this.isBusy() ? 'busy' : this.aiBusy() ? 'ai' : !this.inView() ? 'view' : '';
     if (waitingFor) {
       if (this.state.waitingFor !== waitingFor || this.state.restartAt) this.set({ restartAt: 0, waiting: true, waitingFor });
       this.restartTimer = setTimeout(() => this.scheduleRestart(), 5000);
@@ -132,7 +133,7 @@ class AppUpdater extends EventEmitter {
     this.set({ restartAt: at, waiting: false, waitingFor: '' });
     this.restartTimer = setTimeout(() => {
       if (this.state.postponed) return;
-      if (this.gameRunning() || this.isBusy() || !this.inView()) { this.scheduleRestart(); return; }
+      if (this.gameRunning() || this.isBusy() || this.aiBusy() || !this.inView()) { this.scheduleRestart(); return; }
       this.installNow();
     }, RESTART_DELAY_MS);
   }

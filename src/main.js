@@ -169,6 +169,7 @@ async function boot() {
     enabled: app.isPackaged && !process.env.CMM_CAPTURE,
     getSchedule: () => ({ every: settings.get('updateEvery'), unit: settings.get('updateUnit'), mode: settings.get('updateMode') }),
     isBusy: () => manager.busy,
+    aiBusy: () => !!(assistant?.busy || assistant?.waiting),
     // No checks and no restarts while the game runs; a restart only while the window can be seen.
     gameRunning: () => !!gameLogs?.status().running,
     inView: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
