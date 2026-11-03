@@ -1760,3 +1760,9 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .cfg-part-head.hand .i { color: var(--warn); }
 .cfg-part-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cfg-part-head .cfg-note, .cfg-part-head .cfg-count { text-transform: none; letter-spacing: 0; font-weight: var(--fw-regular); }
+/* The editor's search: always in the header, top right */
+.ed-head .ed-find { display: flex; align-items: center; gap: var(--sp-1); flex: 0 1 24rem; min-width: 12rem; padding: 0; border: 0; background: none; }
+.ed-find-field { flex: 1; min-width: 0; width: auto; }
+.ed-find-field input { height: var(--control-h-sm); width: 100%; }
+.ed-head .ed-find-count { min-width: 4.5rem; text-align: right; }
+@container (max-width: 44rem) { .ed-head .ed-find-count { display: none; } }

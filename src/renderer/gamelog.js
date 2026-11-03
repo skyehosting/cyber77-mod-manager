@@ -23,6 +23,7 @@ const gl = {
   rootErrors: new Map(), // mod folder (lower case) → error count, kept as lines arrive
   status: { running: false, since: null },
   sourcesSeq: 0,
+  lastId: 0, // the newest line taken in (ids only grow)
 };
 
 const relTime = t => {
@@ -334,8 +335,15 @@ function recount() {
   for (const e of gl.entries) count(e);
 }
 
+/** Take in lines; returns the ones that are new (a line sent in the startup history and again live is skipped: ids only grow). */
 function ingest(batch) {
+  const fresh = [];
   for (const e of batch) {
+    if (e.id) {
+      if (e.id <= gl.lastId) continue;
+      gl.lastId = e.id;
+    }
+    fresh.push(e);
     gl.entries.push(e);
     gl.sources.add(e.source);
     count(e);
@@ -344,10 +352,12 @@ function ingest(batch) {
     gl.entries.splice(0, gl.entries.length - GL_MAX_ENTRIES);
     recount();
   }
+  return fresh;
 }
 
-function onBatch(batch) {
-  ingest(batch);
+function onBatch(all) {
+  const batch = ingest(all);
+  if (!batch.length) return;
   syncSourceOptions();
   renderStats();
   scheduleModProblems();

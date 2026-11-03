@@ -139,9 +139,10 @@ function buildEditor() {
     f.readOnly ? 'This file is large: it opens read-only.' : '',
     f.text.length > HIGHLIGHT_MAX ? 'Colours are off for a file this large.' : '',
   ].filter(Boolean);
-  ed.find = { open: false, q: '', hits: [], i: -1 };
+  // Find is always there, top right: typing in it marks every match.
+  ed.find = { open: true, q: '', hits: [], i: -1 };
   const findInput = h('input', {
-    type: 'search', class: 'ed-find-input', placeholder: 'Find in file', 'aria-label': 'Find in file', spellcheck: 'false',
+    type: 'search', class: 'ed-find-input', placeholder: 'Find in file  (Ctrl+F)', 'aria-label': 'Find in file', spellcheck: 'false',
     oninput: ev => { ed.find.q = ev.target.value; runFind(true); },
     onkeydown: ev => {
       if (ev.key === 'Enter') { ev.preventDefault(); stepFind(ev.shiftKey ? -1 : 1); }
@@ -149,6 +150,11 @@ function buildEditor() {
       if (ev.key === 'F3') { ev.preventDefault(); stepFind(ev.shiftKey ? -1 : 1); }
     },
   });
+  const findBox = h('div', { class: 'ed-find', id: 'ed-find', role: 'search' },
+    h('label', { class: 'search ed-find-field' }, icon('search'), findInput),
+    h('span', { class: 'ed-find-count', id: 'ed-find-count', role: 'status' }),
+    h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Previous match (Shift+Enter)', 'aria-label': 'Previous match', onclick: () => stepFind(-1) }, icon('arrow-up')),
+    h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Next match (Enter)', 'aria-label': 'Next match', onclick: () => stepFind(1) }, icon('arrow-down')));
   // (replaceChildren would print a null child as the text "null", so absent parts are left out.)
   $('#ed').replaceChildren(...[
     h('div', { class: 'ed-head' },
@@ -156,18 +162,12 @@ function buildEditor() {
       h('div', { class: 'ed-titles' },
         h('h3', { id: 'ed-title' }, name),
         h('div', { class: 'ed-path', title: f.loc.rel }, [f.loc.rel, f.mod, f.copy].filter(Boolean).join('  ·  '))),
+      findBox,
       h('div', { class: 'ed-actions' },
-        h('button', { class: 'btn btn-sm btn-ghost', title: 'Find in this file (Ctrl+F)', onclick: () => openFind() }, icon('search'), h('span', {}, 'Find')),
         h('button', { class: 'btn btn-sm btn-ghost', id: 'ed-restore', hidden: !f.hasBackup, title: 'Put back the file as it was before you first saved it here', onclick: restoreOriginal }, icon('rotate'), h('span', {}, 'Restore original')),
         h('button', { class: 'btn btn-sm btn-ghost', onclick: () => api.cfgShow(f.loc) }, icon('folder'), h('span', {}, 'Show in folder')),
         h('button', { class: 'btn btn-icon btn-ghost', title: 'Close (Esc)', 'aria-label': 'Close the editor', onclick: () => closeEditor() }, icon('x')))),
     notes.length ? h('div', { class: 'ed-notes' }, notes.map(n => h('p', {}, icon('info'), h('span', {}, n)))) : null,
-    h('div', { class: 'ed-find', id: 'ed-find', hidden: true, role: 'search' },
-      icon('search'), findInput,
-      h('span', { class: 'ed-find-count', id: 'ed-find-count', role: 'status' }),
-      h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Previous (Shift+Enter)', 'aria-label': 'Previous match', onclick: () => stepFind(-1) }, icon('arrow-up')),
-      h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Next (Enter)', 'aria-label': 'Next match', onclick: () => stepFind(1) }, icon('arrow-down')),
-      h('button', { class: 'btn btn-icon btn-sm btn-ghost', title: 'Close (Esc)', 'aria-label': 'Close find', onclick: () => closeFind() }, icon('x'))),
     h('div', { class: `ed-body${f.text.length > HIGHLIGHT_MAX ? ' plain' : ''}` },
       h('pre', { class: 'ed-gutter', 'aria-hidden': 'true' }),
       h('div', { class: 'ed-area' }, h('pre', { class: 'ed-marks', 'aria-hidden': 'true' }), h('pre', { class: 'ed-hl', 'aria-hidden': 'true' }), ta)),
@@ -183,27 +183,27 @@ function buildEditor() {
 
 // ---- find in the file: matches are marked on a layer under the coloured text
 
+/** Ctrl+F: to the search box, with the selected text (one line) as the search. */
 function openFind() {
   const ta = $('#ed .ed-text');
-  const bar = $('#ed-find');
-  const input = bar.querySelector('input');
+  const input = $('#ed-find input');
   const picked = ta.value.slice(ta.selectionStart, ta.selectionEnd);
   if (picked && !picked.includes('\n')) { input.value = picked; ed.find.q = picked; }
-  bar.hidden = false;
-  ed.find.open = true;
   input.focus();
   input.select();
   runFind(true);
 }
 
+/** Esc in the search box: clear it and go back to the text, at the match it was on. */
 function closeFind() {
-  ed.find.open = false;
-  $('#ed-find').hidden = true;
-  $('#ed .ed-marks').textContent = '';
   const ta = $('#ed .ed-text');
   const hit = ed.find.hits[ed.find.i];
+  const len = ed.find.q.length;
+  ed.find.q = '';
+  $('#ed-find input').value = '';
+  runFind(false, false);
   ta.focus();
-  if (hit !== undefined) ta.setSelectionRange(hit, hit + ed.find.q.length);
+  if (hit !== undefined) ta.setSelectionRange(hit, hit + len);
 }
 
 /** Find every match (case-insensitive); `fromCaret` starts at the first one after the caret; `move` goes to it. */
@@ -331,8 +331,8 @@ function onKey(ev) {
   const ta = ev.currentTarget;
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); saveEditor(); return; }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'f') { ev.preventDefault(); openFind(); return; }
-  if (ev.key === 'F3' && ed.find?.q) { ev.preventDefault(); if (!ed.find.open) openFind(); else stepFind(ev.shiftKey ? -1 : 1); return; }
-  if (ev.key === 'Escape') { ev.preventDefault(); if (ed.find?.open) closeFind(); else closeEditor(); return; }
+  if (ev.key === 'F3' && ed.find?.q) { ev.preventDefault(); stepFind(ev.shiftKey ? -1 : 1); return; }
+  if (ev.key === 'Escape') { ev.preventDefault(); if (ed.find?.q) closeFind(); else closeEditor(); return; }
   if (ta.readOnly) return;
   const unit = indentUnit(ta.value);
   if (ev.key === 'Tab') {

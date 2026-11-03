@@ -6,6 +6,64 @@ A Nexus Mods downloader and mod manager for Cyberpunk 2077, for Windows.
 
 [![Latest release](https://img.shields.io/github/v/release/skyehosting/cyber77-mod-manager?label=latest&style=flat-square)](https://github.com/skyehosting/cyber77-mod-manager/releases/latest) · [All releases](https://github.com/skyehosting/cyber77-mod-manager/releases)
 
+## Screenshots
+
+The pages in the order of the sidebar (shown with demo mods). Click one to see it full size.
+
+### Browse
+
+Search and browse Cyberpunk 2077 mods on Nexus Mods; Download picks the files and installs them.
+
+[![Browse](docs/screenshots/01-browse.png)](docs/screenshots/01-browse.png)
+
+### Downloads
+
+Paste Nexus links, follow every download (with requirements) and install what finished.
+
+[![Downloads](docs/screenshots/02-downloads.png)](docs/screenshots/02-downloads.png)
+
+### Mods
+
+Every mod with its type, version, conflicts and updates: switch them on and off, update, repair.
+
+[![Mods](docs/screenshots/03-mods.png)](docs/screenshots/03-mods.png)
+
+### Mod config
+
+Every mod's files as a tree, each copy (this app's, Vortex's) in its own section; edit text files in the built-in editor.
+
+[![Mod config](docs/screenshots/04-mod-config.png)](docs/screenshots/04-mod-config.png)
+
+### Mod config: the built-in editor
+
+Point at a text file and click the pencil: colours for Lua, redscript, JSON, YAML/ArchiveXL, TweakXL, INI and logs, find in the top right, and the original kept so it can be put back.
+
+[![Built-in editor](docs/screenshots/04b-config-editor.png)](docs/screenshots/04b-config-editor.png)
+
+### Load order
+
+Archive mods top to bottom: the higher one wins. Auto-sort by what each mod needs, or drag.
+
+[![Load order](docs/screenshots/05-load-order.png)](docs/screenshots/05-load-order.png)
+
+### Game log
+
+Every log the game and its mods write, merged live, with errors and warnings grouped.
+
+[![Game log](docs/screenshots/06-game-log.png)](docs/screenshots/06-game-log.png)
+
+### AI Assistant
+
+Your own AI model reads your mods and logs, explains errors and proposes fixes you approve.
+
+[![AI Assistant](docs/screenshots/07-ai-assistant.png)](docs/screenshots/07-ai-assistant.png)
+
+### Profiles
+
+Sets of enabled mods to switch between and share as a code; what loads outside them too.
+
+[![Profiles](docs/screenshots/08-profiles.png)](docs/screenshots/08-profiles.png)
+
 ## Install
 
 Download [`Cyber-Mod-Manager-Setup.exe`](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Cyber-Mod-Manager-Setup.exe) (always the newest version; also on the [releases page](https://github.com/skyehosting/cyber77-mod-manager/releases/latest)) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
@@ -57,7 +115,7 @@ The app keeps itself up to date: while it is open it checks for a new version ev
 - The Mods list is in **A to Z** order (numbers in number order).
 - **Sort** (next to the Mods filters): A to Z, Z to A, recently installed or updated, recently enabled, recently disabled, or priority. The recent ones show under each mod when it happened ("enabled 2 h ago"), to find what changed when the game stops working. Enable and disable times are recorded from version 1.1.10 on; Vortex mods only when switched from this app.
 - **Mod config** (a page under Mods): every mod's files, enabled or not: this app's, Vortex's, and folders of files no mod manager put in the game folder. Click a mod for a tree of its files, with paths from the game folder; files a mod made itself (settings, logs) are listed with it. Point at a text file and click the pencil to open it in the built-in editor:
-  - Colours for redscript, Lua, JSON, YAML/ArchiveXL, TweakXL, INI/TOML, XML and logs; line numbers; Tab/Shift+Tab indent; Ctrl+F finds (Enter / Shift+Enter or F3 for the next and previous match); Ctrl+S saves.
+  - Colours for redscript, Lua, JSON, YAML/ArchiveXL, TweakXL, INI/TOML, XML and logs; line numbers; Tab/Shift+Tab indent; the search box in the top right finds (Ctrl+F goes to it; Enter / Shift+Enter or F3 for the next and previous match); Ctrl+S saves.
   - It saves in place (hardlinked copies stay linked) and keeps the file's line endings and encoding. Before the first save it keeps the original in the app's own folder (never where the game loads it): **Restore original** puts it back.
   - If the mod or the game changed the file while it was open, it asks before overwriting. JSON is checked before saving.
   - A disabled mod's files are its stored copy: changes apply when it is enabled. **Edit files** in a mod's details opens its files here.
