@@ -450,14 +450,14 @@ function paintPlayMenu() {
   h('span', { class: 'play-dot', 'aria-hidden': 'true' }),
   h('span', { class: 'play-opt-main' }, h('span', { class: 'play-opt-title' }, label), h('span', { class: 'play-opt-sub' }, sub)),
   tag);
-  $('#gl-play-menu').replaceChildren(
+  $('#gl-play-menu').replaceChildren(...[ // (null would show as the word "null")
     opt(null, 'Now (live)', gl.status.running ? `Playing since ${fmtTime(gl.status.since)}` : 'Every log as it is written', null, `live${gl.status.running ? ' running' : ''}`),
     gl.plays.length ? h('div', { class: 'play-menu-sep' }, `Past plays · ${gl.plays.length}`) : h('div', { class: 'play-menu-sep' }, 'Past plays appear here once the game exits'),
     ...gl.plays.map(p => opt(p, fmtWhen(p.start), `${playLength(p)} · ${playCounts(p)}`,
       h('span', { class: `tag ${p.outcome === 'crashed' ? 'tag-err' : p.closing ? 'tag-warn' : ''}` }, p.closing ? 'Saving…' : PLAY_HOW[p.outcome] || 'Ended'),
       p.outcome === 'crashed' ? 'crashed' : '')),
     gl.plays.length ? h('button', { class: 'play-menu-foot', type: 'button', onclick: () => { closePlayMenu(); deletePlaysDialog(); } }, icon('trash'), h('span', {}, 'Delete plays…')) : null,
-  );
+  ].filter(Boolean));
 }
 
 function openPlayMenu() {

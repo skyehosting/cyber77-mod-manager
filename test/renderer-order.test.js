@@ -40,3 +40,29 @@ test('no window script uses $(…) (one element) as a list: that is $$(…)', ()
   }
   assert.deepStrictEqual(wrong, []);
 });
+
+test('no replaceChildren(…) / append(…) gets a child that can be null (it shows as the word "null")', () => {
+  // h() skips null children; the DOM's own replaceChildren and append print them. Each argument
+  // at the top level of such a call must not be a "cond ? x : null" (filter(Boolean) a list instead).
+  const dir = path.join(__dirname, '..', 'src', 'renderer');
+  const wrong = [];
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    const re = /\.(replaceChildren|append|prepend)\(/g;
+    let m;
+    while ((m = re.exec(src))) {
+      // The call's arguments, split at its top-level commas (strings and nested brackets skipped).
+      let depth = 0; let i = m.index + m[0].length; let quote = ''; let start = i; const args = [];
+      for (; i < src.length; i++) {
+        const c = src[i];
+        if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue; }
+        if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+        if (c === '/' && src[i + 1] === '/') { i = src.indexOf('\n', i); continue; }
+        if ('([{'.includes(c)) depth++;
+        else if (')]}'.includes(c)) { if (depth === 0) { args.push(src.slice(start, i)); break; } depth--; } else if (c === ',' && depth === 0) { args.push(src.slice(start, i)); start = i + 1; }
+      }
+      if (args.some(a => /\?[\s\S]*:\s*null\s*$/.test(a.trim()))) wrong.push(`${f}:${src.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepStrictEqual(wrong, []);
+});
