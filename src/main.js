@@ -181,6 +181,7 @@ async function boot() {
   updater.start();
   if (settings.apiKey) {
     manager.validateKey().then(u => send('key-user', u)).catch(err => logger.warn('Could not check the Nexus API key', err.message));
+    manager.resolveSoon(); // mods that know their Nexus mod but not the exact file (moved from Vortex): look them up once
   }
   applyAdBlock();
 
@@ -421,6 +422,7 @@ async function boot() {
   handle('profiles:rename', (id, name) => manager.renameProfile(id, name));
   handle('profiles:delete', id => manager.deleteProfile(id));
   handle('profiles:export', async id => {
+    await manager.resolveProfileFiles(id); // mods moved from Vortex: their Nexus files, so they are not "local"
     const doc = manager.exportProfile(id);
     // A safe default file name: no reserved characters, no trailing dots, no device names (CON, NUL, …).
     let safe = doc.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim() || 'profile';

@@ -48,6 +48,30 @@ function sevenZip(configured) {
   return bundled && fs.existsSync(bundled) ? bundled : configured;
 }
 
+/**
+ * The Nexus file an installed mod came from, when only its Nexus mod is known (mods moved over from
+ * Vortex, or installed from a file named like a Nexus download): the file with the installed version,
+ * narrowed by name, then by Main. Null when none, or more than one, fits.
+ */
+function matchNexusFile(files, mod) {
+  const norm = v => String(v || '').toLowerCase().replace(/^v(?=\d)/, '').trim();
+  const words = s => String(s || '').toLowerCase().replace(/\.(zip|7z|rar)$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const want = norm(mod.version);
+  if (!want) return null;
+  let hits = (files || []).filter(f => norm(f.version || f.mod_version) === want && catOf(f) !== 'DELETED');
+  if (hits.length > 1) {
+    const name = words(mod.name);
+    const exact = hits.filter(f => words(f.name || f.file_name) === name);
+    const named = hits.filter(f => { const n = words(f.name || f.file_name); return n && (name.includes(n) || n.includes(name)); });
+    if (exact.length) hits = exact; else if (named.length) hits = named;
+  }
+  if (hits.length > 1) {
+    const main = hits.filter(f => catOf(f) === 'MAIN');
+    if (main.length) hits = main;
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** "A, B and C" or "A, B, C and 9 more": who an action was about. */
 const nameList = (mods, max = 6) => {
   const names = mods.map(m => (m.version ? `${m.name} v${m.version}` : m.name));
@@ -513,6 +537,7 @@ class ModManager extends EventEmitter {
           results.push({ key, error: err.message });
         }
       }
+      this.resolveSoon(); // a file named like a Nexus download: its exact Nexus file
       return results;
     });
   }
@@ -714,6 +739,7 @@ class ModManager extends EventEmitter {
    * Results are kept in `updates` (mod id → newer file) until the mod is updated.
    */
   async checkUpdates() {
+    await this.resolveNexusFiles(Object.values(this.data.mods)).catch(() => 0); // mods that lack their exact file
     const vortexMods = (this.vortex.read().mods || []).filter(v => !this.data.vortexAdopted?.[v.vortexId]);
     const mods = [...Object.values(this.data.mods), ...vortexMods].filter(m => Number(m.modId) > 0 && Number(m.fileId) > 0);
     const groups = new Map();
@@ -907,6 +933,7 @@ class ModManager extends EventEmitter {
       this.deploy();
       this.log.success(`Took over ${plural(out.length, 'mod')} from Vortex (${out.filter(o => this.data.mods[o.id]?.enabled).length} enabled). Vortex keeps them, switched off.`);
       this.emit('changed');
+      this.resolveSoon(); // their Nexus files, now (Vortex kept only the mod)
       return { adopted: out };
     });
   }
@@ -1154,7 +1181,57 @@ class ModManager extends EventEmitter {
   }
 
   /** The profile as a share code, made from its mods as they are now. */
-  profileCode(id) {
+  /**
+   * Give mods that know their Nexus mod but not the exact file (moved from Vortex, installed from a
+   * file) that file, looked up on Nexus by their version. Kept on the mod: asked once. Returns how
+   * many were found.
+   */
+  async resolveNexusFiles(mods) {
+    const todo = mods.filter(m => Number(m.modId) > 0 && !(Number(m.fileId) > 0) && m.version && !m.nexusFileChecked);
+    if (!todo.length || !this.settings.apiKey) return 0;
+    const groups = new Map();
+    for (const m of todo) groups.set(`${m.game || 'cyberpunk2077'}/${m.modId}`, [...(groups.get(`${m.game || 'cyberpunk2077'}/${m.modId}`) || []), m]);
+    const work = [...groups.values()];
+    let found = 0;
+    const worker = async () => {
+      while (work.length) {
+        const list = work.shift();
+        try {
+          const res = await this.nexus.getFiles(list[0].game || 'cyberpunk2077', list[0].modId);
+          for (const m of list) {
+            const f = matchNexusFile(res.files || [], m);
+            m.nexusFileChecked = Date.now(); // matched or not: not asked again
+            if (f) { m.fileId = Number(f.file_id); found++; }
+          }
+        } catch (err) {
+          this.log.warn(`Could not look up the Nexus file of ${list[0].name}`, err.message);
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    this.library.save();
+    if (found) this.log.info(`Found the exact Nexus file of ${plural(found, 'mod')} (moved from Vortex or installed from a file)`);
+    return found;
+  }
+
+  /** Look up missing Nexus files a moment from now (after a batch of installs or a move from Vortex). */
+  resolveSoon() {
+    clearTimeout(this.resolveTimer);
+    this.resolveTimer = setTimeout(() => {
+      this.resolveNexusFiles(Object.values(this.data.mods)).then(n => { if (n) this.emit('changed'); }).catch(() => {});
+    }, 2000);
+    this.resolveTimer.unref?.();
+  }
+
+  /** Before sharing a profile: find the Nexus files of its mods that lack one, so the code can hold them. */
+  async resolveProfileFiles(id) {
+    const p = this.data.profiles.list[id];
+    if (!p) throw new Error('That profile no longer exists.');
+    return this.resolveNexusFiles(p.enabled.map(mid => this.data.mods[mid]).filter(Boolean));
+  }
+
+  async profileCode(id) {
+    await this.resolveProfileFiles(id);
     const doc = this.exportProfile(id);
     const code = profileCode.encode(doc);
     const local = doc.mods.filter(m => !(m.modId > 0 && m.fileId > 0)).length;
@@ -1297,8 +1374,10 @@ class ModManager extends EventEmitter {
         rows.push({ ...m, status: 'unavailable', detail: `A ${String(raw.game).slice(0, 40)} mod, not Cyberpunk 2077` });
         continue;
       }
-      const key = String(m.fileId);
-      if (m.fileId && this.data.mods[key]) {
+      // Installed here: under its file id, or a mod moved from Vortex whose file was looked up.
+      const same = m.fileId && (this.data.mods[String(m.fileId)] || Object.values(this.data.mods).find(x => Number(x.fileId) === m.fileId));
+      const key = same ? same.id : String(m.fileId);
+      if (same) {
         rows.push({ ...m, status: 'installed', key, detail: 'Already installed' });
       } else if (m.fileId && this.data.downloads[key] && fs.existsSync(this.data.downloads[key].path)) {
         rows.push({ ...m, status: 'downloaded', key, detail: 'Downloaded — will be installed' });
@@ -1453,6 +1532,7 @@ class ModManager extends EventEmitter {
    * profile that is not on Nexus: its original archive, or (if that is gone) the files it installed.
    */
   async exportProfileZip(id, outFile) {
+    await this.resolveProfileFiles(id);
     const doc = this.exportProfile(id);
     const p = this.data.profiles.list[id];
     const mods = p.enabled.map(mid => this.data.mods[mid]).filter(Boolean).sort((a, b) => a.priority - b.priority);
@@ -1752,4 +1832,4 @@ function removeEmptyParents(dir, stopAt) {
   }
 }
 
-module.exports = { ModManager, pickMainFiles, foundInGame };
+module.exports = { ModManager, pickMainFiles, foundInGame, matchNexusFile };

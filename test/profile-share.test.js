@@ -201,7 +201,7 @@ test('a profile code carries the mods, order, installer choices and name, and ch
   mgr.data.mods[a].fomod = true;
   mgr.data.mods[a].fomodChoices = { 0: { 0: [1], 1: [0, 2] } }; // step → group → picked options
 
-  const first = mgr.profileCode('default');
+  const first = await mgr.profileCode('default');
   assert.match(first.code, /^CMM1-[A-Za-z0-9_-]+$/);
   assert.deepStrictEqual([first.mods, first.local], [2, 1]);
   assert.strictEqual(mgr.profilesView().list[0].codeTag, first.tag, 'the card shows the current code');
@@ -217,7 +217,7 @@ test('a profile code carries the mods, order, installer choices and name, and ch
   assert.strictEqual(plan.mods.find(m => m.name === 'Nexus 10').choices, true, 'installer choices travel with the code');
 
   await mgr.setEnabled([a], false);
-  assert.notStrictEqual(mgr.profileCode('default').code, first.code, 'disabling a mod changes the code');
+  assert.notStrictEqual((await mgr.profileCode('default')).code, first.code, 'disabling a mod changes the code');
   assert.notStrictEqual(mgr.profilesView().list[0].codeTag, first.tag);
 });
 
@@ -264,4 +264,36 @@ test('a profile exported as a .zip carries its local mods; importing it installs
   assert.ok(fs.existsSync(path.join(receiver.game, 'archive/pc/mod/local.archive')));
   assert.ok(fs.existsSync(path.join(receiver.game, 'archive/pc/mod/lost.archive')));
   fs.rmSync(out, { force: true });
+});
+
+test('the Nexus file of a mod moved from Vortex is found by its version, narrowed by name and Main', () => {
+  const { matchNexusFile } = require('../src/core/manager');
+  const files = [
+    { file_id: 1, name: 'Curbside', version: '1.0.0', category_name: 'OLD_VERSION' },
+    { file_id: 2, name: 'Curbside', version: '1.0.1', category_name: 'MAIN' },
+    { file_id: 3, name: 'Curbside - Lite', version: '1.0.1', category_name: 'OPTIONAL' },
+    { file_id: 4, name: 'Other thing', version: '2.0', category_name: 'MAIN' },
+    { file_id: 5, name: 'Other thing addon', version: '2.0', category_name: 'MAIN' },
+  ];
+  assert.strictEqual(matchNexusFile(files, { name: 'Curbside 1.0', version: 'v1.0.1' }).file_id, 2, 'two with that version: Main wins');
+  assert.strictEqual(matchNexusFile(files, { name: 'Curbside - Lite', version: '1.0.1' }).file_id, 3, 'the name decides first');
+  assert.strictEqual(matchNexusFile(files, { name: 'Curbside', version: '1.0.0' }).file_id, 1, 'an old version still matches');
+  assert.strictEqual(matchNexusFile(files, { name: 'Something', version: '2.0' }), null, 'two Main files fit: no guess');
+  assert.strictEqual(matchNexusFile(files, { name: 'Curbside', version: '9.9' }), null);
+  assert.strictEqual(matchNexusFile(files, { name: 'Curbside', version: '' }), null);
+});
+
+test('a code looks up the files of mods moved from Vortex, so they are Nexus mods in it, not local', { skip: !has7z && 'no 7-Zip' }, async () => {
+  const { mgr, installAs } = makeManager();
+  mgr.settings.apiKey = 'test-key';
+  const id = await installAs('Curbside 1.0', { 'curb.archive': 'C' }, 35922, 0); // a Nexus mod, file unknown
+  mgr.data.mods[id].version = '1.0.1';
+  let asked = 0;
+  mgr.nexus.getFiles = async () => { asked++; return { files: [{ file_id: 777, name: 'Curbside', version: '1.0.1', category_name: 'MAIN' }] }; };
+  const r = await mgr.profileCode('default');
+  assert.strictEqual(r.local, 0);
+  assert.strictEqual(r.mods, 1);
+  assert.strictEqual(mgr.data.mods[id].fileId, 777, 'kept on the mod');
+  await mgr.profileCode('default');
+  assert.strictEqual(asked, 1, 'looked up once');
 });
