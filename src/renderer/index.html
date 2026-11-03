@@ -106,9 +106,17 @@
         <button class="nav-item" data-page="profiles" title="Profiles">
           <svg class="i"><use href="#i-users"/></svg><span class="nav-label">Profiles</span><span class="count" id="nav-prof-count"></span>
         </button>
-        <button class="nav-item" data-page="settings" title="Settings">
-          <svg class="i"><use href="#i-sliders"/></svg><span class="nav-label">Settings</span>
+        <button class="nav-item" data-page="settings" title="Settings" aria-expanded="false" aria-controls="nav-settings-sub">
+          <svg class="i"><use href="#i-sliders"/></svg><span class="nav-label">Settings</span><svg class="i nav-caret"><use href="#i-chevron"/></svg>
         </button>
+        <div class="nav-sub" id="nav-settings-sub" role="group" aria-label="Settings sections" hidden>
+          <button class="nav-subitem" data-sec="nexus" title="Nexus account"><svg class="i"><use href="#i-key"/></svg><span class="nav-label">Nexus account</span></button>
+          <button class="nav-subitem" data-sec="ai" title="AI assistant"><svg class="i"><use href="#i-sparkle"/></svg><span class="nav-label">AI assistant</span></button>
+          <button class="nav-subitem" data-sec="game" title="Game &amp; Play"><svg class="i"><use href="#i-monitor"/></svg><span class="nav-label">Game &amp; Play</span></button>
+          <button class="nav-subitem" data-sec="downloads" title="Downloads"><svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span></button>
+          <button class="nav-subitem" data-sec="vortex" title="Vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span class="nav-label">Vortex</span></button>
+          <button class="nav-subitem" data-sec="app" title="App &amp; folders"><svg class="i"><use href="#i-folder"/></svg><span class="nav-label">App &amp; folders</span></button>
+        </div>
       </nav>
       <div class="side-status">
         <div class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span class="status-text" id="st-game">Game folder</span></div>
@@ -300,7 +308,7 @@
           </div>
         </header>
 
-        <div class="banner banner-warn dl-keybanner" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading.</span><button class="btn btn-sm" data-goto="settings">Open Settings</button></div>
+        <div class="banner banner-warn dl-keybanner" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading.</span><button class="btn btn-sm" data-goto="settings" data-sec="nexus">Open Settings</button></div>
         <div class="dl-top">
           <div class="dl-add">
             <div class="input-icon dl-input">
@@ -412,7 +420,7 @@
           <span class="empty-icon"><svg class="i"><use href="#i-sparkle"/></svg></span>
           <p class="empty-title">Set up your AI provider</p>
           <p class="empty-text">Add your provider's endpoint, model and API key in Settings: OpenAI-compatible (OpenAI, OpenRouter, Groq, Ollama, LM Studio…) or Anthropic.</p>
-          <div class="empty-actions"><button class="btn btn-primary" data-goto="settings">Open Settings</button></div>
+          <div class="empty-actions"><button class="btn btn-primary" data-goto="settings" data-sec="ai">Open Settings</button></div>
         </div>
         <div class="ai-main" id="ai-main" hidden>
           <div class="ai-chat" id="ai-chat" role="log" aria-live="polite" aria-label="Conversation"></div>
@@ -572,12 +580,12 @@
         <header class="page-head">
           <div class="page-title">
             <h1 id="h-settings">Settings</h1>
-            <p class="page-sub">Your Nexus account, the game folder and how mods are downloaded</p>
+            <p class="page-sub" id="settings-sub">Your Nexus account, the game folder and how mods are downloaded</p>
           </div>
         </header>
         <form id="settings-form" class="settings" autocomplete="off">
           <div class="settings-grid">
-            <section class="card">
+            <section class="card settings-sec" data-sec="nexus" id="sec-nexus">
               <h2 class="card-title"><svg class="i"><use href="#i-key"/></svg>Nexus Mods account</h2>
               <label class="label" for="s-apikey">Personal API key</label>
               <div class="field-row">
@@ -586,8 +594,10 @@
               </div>
               <p class="hint" id="s-key-status"></p>
               <p class="hint">Get it from <a href="https://next.nexusmods.com/settings/api-keys" target="_blank">nexusmods.com → API keys</a>. It is stored encrypted and never shown again.</p>
+            </section>
 
-              <h2 class="card-title card-subtitle"><svg class="i"><use href="#i-sparkle"/></svg>AI assistant</h2>
+            <section class="card settings-sec" data-sec="ai" id="sec-ai">
+              <h2 class="card-title"><svg class="i"><use href="#i-sparkle"/></svg>AI assistant</h2>
               <div class="field-grid">
                 <div>
                   <label class="label" for="s-ai-provider">Format</label>
@@ -617,8 +627,8 @@
               <p class="hint" id="s-ai-status">Your own provider and key: the assistant reads your mods and logs, searches the web, and can only change things you approve. The key is stored encrypted.</p>
             </section>
 
-            <section class="card">
-              <h2 class="card-title"><svg class="i"><use href="#i-monitor"/></svg>Game</h2>
+            <section class="card settings-sec" data-sec="game" id="sec-game">
+              <h2 class="card-title"><svg class="i"><use href="#i-monitor"/></svg>Game &amp; Play</h2>
               <label class="label" for="s-game">Cyberpunk 2077 folder</label>
               <div class="field-row">
                 <input id="s-game" class="path" type="text" spellcheck="false">
@@ -643,8 +653,8 @@
               <p class="hint">REDmods are deployed first whenever they changed. Epic Games copies always start through the Epic launcher.</p>
             </section>
 
-            <section class="card">
-              <h2 class="card-title"><svg class="i"><use href="#i-download"/></svg>Downloading</h2>
+            <section class="card settings-sec" data-sec="downloads" id="sec-downloads">
+              <h2 class="card-title"><svg class="i"><use href="#i-download"/></svg>Downloads</h2>
               <fieldset class="plain">
               <legend class="label">File categories to download</legend>
               <div class="chips" id="s-cats">
@@ -676,8 +686,25 @@
               <label class="check"><input type="checkbox" id="s-adblock"><span>Block ads and trackers on Nexus pages in Browse<span class="check-sub">Uses the same kind of filter lists as Brave and uBlock Origin. Only the pages shown inside this app are affected.</span></span></label>
             </section>
 
-            <section class="card">
-              <h2 class="card-title"><svg class="i"><use href="#i-folder"/></svg>Folders &amp; tools</h2>
+            <section class="card settings-sec" data-sec="vortex" id="sec-vortex">
+              <h2 class="card-title"><svg class="i"><use href="#i-vortex"/></svg>Vortex</h2>
+              <div id="s-vx-block">
+              <div class="field-row vx-move-row">
+                <span class="vx-move-text" id="s-vx-text"></span>
+                <button type="button" class="btn" id="s-vx-move"><svg class="i"><use href="#i-vortex"/></svg><span>Move my Vortex mods here</span></button>
+              </div>
+              <label class="label" for="s-vx-auto">Mods added in Vortex</label>
+              <select id="s-vx-auto">
+                <option value="on">Move them into this app automatically (while Vortex is closed)</option>
+                <option value="ask">Ask me</option>
+                <option value="off">Leave them in Vortex</option>
+              </select>
+              <p class="hint">Profiles and share codes cover this app's mods only. Moving switches them off in Vortex (it keeps them) and links their files: no downloads.</p>
+              </div>
+            </section>
+
+            <section class="card settings-sec" data-sec="app" id="sec-app">
+              <h2 class="card-title"><svg class="i"><use href="#i-folder"/></svg>App &amp; folders</h2>
               <label class="label" for="s-data">Data folder (downloads, staging, backups)</label>
               <div class="field-row">
                 <input id="s-data" class="path" type="text" spellcheck="false">
@@ -709,20 +736,6 @@
                 <button type="button" class="btn" id="s-upd-check">Check now</button>
               </div>
               <p class="hint" id="s-upd-state"></p>
-              <div id="s-vx-block" hidden>
-                <span class="label">Vortex</span>
-                <div class="field-row vx-move-row">
-                  <span class="vx-move-text" id="s-vx-text"></span>
-                  <button type="button" class="btn" id="s-vx-move"><svg class="i"><use href="#i-vortex"/></svg><span>Move my Vortex mods here</span></button>
-                </div>
-                <label class="label" for="s-vx-auto">Mods added in Vortex</label>
-                <select id="s-vx-auto">
-                  <option value="on">Move them into this app automatically (while Vortex is closed)</option>
-                  <option value="ask">Ask me</option>
-                  <option value="off">Leave them in Vortex</option>
-                </select>
-                <p class="hint">Profiles and share codes cover this app's mods only. Moving switches them off in Vortex (it keeps them) and links their files: no downloads.</p>
-              </div>
             </section>
           </div>
 

@@ -1772,3 +1772,39 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .redmod-btn[data-state="missing"] { color: var(--warn); }
 .redmod-help ol { margin: var(--sp-2) 0; padding-left: 1.3rem; }
 .redmod-help li { margin: 0.3rem 0; }
+
+/* ================================================================== Settings: sub-tabs and one section at a time */
+.nav-caret { width: 0.85rem; margin-left: auto; color: var(--muted); transition: transform .15s var(--ease); }
+.nav-item[aria-expanded="true"] .nav-caret { transform: rotate(180deg); }
+.nav-sub { display: flex; flex-direction: column; gap: 0.1rem; margin: 0.1rem 0 var(--sp-1) 1.35rem; padding-left: var(--sp-2); border-left: 1px solid var(--line-strong); animation: fade-in .15s; }
+.nav-sub[hidden] { display: none; }
+.nav-subitem { position: relative; display: flex; align-items: center; gap: var(--sp-2); min-height: 2.1rem; padding: 0 var(--sp-2); border: 0; border-radius: var(--r); background: transparent; color: var(--muted); font-size: var(--fs-sm); cursor: pointer; text-align: left; transition: background .12s, color .12s; }
+.nav-subitem[hidden] { display: none; }
+.nav-subitem .i { width: 0.95rem; flex: none; }
+.nav-subitem:hover { background: var(--surface-2); color: var(--text); }
+.nav-subitem.active { color: var(--text); background: var(--surface-2); }
+.nav-subitem.active .i { color: var(--accent); }
+.nav-subitem.active::before { content: ""; position: absolute; left: calc(-1 * var(--sp-2) - 1px); top: 22%; height: 56%; width: 2px; border-radius: 2px; background: var(--accent); }
+.nav-subitem:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
+
+/* One section at a time, in one calm column. */
+.settings-sec { display: none; }
+.settings-sec.on { display: block; animation: fade-in .15s; }
+.settings-grid { grid-template-columns: minmax(0, 1fr); max-width: 54rem; }
+@container (min-width: 62rem) { .settings-grid { grid-template-columns: minmax(0, 1fr); } }
+@container (min-width: 140rem) { .settings-grid { grid-template-columns: minmax(0, 1fr); } }
+.settings-sec .card-title { font-size: var(--fs-md); text-transform: none; letter-spacing: 0; margin-bottom: var(--sp-3); }
+.settings-sec .card-title .i { color: var(--accent); }
+#page-settings .save-bar { max-width: 54rem; }
+
+/* The narrow icon rail: sub-tabs as small icons under Settings. */
+@media (max-width: 1080px) {
+  .nav-caret { display: none; }
+  .nav-sub { margin: 0.1rem 0 var(--sp-1); padding: 0.2rem 0; border-left: 0; border-radius: var(--r); background: var(--surface-2); align-items: center; }
+  .nav-subitem { justify-content: center; width: 2.3rem; height: auto; aspect-ratio: 1; min-height: 0; padding: 0; }
+  .nav-subitem.active::before { left: -0.15rem; }
+}
+/* The sidebar's navigation scrolls when the window is too short for it (with Settings open, say). */
+.nav { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.nav > *, .nav-sub > * { flex-shrink: 0; }
+@media (max-width: 1080px) { .nav { scrollbar-width: none; } }

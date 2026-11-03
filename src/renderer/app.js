@@ -108,13 +108,51 @@ function goTo(page) {
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   $$('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
-  if (page === 'settings') loadSettings();
+  // Settings drops down its sections under it in the sidebar while it is open.
+  const onSettings = page === 'settings';
+  $('#nav-settings-sub').hidden = !onSettings;
+  $('.nav-item[data-page="settings"]').setAttribute('aria-expanded', String(onSettings));
+  if (onSettings) { showSettingsSection(state.settingsSec); loadSettings(); }
   pageHooks[page]?.();
 }
+
+// ---- Settings sections (the sub-tabs under Settings)
+
+const SETTINGS_SECS = {
+  nexus: 'Your Nexus Mods account: the API key that lets the app download',
+  ai: 'Your own AI provider for the AI Assistant',
+  game: 'Where the game is, how mods are placed and how Play starts it',
+  downloads: 'What gets downloaded and installed, and Nexus links',
+  vortex: 'Mods Vortex manages, and moving them into this app',
+  app: 'Folders, 7-Zip and updates of this app',
+};
+state.settingsSec = SETTINGS_SECS[store.get('settings.section', 'nexus')] ? store.get('settings.section', 'nexus') : 'nexus';
+
+function showSettingsSection(sec) {
+  const avail = [...$$('.nav-subitem')].filter(b => !b.hidden).map(b => b.dataset.sec);
+  const s = avail.includes(sec) ? sec : avail[0];
+  state.settingsSec = s;
+  store.set('settings.section', s);
+  $$('.settings-sec').forEach(el => el.classList.toggle('on', el.dataset.sec === s));
+  $$('.nav-subitem').forEach(b => {
+    const on = b.dataset.sec === s;
+    b.classList.toggle('active', on);
+    if (on) { b.setAttribute('aria-current', 'true'); b.scrollIntoView({ block: 'nearest' }); } else b.removeAttribute('aria-current');
+  });
+  $('#settings-sub').textContent = SETTINGS_SECS[s];
+  $('#page-settings').scrollTop = 0;
+}
+
 $$('.nav-item').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.page)));
+$$('.nav-subitem').forEach(btn => btn.addEventListener('click', () => {
+  state.settingsSec = btn.dataset.sec;
+  if (!$('#page-settings').classList.contains('active')) goTo('settings'); else showSettingsSection(btn.dataset.sec);
+}));
 document.addEventListener('click', ev => {
   const go = ev.target.closest('[data-goto]');
-  if (go) goTo(go.dataset.goto);
+  if (!go) return;
+  if (go.dataset.sec) state.settingsSec = go.dataset.sec;
+  goTo(go.dataset.goto);
 });
 
 // ---------------------------------------------------------------- dialogs
@@ -1177,6 +1215,11 @@ $('#s-vx-move').addEventListener('click', () => moveFromVortex());
 function renderVortexMove() {
   const vx = state.snap.vortex;
   $('#s-vx-block').hidden = !vx?.installed;
+  const vxTab = $('.nav-subitem[data-sec="vortex"]');
+  if (vxTab.hidden !== !vx?.installed) {
+    vxTab.hidden = !vx?.installed;
+    if ($('#page-settings').classList.contains('active')) showSettingsSection(state.settingsSec);
+  }
   if (!vx?.installed) return;
   const n = vx.mods?.length || 0;
   $('#s-vx-text').textContent = n
