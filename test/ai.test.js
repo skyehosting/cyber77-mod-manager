@@ -46,7 +46,7 @@ test('token use: counted per answer (every step) and per chat, sent as it goes, 
   ];
   const events = [];
   const a = new Assistant({
-    settings: fakeSettings(), tools: fakeTools(), file: file(), detect: async () => ({ tokens: 0 }),
+    settings: fakeSettings(), tools: fakeTools(), file: file(), detect: async () => ({ tokens: 128000, source: 'the server' }),
     call: async ({ onSend }) => { onSend?.(1234); return replies.shift(); },
   });
   a.on('event', e => { if (e.type === 'usage') events.push(e); });

@@ -114,6 +114,8 @@ function openaiReply(body) {
   return {
     text: typeof msg.content === 'string' ? msg.content : (msg.content || []).map(p => p.text || '').join(''), calls,
     usage: u ? { input: Number(u.prompt_tokens) || 0, output: Number(u.completion_tokens) || 0 } : null,
+    // Tokens read from the server's cache: some servers count these apart from prompt_tokens.
+    ...(Number(u?.prompt_tokens_details?.cached_tokens) ? { cached: Number(u.prompt_tokens_details.cached_tokens) } : {}),
   };
 }
 
@@ -205,10 +207,13 @@ async function callModel({ provider, endpoint, key, model, history, tools, signa
     throw new Error(`Could not reach the AI endpoint (${url}): ${err.message}`);
   }
   const json = res.json;
-  if (!res.ok) {
+  // Some servers (llama.cpp through llama-swap) answer an error with HTTP 200 and an "error" object.
+  const bodyError = json?.error && !json?.choices && !json?.content;
+  if (!res.ok || bodyError) {
     const why = json?.error?.message || json?.error || json?.message || res.statusText;
+    const status = res.ok ? Number(json?.error?.code) || res.status : res.status;
     const n = Number(json?.error?.n_ctx) || 0; // llama.cpp: { error: { type: 'exceed_context_size_error', n_ctx, n_prompt_tokens } }
-    throw Object.assign(new Error(`The AI provider answered ${res.status}: ${typeof why === 'string' ? why : JSON.stringify(why)}`), { status: res.status, contextLimit: n });
+    throw Object.assign(new Error(`The AI provider answered ${status}: ${typeof why === 'string' ? why : JSON.stringify(why)}`), { status, contextLimit: n, errorType: String(json?.error?.type || json?.error?.code || '') });
   }
   return anthropic ? anthropicReply(json) : openaiReply(json);
 }
@@ -267,15 +272,18 @@ class Assistant extends EventEmitter {
     const c = this.state.context?.key === key ? this.state.context : null;
     if (c?.learned) return c;
     if (c?.tokens && Date.now() - (c.at || 0) < 10 * 60e3) return c;
+    if (c && !c.tokens && Date.now() - (c.at || 0) < 60e3) return { tokens: ctx.ASSUMED_WINDOW, source: 'assumed: the provider does not say (set it in Settings)', assumed: true };
     const d = await this.detect({ provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel') }).catch(() => ({ tokens: 0 }));
     if (d?.tokens) { this.state.context = { key, tokens: d.tokens, source: d.source, at: Date.now() }; return this.state.context; }
-    return c?.tokens ? c : { tokens: ctx.ASSUMED_WINDOW, source: 'assumed: the provider does not say (set it in Settings)', assumed: true };
+    if (c?.tokens) return c;
+    this.state.context = { key, tokens: 0, at: Date.now() };
+    return { tokens: ctx.ASSUMED_WINDOW, source: 'assumed: the provider does not say (set it in Settings)', assumed: true };
   }
 
   /** The provider said the request was too long, and how long it may be: remember that for this model. */
-  learnContext(limit) {
+  learnContext(limit, source = 'the provider\'s "too long" error') {
     if (!limit || Number(this.settings.get('aiContext')) > 0) return;
-    this.state.context = { key: this.contextKey(), tokens: limit, source: 'the provider\'s "too long" error', learned: true, at: Date.now() };
+    this.state.context = { key: this.contextKey(), tokens: limit, source, learned: true, at: Date.now() };
   }
 
   /** About how many characters the next request has (system prompt, tool list, chat). */
@@ -299,6 +307,15 @@ class Assistant extends EventEmitter {
   async fit(win, force, onUsage) {
     const limit = win.tokens * ctx.COMPACT_AT;
     if (!force && this.tokensOf(this.requestChars()) < limit) return;
+    // A window too small for the instructions and tools alone: no summary helps. Say so once.
+    const fixed = this.tokensOf(this.requestChars([]));
+    if (fixed > win.tokens * 0.6) {
+      if (this.state.smallWarned !== win.tokens) {
+        this.state.smallWarned = win.tokens;
+        this.show({ type: 'notice', text: `This model's context window (${win.tokens.toLocaleString('en-US')} tokens, ${win.source}) is too small for the assistant: its instructions and tools alone take about ${fixed.toLocaleString('en-US')}. Start the model with a larger context on your server (16k or more; for Ollama, OLLAMA_CONTEXT_LENGTH), then set it in Settings → AI assistant → Context window.` });
+      }
+      return;
+    }
     const h = this.state.history;
     const users = h.map((t, i) => (t.role === 'user' ? i : -1)).filter(i => i >= 0);
     // Keep the last two exchanges word for word, or only the current one if two are already big.
@@ -436,8 +453,19 @@ class Assistant extends EventEmitter {
           await this.fit(over.limit ? win : { ...win, tokens: Math.floor(this.tokensOf(chars) * 0.8) }, true, onFit);
           reply = await ask();
         }
+        // A server that cut the chat to fit (instead of saying it was too long): learn its size from
+        // what it read, compact, and ask again, so nothing the model needs is silently left out.
+        // Only possible when the window is not known for sure, or the chat is near it.
+        if (reply.usage?.input && (win.assumed || win.learned || this.tokensOf(chars) > win.tokens * 0.8) && ctx.wasCut(chars, reply.usage.input + (reply.cached || 0), this.state.tokPerChar)) {
+          this.learnContext(Math.ceil((reply.usage.input + (reply.cached || 0)) * 1.1), 'the server read only part of the chat (it cuts long chats silently)');
+          turn.input += reply.usage.input; turn.output += reply.usage.output || 0; turn.steps++;
+          win = await this.contextWindow();
+          const before = this.requestChars();
+          await this.fit(win, true, onFit);
+          if (this.requestChars() < before) reply = await ask(); // nothing to shorten: keep the answer it gave
+        }
         // What the provider counted teaches how many characters make a token for this model.
-        if (reply.usage?.input && chars) this.state.tokPerChar = Math.min(0.6, Math.max(0.15, reply.usage.input / chars));
+        if (reply.usage?.input && chars && !reply.cached && !ctx.wasCut(chars, reply.usage.input, this.state.tokPerChar)) this.state.tokPerChar = Math.min(0.6, Math.max(0.15, reply.usage.input / chars));
         // Providers that report no usage: count it roughly (about 4 characters a token).
         const used = reply.usage || { input: guess, output: estimateTokens(`${reply.text || ''}${JSON.stringify(reply.calls || [])}`) };
         if (!reply.usage) turn.estimated = true;

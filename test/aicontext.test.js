@@ -67,7 +67,7 @@ test('a "too long" answer: the limit is learned, the chat compacted, and the req
       if (req.history[0].text.startsWith(ctx.SUMMARY_PROMPT)) return { text: 'summary', calls: [], usage: { input: 10, output: 2 } };
       n++;
       if (n === 3) throw Object.assign(new Error('The AI provider answered 400: the request exceeds the available context size'), { contextLimit: 2000 });
-      return { text: 'fine', calls: [], usage: { input: 100, output: 2 } };
+      return { text: 'fine', calls: [], usage: { input: Math.round(JSON.stringify(req.history).length * 0.3), output: 2 } };
     },
   });
   await a.send(`one ${'y'.repeat(3000)}`);
@@ -76,4 +76,72 @@ test('a "too long" answer: the limit is learned, the chat compacted, and the req
   assert.strictEqual(a.view().transcript.at(-1).text, 'fine', 'answered after compacting');
   assert.strictEqual(a.view().context.tokens, 2000);
   assert.match(a.view().context.source, /too long/);
+});
+
+test('an error sent with HTTP 200 (llama-swap) is an error, and a "too long" one names its limit', async () => {
+  const http = require('http');
+  const { callModel } = require('../src/core/ai');
+  // The exact body llama.cpp sends through llama-swap for a prompt over the window, with status 200.
+  const body = { error: { code: 400, message: 'request (280814 tokens) exceeds the available context size (262144 tokens), try increasing it', type: 'exceed_context_size_error', n_prompt_tokens: 280814, n_ctx: 262144 } };
+  const server = http.createServer((req, res) => { req.resume(); req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); }); });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  try {
+    const err = await callModel({ provider: 'openai', endpoint: `http://127.0.0.1:${server.address().port}/v1`, model: 'm', history: [{ role: 'user', text: 'hi' }], tools: [] }).catch(e => e);
+    assert.match(err.message, /answered 400: request \(280814 tokens\) exceeds/);
+    assert.deepStrictEqual(ctx.contextError(err), { over: true, limit: 262144 });
+    // Without n_ctx, the number in the message is enough.
+    assert.deepStrictEqual(ctx.contextError(new Error(body.error.message)), { over: true, limit: 262144 });
+  } finally { server.close(); }
+});
+
+test('every server\'s own way of saying its context size is understood', async () => {
+  const only = (path, body) => async url => (url.endsWith(path) ? body : null);
+  const at = async (get, model = 'm', endpoint = 'http://h:1/v1') => (await ctx.detectContext({ provider: 'openai', endpoint, model }, get)).tokens;
+  assert.strictEqual(await at(only('/api/ps', { models: [{ name: 'qwen3:8b', model: 'qwen3:8b', context_length: 32768 }] }), 'qwen3:8b'), 32768, 'Ollama');
+  assert.strictEqual(await at(only('/api/v1/models', { models: [{ key: 'm', max_context_length: 131072, loaded_instances: [{ config: { context_length: 16384 } }] }] })), 16384, 'LM Studio: the loaded size');
+  assert.strictEqual(await at(only('/api/extra/true_max_context_length', { value: 16384 })), 16384, 'KoboldCpp');
+  assert.strictEqual(await at(only('/v1/models/capabilities', { data: [{ id: 'm', context_size: 8192 }] })), 8192, 'LocalAI');
+  assert.strictEqual(await at(only('/v1/model', { id: 'm', parameters: { max_seq_len: 65536 } })), 65536, 'TabbyAPI');
+  assert.strictEqual(await at(only('/v1/models', { data: [{ id: 'm', max_model_len: 40960 }] })), 40960, 'vLLM');
+  assert.strictEqual(await at(only('/v1/models', [{ id: 'm', context_length: 131072 }])), 131072, 'Together (a bare list)');
+  assert.strictEqual(await at(only('/v1/models', { data: [{ id: 'm', context_window: 131072 }] })), 131072, 'Groq');
+  // llama-swap's props wins over its model list.
+  const swap = async url => (url.endsWith('/props?model=m') ? { default_generation_settings: { n_ctx: 262144 } } : url.endsWith('/v1/models') ? { data: [{ id: 'm', context_length: 1000 }] } : null);
+  assert.strictEqual(await at(swap), 262144);
+  const anth = async url => (url.endsWith('/v1/models/claude-x') ? { id: 'claude-x', max_input_tokens: 1000000 } : null);
+  assert.strictEqual((await ctx.detectContext({ provider: 'anthropic', model: 'claude-x' }, anth)).tokens, 1000000);
+});
+
+test('the "too long" wording of each provider, with the limit read from it', () => {
+  const limit = t => ctx.contextError(new Error(t));
+  assert.deepStrictEqual(limit('Input tokens exceed the configured limit of 272,000 tokens. Your messages resulted in 297,006 tokens.'), { over: true, limit: 272000 });
+  assert.deepStrictEqual(limit('The input token count (135538) exceeds the maximum number of tokens allowed (131072).'), { over: true, limit: 131072 });
+  assert.deepStrictEqual(limit('Prompt contains 321774 tokens and 0 draft tokens, too large for model with 262144 maximum context length'), { over: true, limit: 262144 });
+  assert.deepStrictEqual(limit("This model's maximum context length is 65536 tokens. However, your prompt contains at least 70000 input tokens"), { over: true, limit: 65536 });
+  assert.deepStrictEqual(limit('Prompt length 9000 exceeds the available context size of 8192 tokens (this model\'s maximum context length)'), { over: true, limit: 8192 });
+  assert.deepStrictEqual(limit('Input validation error: `inputs` tokens + `max_new_tokens` must be <= 4097. Given: 4271 `inputs` tokens'), { over: true, limit: 4097 });
+  assert.deepStrictEqual(ctx.contextError(Object.assign(new Error('400: bad'), { errorType: 'context_length_exceeded' })), { over: true, limit: 0 });
+  assert.strictEqual(limit('Rate limit reached, try again in 20s').over, false);
+  assert.strictEqual(limit('Incorrect API key provided').over, false);
+});
+
+test('a server that silently cuts a long chat (Ollama): noticed, its size learned, the chat compacted and asked again', async () => {
+  const sent = [];
+  const a = new Assistant({
+    settings: settingsWith({}), tools, file: file(), detect: async () => ({ tokens: 0 }),
+    call: async req => {
+      if (req.history[0].text.startsWith(ctx.SUMMARY_PROMPT)) return { text: 'summary of it', calls: [], usage: { input: 900, output: 10 } };
+      const chars = JSON.stringify(req.history).length;
+      sent.push(chars);
+      // Reads at most 4,000 tokens of what it is sent (about 0.3 a character), says nothing, answers anyway.
+      return { text: 'answer', calls: [], usage: { input: Math.min(4000, Math.round((chars + 4900) * 0.3)), output: 3 } };
+    },
+  });
+  await a.send('hello'); // a short chat first: the model's own rate is learned
+  await a.send(`first ${'z'.repeat(12000)}`);
+  await a.send(`second ${'z'.repeat(12000)}`);
+  assert.match(a.view().context.source, /only part of the chat/);
+  assert.ok(a.view().context.tokens >= 4000 && a.view().context.tokens <= 4400, String(a.view().context.tokens));
+  assert.ok(sent.at(-1) < Math.max(...sent), 'asked again with the shorter chat');
+  assert.ok(a.view().transcript.some(x => x.type === 'activity' && /Summarized/.test(x.text)));
 });
