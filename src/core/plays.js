@@ -15,7 +15,7 @@ const { EventEmitter } = require('events');
  */
 
 const AFTER_MS = 60e3; // lines and files written this long after the game is gone still belong to the play
-const KEEP = 50; // plays kept; older ones are removed (the user can delete any sooner)
+const KEEP = 25; // plays kept by default (Settings → App & folders); older ones are removed
 const FILE_MAX = 8 * 1024 * 1024; // a bigger log keeps its last 8 MB
 const FILES_MAX = 100 * 1024 * 1024; // per play
 
@@ -28,9 +28,10 @@ const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } c
 
 class PlayHistory extends EventEmitter {
   /** dir: where plays are kept. logs: the GameLogMonitor (its 'game', 'entries' and 'crash' events, and its files). */
-  constructor({ dir, logs, log }) {
+  constructor({ dir, logs, log, keep = () => KEEP }) {
     super();
     this.dir = dir;
+    this.keep = keep; // how many plays to keep
     this.logs = logs;
     this.log = log;
     this.current = null; // { id, dir, meta, closeTimer }
@@ -207,8 +208,10 @@ class PlayHistory extends EventEmitter {
     return n;
   }
 
+  /** Keep the newest plays only (as many as Settings says). */
   prune() {
-    const old = this.list().filter(p => !p.live && !p.closing).slice(KEEP);
+    const n = Math.max(1, Math.round(Number(this.keep()) || KEEP));
+    const old = this.list().filter(p => !p.live && !p.closing).slice(n);
     if (old.length) this.remove(old.map(p => p.id));
   }
 }

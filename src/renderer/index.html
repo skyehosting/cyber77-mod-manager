@@ -750,6 +750,12 @@
                 <button type="button" class="btn btn-sm" data-open="backups">Backups</button>
                 <button type="button" class="btn btn-sm" data-open="logs">Logs</button>
               </div>
+              <label class="label" for="s-plays-keep">Game log: plays to keep</label>
+              <div class="field-row ai-timeout-row">
+                <input id="s-plays-keep" type="number" min="1" max="500" step="1" aria-describedby="s-plays-keep-hint">
+                <span class="hint">plays</span>
+              </div>
+              <p class="hint" id="s-plays-keep-hint">Each launch of the game keeps its own logs (1 to 500). Older plays are removed once there are more than this.</p>
               <span class="label" id="s-upd-label">App updates</span>
               <div class="field-row upd-row" role="group" aria-labelledby="s-upd-label">
                 <span class="upd-text">Check every</span>

@@ -197,7 +197,7 @@ async function boot() {
   gameLogs.on('game', status => { send('gamestatus', status); pushSnapshot(); updater?.gameChanged(!!status.running); });
   gameLogs.on('reset', () => send('gamelog-reset'));
   // Each play's logs as their own set (before start: the first news can be that the game runs).
-  plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger });
+  plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger, keep: () => settings.get('playsKeep') });
   plays.on('plays', list => send('plays', list));
   gameLogs.start();
   app.on('before-quit', () => gameLogs.stop());
@@ -252,6 +252,7 @@ async function boot() {
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
     if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
     if ('blockAds' in patch) applyAdBlock();
+    if ('playsKeep' in patch) plays?.prune();
     if ('updateEvery' in patch || 'updateUnit' in patch || 'updateMode' in patch) updater?.start();
     logger.success('Settings saved');
     pushSnapshot();

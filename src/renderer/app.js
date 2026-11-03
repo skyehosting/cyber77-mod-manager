@@ -1157,7 +1157,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 

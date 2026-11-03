@@ -1927,3 +1927,9 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .stat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Profile cards' bottom rows line up whether they hold a button or a line of text. */
 .pcard-actions { min-height: calc(var(--control-h-sm) + var(--sp-3) + 1px); }
+
+/* Pop-up lists scroll when they hold more than fits. */
+.menu { max-height: min(70vh, 32rem); overflow-y: auto; overscroll-behavior: contain; }
+.play-menu { overscroll-behavior: contain; }
+.crash-bar .hint { flex: 1; }
+.play-pick-btn.live { border-color: var(--ok-track); }

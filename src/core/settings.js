@@ -38,6 +38,7 @@ class Settings {
       aiModel: '',
       aiTimeout: 5, // minutes one request to the AI provider may take (local models can be slow)
       aiContext: 0, // the model's context window in tokens; 0: ask the provider
+      playsKeep: 25, // how many plays (each launch's logs) the Game log keeps
       aiKeyEnc: '',
       aiKeyPlain: '',
     });
@@ -126,6 +127,7 @@ class Settings {
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
+    if ('playsKeep' in patch) d.playsKeep = Math.min(500, Math.max(1, parseInt(patch.playsKeep, 10) || 25));
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }

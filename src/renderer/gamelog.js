@@ -25,6 +25,7 @@ const gl = {
   sourcesSeq: 0,
   lastId: 0, // the newest line taken in (ids only grow)
   play: null, // a past play being looked at: { id, start, end, outcome, entries, files, … }; null: live
+  follow: true, // show Live while the game runs and Latest after; false once an older play is picked
   plays: [],
 };
 
@@ -426,36 +427,56 @@ const playLength = p => {
 };
 const playCounts = p => [plural(p.errors || 0, 'error'), plural(p.warns || 0, 'warning')].join(' · ');
 
+/** What the picker shows by itself: Live while the game runs, else the latest play ('' = the live logs). */
+const defaultPlay = () => (gl.status.running ? '' : gl.plays[0]?.id || '');
+const isLatest = p => !!p && !gl.status.running && gl.plays[0]?.id === p.id;
+
 async function loadPlays() {
   const r = await api.playsList();
   gl.plays = (r.ok || []).filter(p => !p.live);
-  if (gl.play && !gl.plays.some(p => p.id === gl.play.id)) showLive(); // its logs were deleted
+  if (gl.play && !gl.plays.some(p => p.id === gl.play.id)) gl.follow = true; // its logs were deleted
+  const want = gl.follow ? defaultPlay() : gl.play?.id || '';
+  // A different play, or the one shown has just finished saving (its last lines are in now).
+  if (want !== (gl.play?.id || '') || (gl.play?.closing && !gl.plays.find(p => p.id === gl.play.id)?.closing)) { await showPlay(want); return; }
   paintPlayButton();
   if (!$('#gl-play-menu').hidden) paintPlayMenu();
 }
 
-function paintPlayButton() {
-  const p = gl.play;
-  $('#gl-play-label').textContent = p ? fmtWhen(p.start) : 'Now (live)';
-  $('#gl-play-btn').classList.toggle('crashed', p?.outcome === 'crashed');
-  $('#gl-play-btn').title = p ? `Showing the logs of the play of ${fmtWhen(p.start)}. Pick another play, or Now (live).` : `Showing the live logs. Pick a past play (${gl.plays.length} kept) to see its logs.`;
+/** Pick from the menu: the top entry follows the game again; an older play stays put. */
+function choosePlay(id) {
+  gl.follow = id === defaultPlay();
+  showPlay(id);
 }
 
-/** The dropdown: Now (live), then every past play, newest first; crashed plays stand out. */
+function paintPlayButton() {
+  const p = gl.play;
+  const label = !p ? (gl.status.running ? 'Live' : 'Latest') : isLatest(p) ? `Latest · ${fmtWhen(p.start)}` : fmtWhen(p.start);
+  $('#gl-play-label').textContent = label;
+  $('#gl-play-btn').classList.toggle('crashed', p?.outcome === 'crashed');
+  $('#gl-play-btn').classList.toggle('live', !p && gl.status.running);
+  $('#gl-play-btn').title = !p ? (gl.status.running ? 'The game is running: its logs as they are written.' : 'Every log since the app started (no play has ended yet).')
+    : `The logs of the play of ${fmtWhen(p.start)}. ${plural(gl.plays.length, 'play')} kept.`;
+}
+
+/** The dropdown: Live (while the game runs) or Latest, then every earlier play, newest first; crashed ones stand out. */
 function paintPlayMenu() {
-  const opt = (p, label, sub, tag, cls) => h('button', {
-    class: `play-opt${cls ? ` ${cls}` : ''}`, role: 'option', type: 'button', 'aria-selected': String((gl.play?.id || '') === (p?.id || '')),
-    onclick: () => { closePlayMenu(); showPlay(p?.id || ''); },
+  const opt = (id, label, sub, tag, cls) => h('button', {
+    class: `play-opt${cls ? ` ${cls}` : ''}`, role: 'option', type: 'button', 'aria-selected': String((gl.play?.id || '') === id),
+    onclick: () => { closePlayMenu(); choosePlay(id); },
   },
   h('span', { class: 'play-dot', 'aria-hidden': 'true' }),
   h('span', { class: 'play-opt-main' }, h('span', { class: 'play-opt-title' }, label), h('span', { class: 'play-opt-sub' }, sub)),
   tag);
+  const how = p => h('span', { class: `tag ${p.outcome === 'crashed' ? 'tag-err' : p.closing ? 'tag-warn' : ''}` }, p.closing ? 'Saving…' : PLAY_HOW[p.outcome] || 'Ended');
+  const playOpt = (p, label) => opt(p.id, label, `${label === 'Latest' ? `${fmtWhen(p.start)} · ${playLength(p)}` : `${playLength(p)} · ${playCounts(p)}`}`, how(p), `${p.outcome === 'crashed' ? 'crashed' : ''}${label === 'Latest' ? ' top' : ''}`);
+  const running = gl.status.running;
+  const top = running ? opt('', 'Live', `Playing since ${fmtTime(gl.status.since)}`, h('span', { class: 'tag tag-ok' }, 'Running'), 'live running')
+    : gl.plays[0] ? playOpt(gl.plays[0], 'Latest') : opt('', 'Latest', 'Every log since the app started', null, 'live');
+  const earlier = running ? gl.plays : gl.plays.slice(1);
   $('#gl-play-menu').replaceChildren(...[ // (null would show as the word "null")
-    opt(null, 'Now (live)', gl.status.running ? `Playing since ${fmtTime(gl.status.since)}` : 'Every log as it is written', null, `live${gl.status.running ? ' running' : ''}`),
-    gl.plays.length ? h('div', { class: 'play-menu-sep' }, `Past plays · ${gl.plays.length}`) : h('div', { class: 'play-menu-sep' }, 'Past plays appear here once the game exits'),
-    ...gl.plays.map(p => opt(p, fmtWhen(p.start), `${playLength(p)} · ${playCounts(p)}`,
-      h('span', { class: `tag ${p.outcome === 'crashed' ? 'tag-err' : p.closing ? 'tag-warn' : ''}` }, p.closing ? 'Saving…' : PLAY_HOW[p.outcome] || 'Ended'),
-      p.outcome === 'crashed' ? 'crashed' : '')),
+    top,
+    h('div', { class: 'play-menu-sep' }, earlier.length ? `Earlier plays · ${earlier.length}` : 'Earlier plays appear here once the game exits'),
+    ...earlier.map(p => playOpt(p, fmtWhen(p.start))),
     gl.plays.length ? h('button', { class: 'play-menu-foot', type: 'button', onclick: () => { closePlayMenu(); deletePlaysDialog(); } }, icon('trash'), h('span', {}, 'Delete plays…')) : null,
   ].filter(Boolean));
 }
@@ -493,7 +514,9 @@ async function showPlay(id) {
   const p = gl.play;
   $('#gl-play-bar').hidden = false;
   $('#gl-play-bar').classList.toggle('crashed', p.outcome === 'crashed');
-  $('#gl-play-title').textContent = `The play of ${fmtWhen(p.start)}`;
+  $('#gl-play-title').textContent = isLatest(p) ? `Latest play · ${fmtWhen(p.start)}` : `The play of ${fmtWhen(p.start)}`;
+  $('#gl-play-live').textContent = gl.status.running ? 'Back to live' : 'Back to latest';
+  $('#gl-play-live').hidden = isLatest(p);
   $('#gl-play-meta').textContent = [playLength(p), PLAY_HOW[p.outcome] || 'Ended', playCounts(p), `${plural(p.files.length, 'log file')} saved`].join('  ·  ');
   $('#gl-play-meta').title = p.note || (p.joinedLate ? 'The app opened while the game was already running: lines from before that are only in the saved files (Sources).' : '');
   for (const sel of ['#gl-follow', '#gl-clear']) $(sel).disabled = true;
@@ -512,6 +535,7 @@ function showLive() {
 }
 
 function afterPlayChange() {
+  crash.all = false; // a play shows its own crash first
   paintPlayButton();
   syncSourceOptions(true);
   renderStats();
@@ -524,7 +548,7 @@ async function deletePlays(ids) {
   const n = await run(api.playsDelete(ids));
   if (n === undefined) return;
   toast(`Deleted the logs of ${plural(n, 'play')}`, 'success');
-  if (gl.play && ids.includes(gl.play.id)) showLive();
+  if (gl.play && ids.includes(gl.play.id)) gl.follow = true; // back to Live or Latest
   await loadPlays();
 }
 
@@ -551,7 +575,7 @@ function deletePlaysDialog(preset = []) {
   }).then(yes => { if (yes && picked.size) deletePlays([...picked]); });
 }
 
-$('#gl-play-live').addEventListener('click', showLive);
+$('#gl-play-live').addEventListener('click', () => { gl.follow = true; loadPlays(); });
 $('#gl-play-folder').addEventListener('click', () => gl.play && run(api.playOpenFolder(gl.play.id)));
 $('#gl-play-delete').addEventListener('click', async () => {
   const p = gl.play;
@@ -588,7 +612,7 @@ async function loadCrashes() {
 /** The play a crash ended (by its id, or its time inside the play). */
 const playOf = c => gl.plays.find(p => p.crash === c.id || (c.time >= p.start - 60e3 && c.time <= (p.end || Date.now()) + 3 * 60e3)) || null;
 /** The crashes on show: the shown play's, or every one. */
-const shownCrashes = () => (crash.list || []).filter(c => !gl.play || gl.play.crash === c.id || (c.time >= gl.play.start - 60e3 && c.time <= (gl.play.end || Date.now()) + 3 * 60e3));
+const shownCrashes = () => (crash.list || []).filter(c => !gl.play || crash.all || gl.play.crash === c.id || (c.time >= gl.play.start - 60e3 && c.time <= (gl.play.end || Date.now()) + 3 * 60e3));
 
 function updateCrashCount() {
   if (!crash.list) return;
@@ -616,13 +640,16 @@ function renderCrashes() {
   const shown = shownCrashes();
   if (!shown.length) {
     box.replaceChildren(h('div', { class: 'empty crash-empty' }, h('span', { class: 'empty-icon' }, icon('check')),
-      h('p', { class: 'empty-title' }, gl.play ? 'This play did not crash' : 'No crashes recorded'),
-      h('p', { class: 'empty-text' }, gl.play ? `It ${gl.play.outcome === 'unknown' ? 'ended' : 'exited'} without a crash report.` : 'When the game crashes, its report shows here: where it crashed, in which mod, and what came before.')));
+      h('p', { class: 'empty-title' }, gl.play ? (gl.play.outcome === 'crashed' ? "This play's crash report is gone" : 'This play did not crash') : 'No crashes recorded'),
+      h('p', { class: 'empty-text' }, gl.play ? (gl.play.outcome === 'crashed' ? "The game crashed, but its report is no longer in the game's crash report folder (deleted). The play's logs are still here." : `It ${gl.play.outcome === 'unknown' ? 'ended' : 'exited'} without a crash report.`) : 'When the game crashes, its report shows here: where it crashed, in which mod, and what came before.'),
+      gl.play && crash.list.length ? h('div', { class: 'empty-actions' }, h('button', { class: 'btn', onclick: () => { crash.all = true; renderCrashes(); } }, `Show all ${plural(crash.list.length, 'crash', 'crashes')}`)) : null));
     return;
   }
   const sameDll = c => (c.module ? crash.list.filter(o => o !== c && o.module?.name === c.module.name).length : 0);
   const head = h('div', { class: 'crash-bar' },
-    h('span', { class: 'hint' }, gl.play ? `The crash that ended this play` : `${plural(shown.length, 'crash report')}, newest first`),
+    h('span', { class: 'hint' }, gl.play && !crash.all ? 'The crash that ended this play' : `${plural(shown.length, 'crash report')}, newest first`),
+    gl.play && crash.list.length > shown.length ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { crash.all = true; renderCrashes(); } }, `Show all ${crash.list.length} crashes`) : null,
+    gl.play && crash.all ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { crash.all = false; renderCrashes(); } }, "Only this play's") : null,
     h('button', { class: 'btn btn-sm btn-ghost', onclick: () => deleteCrashes(shown.map(c => c.id)) }, icon('trash'), h('span', {}, shown.length > 1 ? `Delete all ${shown.length}` : 'Delete')));
   box.replaceChildren(head, ...shown.map(c => {
     const isOpen = crash.open === c.id;
@@ -637,7 +664,7 @@ function renderCrashes() {
           h('div', { class: 'crash-meta' }, [new Date(c.time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }), c.module ? `${c.module.name}+${c.module.offset}` : ''].filter(Boolean).join('  ·  '))),
         repeat ? h('span', { class: 'tag tag-warn', title: 'The same DLL in more than one crash is a strong lead' }, `same as ${plural(repeat, 'other crash', 'other crashes')}`) : null,
         h('button', { class: 'btn btn-sm', onclick: ev => { ev.stopPropagation(); askAi(crashAsk(c)); } }, icon('sparkle'), h('span', {}, 'Ask AI why')),
-        !gl.play && playOf(c) ? h('button', { class: 'btn btn-sm btn-ghost', title: 'Show the logs of the play this crash ended', onclick: ev => { ev.stopPropagation(); showPlay(playOf(c).id); } }, icon('clock'), h('span', {}, 'Its play')) : null,
+        playOf(c) && playOf(c).id !== gl.play?.id ? h('button', { class: 'btn btn-sm btn-ghost', title: 'Show the logs of the play this crash ended', onclick: ev => { ev.stopPropagation(); choosePlay(playOf(c).id); } }, icon('clock'), h('span', {}, 'Its play')) : null,
         h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Open the crash report folder', 'aria-label': 'Open the crash report folder', onclick: ev => { ev.stopPropagation(); run(api.crashOpen(c.id)); } }, icon('folder')),
         h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Delete this crash report', 'aria-label': 'Delete this crash report', onclick: ev => { ev.stopPropagation(); deleteCrashes([c.id]); } }, icon('trash')),
         icon('chevron', `crash-chev${isOpen ? ' open' : ''}`)),
@@ -745,7 +772,7 @@ snapshotHooks.push(snap => {
 // Live batches that arrive before the initial snapshot wait, so lines stay in order and unique.
 let early = [];
 api.onGameLog(batch => { if (early) early.push(...batch); else onBatch(batch); });
-api.onGameStatus(s => { gl.status = s; renderGameStatus(); renderMods(); renderPlay(); });
+api.onGameStatus(s => { gl.status = s; renderGameStatus(); renderMods(); renderPlay(); loadPlays(); });
 api.onGameLogReset(() => {
   gl.entries = [];
   gl.sources.clear();
