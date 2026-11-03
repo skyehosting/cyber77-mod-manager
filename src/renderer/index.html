@@ -45,6 +45,7 @@
       <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
       <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
       <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8Z"/></symbol>
@@ -457,11 +458,24 @@
             <p class="page-sub">Every log your game and its mods write, merged live: CET, RED4ext, redscript, ArchiveXL, TweakXL, Codeware and more</p>
           </div>
           <div class="head-actions">
+            <div class="play-pick" id="gl-play-pick">
+              <button class="btn play-pick-btn" id="gl-play-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="gl-play-menu"><svg class="i"><use href="#i-clock"/></svg><span id="gl-play-label">Now (live)</span><svg class="i play-pick-chev"><use href="#i-chevron"/></svg></button>
+              <div class="play-menu" id="gl-play-menu" role="listbox" aria-label="Which play's logs to show" hidden></div>
+            </div>
             <button class="btn collapsible" id="gl-follow" aria-pressed="true" title="Pause or resume live updates" aria-label="Pause live updates"><svg class="i"><use href="#i-pause"/></svg><span>Pause</span></button>
             <button class="btn btn-ghost collapsible" id="gl-export" title="Save every error and warning, and every mod with its state, as one JSON report" aria-label="Export report"><svg class="i"><use href="#i-share"/></svg><span>Export report</span></button>
             <button class="btn collapsible" id="gl-clear" title="Hide everything logged so far" aria-label="Clear view"><svg class="i"><use href="#i-trash"/></svg><span>Clear view</span></button>
           </div>
         </header>
+
+        <div class="play-bar" id="gl-play-bar" hidden>
+          <span class="play-bar-icon"><svg class="i"><use href="#i-clock"/></svg></span>
+          <div class="play-bar-text"><strong id="gl-play-title"></strong><span id="gl-play-meta"></span></div>
+          <button class="btn btn-sm" id="gl-play-ask"><svg class="i"><use href="#i-sparkle"/></svg><span>Ask AI about this play</span></button>
+          <button class="btn btn-sm btn-ghost btn-icon" id="gl-play-folder" title="Open this play's folder" aria-label="Open this play's folder"><svg class="i"><use href="#i-folder"/></svg></button>
+          <button class="btn btn-sm btn-ghost btn-icon" id="gl-play-delete" title="Delete this play's logs" aria-label="Delete this play's logs"><svg class="i"><use href="#i-trash"/></svg></button>
+          <button class="btn btn-sm btn-primary" id="gl-play-live">Back to live</button>
+        </div>
 
         <div class="stat-row">
           <div class="stat" id="gl-stat-game">
@@ -566,7 +580,7 @@
             <button class="btn btn-primary collapsible" id="prof-new" title="Create a profile" aria-label="New profile"><svg class="i"><use href="#i-plus"/></svg><span>New profile</span></button>
           </div>
         </header>
-        <div class="prof-active" id="prof-active"></div>
+        <div class="prof-active" id="prof-active" hidden></div>
         <div class="section-head" id="prof-others-head" hidden>
           <h2>Other profiles</h2>
           <span class="section-note">Activate one to switch which of this app's mods are on (and which wins each conflict)</span>

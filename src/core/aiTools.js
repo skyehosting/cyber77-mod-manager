@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('fs');
 const { group } = require('./report');
 const { redactLine, isConfigFile, formatOf, setValues, secretName } = require('./secrets');
 
@@ -51,6 +52,17 @@ const TOOLS = [
   {
     name: 'get_game_log', kind: 'read', description: 'Recent lines from the game\'s and mods\' logs (CET, RED4ext, redscript, ArchiveXL, TweakXL, …).',
     params: { level: str('Lines of at least this level', { enum: ['all', 'warn', 'error'] }), source: str('Only this log (source name)'), search: str('Only lines containing this'), limit: { type: 'number', description: 'Default 80' } },
+  },
+  {
+    name: 'get_plays', kind: 'read',
+    description: 'The game\'s logs kept per play (each launch until exit or crash is one session). Without an id: every play, newest first, with when, how long, how it ended (exited / crashed + crash id), and its error and warning counts. With an id: that play\'s problems grouped, its log lines (filter by level, source, search) and the log files saved from it. Compare plays to see when a problem started, or a log that appeared in one play but not another.',
+    params: { id: str('A play id from the list (e.g. "20261103-020805"); leave out to list the plays'), level: str('Lines of at least this level', { enum: ['all', 'warn', 'error'] }), source: str('Only this log (source name)'), search: str('Only lines containing this'), limit: { type: 'number', description: 'Lines, default 80' } },
+  },
+  {
+    name: 'read_play_file', kind: 'read',
+    description: 'Read a log file saved from a past play (get_plays with an id lists them), as it was at the end of that play. Its last lines by default, or the lines containing a search.',
+    params: { id: str('The play id'), path: str('The file\'s path as get_plays lists it'), search: str('Only lines containing this'), lines: { type: 'number', description: 'How many lines, default 150, at most 400' } },
+    required: ['id', 'path'],
   },
   { name: 'get_activity_log', kind: 'read', description: 'This app\'s own record, newest first: installs, enables, disables, updates, downloads, errors.', params: { search: str('Only lines containing this'), limit: { type: 'number', description: 'Default 60' } } },
   { name: 'get_load_order', kind: 'read', description: 'Archive load order: archives in the order the game loads them (the first one wins a conflict), each with its mod.', params: {} },
@@ -210,6 +222,36 @@ function makeTools(ctx) {
         if (a.search) lines = lines.filter(e => String(e.text).toLowerCase().includes(String(a.search).toLowerCase()));
         const n = Math.min(Math.max(Number(a.limit) || 80, 1), 300);
         return out({ total: lines.length, lines: lines.slice(-n).map(e => ({ time: iso(e.time), level: e.level, source: e.source, text: String(e.text).slice(0, 600) })) });
+      }
+      case 'get_plays': {
+        const plays = ctx.plays;
+        if (!plays) return out({ error: 'Play history is not available.' });
+        const brief = p => ({ id: p.id, started: iso(p.start), ended: p.end ? iso(p.end) : null, minutes: p.end ? Math.round((p.end - p.start) / 60000) : Math.round((Date.now() - p.start) / 60000), how: p.live ? 'still running' : p.outcome || 'unknown', crash: p.crash || undefined, errors: p.errors, warnings: p.warns, lines: p.lines, filesSaved: p.files, note: p.note || (p.joinedLate ? 'The app opened while the game was already running: earlier lines are only in the saved files.' : undefined) });
+        if (!a.id || a.id === 'list') return out({ plays: plays.list().slice(0, 40).map(brief), note: 'Each play is one launch of the game. Ask for one by id for its lines and files.' });
+        const p = plays.get(String(a.id));
+        if (!p) return out({ error: `No play ${a.id}. Call get_plays without an id for the list.` });
+        let lines = p.entries;
+        if (a.level === 'error') lines = lines.filter(e => e.level === 'error');
+        if (a.level === 'warn') lines = lines.filter(e => e.level === 'error' || e.level === 'warn');
+        if (a.source) lines = lines.filter(e => String(e.source).toLowerCase().includes(String(a.source).toLowerCase()));
+        if (a.search) lines = lines.filter(e => String(e.text).toLowerCase().includes(String(a.search).toLowerCase()));
+        const n = Math.min(Math.max(Number(a.limit) || 80, 1), 300);
+        return out({
+          play: brief(p),
+          problems: group(p.entries.filter(e => !e.marker && (e.level === 'error' || e.level === 'warn'))).slice(0, 40),
+          lines: { total: lines.length, shown: lines.slice(-n).map(e => ({ time: iso(e.time), level: e.level, source: e.source, text: hide(String(e.text).slice(0, 600)) })) },
+          savedFiles: p.files.slice(0, 80).map(f => ({ path: f.rel, size: f.size, written: iso(f.mtime) })),
+        });
+      }
+      case 'read_play_file': {
+        if (!ctx.plays) return out({ error: 'Play history is not available.' });
+        let text;
+        try { text = fs.readFileSync(ctx.plays.filePath(String(a.id), String(a.path)), 'utf8'); } catch { return out({ error: `No saved file ${a.path} in play ${a.id}. get_plays with that id lists its files.` }); }
+        const all = text.split(/\r?\n/);
+        const n = Math.min(Math.max(Number(a.lines) || 150, 1), 400);
+        const q = String(a.search || '').toLowerCase();
+        const picked = q ? all.map((l, i) => [i + 1, l]).filter(([, l]) => l.toLowerCase().includes(q)).slice(-n) : all.map((l, i) => [i + 1, l]).slice(-n);
+        return out({ play: a.id, path: a.path, totalLines: all.length, lines: picked.map(([i, l]) => `${i}: ${hide(l.slice(0, 500))}`).join('\n') });
       }
       case 'get_activity_log': {
         let lines = [...logger.history].reverse();

@@ -142,6 +142,17 @@ class CrashReports {
     } catch { return ''; }
   }
 
+  /** Delete crash reports by id (their folders in the queue). Returns how many went. */
+  remove(ids) {
+    let n = 0;
+    for (const id of [].concat(ids || []).map(String)) {
+      if (!/^Cyberpunk2077[\w.-]*$/i.test(id)) continue;
+      const full = path.join(this.dir(), id);
+      try { if (!fs.statSync(full).isDirectory()) continue; fs.rmSync(full, { recursive: true, force: true }); this.cache.delete(id); n++; } catch { /* gone or in use */ }
+    }
+    return n;
+  }
+
   /** Everything about one crash ('latest' or its id), for the Crashes view and the AI. */
   details(id = 'latest') {
     const all = this.list(50);

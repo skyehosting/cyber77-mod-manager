@@ -8,6 +8,7 @@ const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
+const { PlayHistory } = require('./core/plays');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
 const { AppUpdater } = require('./core/updater');
@@ -26,6 +27,7 @@ let updater = null;
 let assistant = null;
 let modConfig = null;
 let crashes = null;
+let plays = null;
 let lastExport = '';
 
 const cipher = {
@@ -194,6 +196,9 @@ async function boot() {
   });
   gameLogs.on('game', status => { send('gamestatus', status); pushSnapshot(); updater?.gameChanged(!!status.running); });
   gameLogs.on('reset', () => send('gamelog-reset'));
+  // Each play's logs as their own set (before start: the first news can be that the game runs).
+  plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger });
+  plays.on('plays', list => send('plays', list));
   gameLogs.start();
   app.on('before-quit', () => gameLogs.stop());
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
@@ -203,7 +208,7 @@ async function boot() {
   gameLogs.on('crash', id => send('crash', crashes.list(1)[0] || { id }));
   modConfig = new ModConfig({ manager, files: gameFiles, ownerRoot, backupDir: path.join(app.getPath('userData'), 'edited-originals') });
   const tools = makeTools({
-    manager, gameLogs, logger, web: new WebReader(), files: gameFiles, config: modConfig, crashes,
+    manager, gameLogs, logger, web: new WebReader(), files: gameFiles, config: modConfig, crashes, plays,
     allMods: () => {
       const snap = manager.snapshot();
       return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
@@ -221,6 +226,13 @@ async function boot() {
   handle('crash:list', () => crashes.list(30));
   handle('crash:details', id => crashes.details(String(id || 'latest')));
   handle('crash:open', id => { const c = crashes.list(50).find(x => x.id === id); if (c) shell.openPath(c.folder); });
+  handle('crash:delete', ids => crashes.remove(ids));
+  handle('plays:list', () => plays.list());
+  handle('plays:get', id => { const p = plays.get(String(id)); if (!p) throw new Error("That play's logs are no longer here."); return { ...p, entries: p.entries.slice(-8000) }; });
+  handle('plays:delete', ids => plays.remove(Array.isArray(ids) ? ids.map(String) : [String(ids)]));
+  handle('plays:openFile', (id, rel) => shell.openPath(plays.filePath(String(id), String(rel))));
+  handle('plays:revealFile', (id, rel) => shell.showItemInFolder(plays.filePath(String(id), String(rel))));
+  handle('plays:openFolder', id => shell.openPath(plays.folder(String(id))));
   handle('gamelog:reveal', rel => {
     const full = path.join(settings.get('gamePath'), String(rel));
     if (!full.startsWith(path.resolve(settings.get('gamePath')))) throw new Error('Not a game file');

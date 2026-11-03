@@ -25,7 +25,7 @@ test('the context window is asked of the server: llama-swap / llama.cpp props, t
   const trained = async url => (url.endsWith('/v1/models') ? { data: [{ id: 'qwen', meta: { n_ctx_train: 131072 } }] } : null);
   assert.match((await ctx.detectContext({ provider: 'openai', endpoint: 'http://h/v1', model: 'qwen' }, trained)).source, /trained/);
   assert.strictEqual((await ctx.detectContext({ provider: 'openai', endpoint: 'http://h/v1', model: 'qwen' }, async () => null)).tokens, 0);
-  assert.strictEqual((await ctx.detectContext({ provider: 'anthropic', model: 'claude-x' })).tokens, 200000);
+  assert.strictEqual((await ctx.detectContext({ provider: 'anthropic', model: 'claude-x' }, async () => null)).tokens, 200000);
 });
 
 test('a provider\'s "too long" error is recognised, with the limit it names', () => {
@@ -66,15 +66,15 @@ test('a "too long" answer: the limit is learned, the chat compacted, and the req
     call: async req => {
       if (req.history[0].text.startsWith(ctx.SUMMARY_PROMPT)) return { text: 'summary', calls: [], usage: { input: 10, output: 2 } };
       n++;
-      if (n === 3) throw Object.assign(new Error('The AI provider answered 400: the request exceeds the available context size'), { contextLimit: 2000 });
+      if (n === 3) throw Object.assign(new Error('The AI provider answered 400: the request exceeds the available context size'), { contextLimit: 6000 });
       return { text: 'fine', calls: [], usage: { input: Math.round(JSON.stringify(req.history).length * 0.3), output: 2 } };
     },
   });
-  await a.send(`one ${'y'.repeat(3000)}`);
-  await a.send(`two ${'y'.repeat(3000)}`);
+  await a.send(`one ${'y'.repeat(12000)}`);
+  await a.send(`two ${'y'.repeat(12000)}`);
   await a.send('three');
   assert.strictEqual(a.view().transcript.at(-1).text, 'fine', 'answered after compacting');
-  assert.strictEqual(a.view().context.tokens, 2000);
+  assert.strictEqual(a.view().context.tokens, 6000);
   assert.match(a.view().context.source, /too long/);
 });
 
