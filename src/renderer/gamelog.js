@@ -26,6 +26,7 @@ const gl = {
   lastId: 0, // the newest line taken in (ids only grow)
   play: null, // a past play being looked at: { id, start, end, outcome, entries, files, … }; null: live
   follow: true, // show Live while the game runs and Latest after; false once an older play is picked
+  liveFromId: 0, // Live shows this play only: lines from its "started" line on (0: the app opened mid-play, or no game)
   plays: [],
 };
 
@@ -42,8 +43,12 @@ const relTime = t => {
 
 const isProblem = e => !e.marker && (e.level === 'error' || e.level === 'warn');
 
+/** While the game runs, Live is that play: lines from its start on. */
+const liveFrom = () => (gl.status.running ? gl.liveFromId : 0);
+
 function glMatches(e) {
   if (!gl.play && e.id <= gl.clearedAfter) return false;
+  if (!gl.play && e.id < liveFrom()) return false;
   if (gl.level === 'error' && e.level !== 'error') return false;
   if (gl.level === 'warn' && e.level !== 'warn' && e.level !== 'error') return false;
   if (gl.source && e.source !== gl.source) return false;
@@ -273,18 +278,35 @@ function renderView() {
   if (gl.tab === 'manager') renderManager();
 }
 
+/** Errors, warnings and distinct problems among the live lines (this play's, while the game runs). */
+function liveCounts() {
+  const from = liveFrom();
+  if (!from) return { errors: gl.errors, warns: gl.warns, problems: gl.problemKeys.size };
+  let errors = 0; let warns = 0; const keys = new Set();
+  for (const e of gl.entries) {
+    if (e.id < from || e.id <= gl.clearedAfter || !isProblem(e)) continue;
+    if (e.level === 'error') errors++; else warns++;
+    keys.add(problemKey(e));
+  }
+  return { errors, warns, problems: keys.size };
+}
+
 function renderStats() {
-  const errs = gl.play ? gl.play.errors : gl.errors;
-  const warns = gl.play ? gl.play.warns : gl.warns;
+  const live = liveCounts();
+  const errs = gl.play ? gl.play.errors : live.errors;
+  const warns = gl.play ? gl.play.warns : live.warns;
   $('#gl-errs').textContent = errs;
   $('#gl-warns').textContent = warns;
   $('#gl-stat-err').classList.toggle('has-errors', errs > 0);
   $('#gl-stat-warn').classList.toggle('has-warns', warns > 0);
+  // The sidebar counts what the Game log follows: this play while the game runs, else the latest one.
+  const latest = !gl.status.running && gl.plays[0];
+  const navErrs = latest ? latest.errors || 0 : live.errors;
   const nav = $('#nav-log-count');
-  nav.textContent = gl.errors || '';
-  nav.classList.toggle('alert', gl.errors > 0);
-  nav.title = gl.errors ? `${plural(gl.errors, 'error')} in the game logs` : '';
-  const nProb = gl.play ? new Set(gl.play.entries.filter(isProblem).map(problemKey)).size : gl.problemKeys.size;
+  nav.textContent = navErrs || '';
+  nav.classList.toggle('alert', navErrs > 0);
+  nav.title = navErrs ? `${plural(navErrs, 'error')} in ${gl.status.running ? 'this play' : latest ? 'the latest play' : 'the game logs'}` : '';
+  const nProb = gl.play ? new Set(gl.play.entries.filter(isProblem).map(problemKey)).size : live.problems;
   $('#gl-prob-count').textContent = nProb ? String(nProb) : '';
 }
 
@@ -437,7 +459,10 @@ async function loadPlays() {
   if (gl.play && !gl.plays.some(p => p.id === gl.play.id)) gl.follow = true; // its logs were deleted
   const want = gl.follow ? defaultPlay() : gl.play?.id || '';
   // A different play, or the one shown has just finished saving (its last lines are in now).
-  if (want !== (gl.play?.id || '') || (gl.play?.closing && !gl.plays.find(p => p.id === gl.play.id)?.closing)) { await showPlay(want); return; }
+  const now = gl.play && gl.plays.find(p => p.id === gl.play.id);
+  const stale = now && (now.closing !== gl.play.closing || (now.files || 0) !== gl.play.files.length || (now.lines || 0) !== (gl.play.lines || 0));
+  if (want !== (gl.play?.id || '') || stale) { await showPlay(want); return; }
+  renderStats();
   paintPlayButton();
   if (!$('#gl-play-menu').hidden) paintPlayMenu();
 }
@@ -772,7 +797,14 @@ snapshotHooks.push(snap => {
 // Live batches that arrive before the initial snapshot wait, so lines stay in order and unique.
 let early = [];
 api.onGameLog(batch => { if (early) early.push(...batch); else onBatch(batch); });
-api.onGameStatus(s => { gl.status = s; renderGameStatus(); renderMods(); renderPlay(); loadPlays(); });
+api.onGameStatus(s => {
+  if (s.running && !gl.status.running) {
+    const start = [...gl.entries].reverse().find(e => e.marker && /started/i.test(e.text));
+    gl.liveFromId = start ? start.id : gl.lastId + 1;
+  }
+  gl.status = s;
+  renderGameStatus(); renderMods(); renderPlay(); loadPlays(); renderStats();
+});
 api.onGameLogReset(() => {
   gl.entries = [];
   gl.sources.clear();

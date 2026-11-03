@@ -82,6 +82,7 @@ test('a play the app did not see end (it was closed first) is finished on the ne
   fs.writeFileSync(path.join(d, 'play.json'), JSON.stringify({ id: '20261102-200000', start, end: 0, outcome: '', errors: 1, warns: 0, lines: 2 }));
   fs.writeFileSync(path.join(d, 'timeline.jsonl'), `${JSON.stringify({ time: start, level: 'info', text: 'a' })}\n${JSON.stringify({ time: start + 600e3, level: 'error', text: 'b' })}\n`);
   const plays = new PlayHistory({ dir, logs });
+  plays.recover();
   const p = plays.list()[0];
   assert.strictEqual(p.end, start + 600e3);
   assert.strictEqual(p.outcome, 'unknown');

@@ -36,13 +36,15 @@ class PlayHistory extends EventEmitter {
     this.log = log;
     this.current = null; // { id, dir, meta, closeTimer }
     this.startedAt = Date.now();
-    this.recover();
     logs.on('game', s => this.onGame(s));
     logs.on('entries', batch => this.onEntries(batch));
     logs.on('crash', id => { if (this.current) { this.current.meta.outcome = 'crashed'; this.current.meta.crash = id; this.writeMeta(this.current); } });
   }
 
-  /** A play the app did not see end (it was closed first): finish it from what was written. */
+  /**
+   * A play the app did not see end (it was closed first): finish it from what was written. Call it
+   * once the log monitor has looked for logs (its files are what gets copied).
+   */
   recover() {
     for (const p of this.list()) {
       if (p.end) continue;

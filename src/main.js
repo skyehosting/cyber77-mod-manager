@@ -173,7 +173,7 @@ async function boot() {
     isBusy: () => manager.busy,
     aiBusy: () => !!(assistant?.busy || assistant?.waiting),
     // No checks and no restarts while the game runs; a restart only while the window can be seen.
-    gameRunning: () => !!gameLogs?.status().running,
+    gameRunning: () => !!gameLogs?.status().running || !!plays?.current, // and while a play is still saving its logs
     inView: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
     log: logger,
   });
@@ -200,6 +200,7 @@ async function boot() {
   plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger, keep: () => settings.get('playsKeep') });
   plays.on('plays', list => send('plays', list));
   gameLogs.start();
+  plays.recover(); // a play the app was closed during: finish it now that the logs are found
   app.on('before-quit', () => gameLogs.stop());
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
   const gameFiles = new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot });
