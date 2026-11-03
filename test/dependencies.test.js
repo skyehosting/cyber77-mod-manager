@@ -48,7 +48,7 @@ test('requirements are resolved recursively, cycles stop, frameworks in the game
   fs.mkdirSync(path.join(game, 'red4ext'), { recursive: true });
   fs.writeFileSync(path.join(game, 'red4ext', 'RED4ext.dll'), 'dll');
   const settings = new Settings(path.join(root, 'ud'), null);
-  settings.update({ gamePath: game });
+  settings.update({ gamePath: game, categories: ['MAIN', 'OPTIONAL'] });
   const mgr = new ModManager({ settings, log: quiet });
   const queued = stubNexus(mgr);
 
@@ -56,7 +56,7 @@ test('requirements are resolved recursively, cycles stop, frameworks in the game
   const byMod = {};
   for (const q of queued) (byMod[q.modId] ||= []).push(q);
 
-  // The linked mod: every file in the chosen categories (Main + Optional, not Old).
+  // The linked mod: every file in the chosen categories (Main + Optional here, not Old).
   assert.deepStrictEqual(byMod[1].map(q => q.fileName).sort(), ['m1.zip', 'o1.zip']);
   assert.strictEqual(byMod[1][0].dependencyOf, '');
   // Dependencies: only the primary main file, tagged with what needs them.
@@ -100,7 +100,7 @@ test('the plan lists every requirement with its status, and only ticked ones are
   fs.mkdirSync(path.join(game, 'red4ext'), { recursive: true });
   fs.writeFileSync(path.join(game, 'red4ext', 'RED4ext.dll'), 'dll');
   const settings = new Settings(path.join(root, 'ud'), null);
-  settings.update({ gamePath: game });
+  settings.update({ gamePath: game, categories: ['MAIN', 'OPTIONAL'] });
   const mgr = new ModManager({ settings, log: quiet });
   const queued = stubNexus(mgr);
 

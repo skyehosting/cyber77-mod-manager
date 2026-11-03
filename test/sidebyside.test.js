@@ -106,7 +106,10 @@ test('the plan lists every file for the picker, and the picked files are what is
   const plan = await mgr.planLinks('https://www.nexusmods.com/cyberpunk2077/mods/5?tab=description');
   const m = plan.mods[0];
   assert.strictEqual(m.summary, 'Bold summary');
-  assert.deepStrictEqual(m.allFiles.map(f => [f.fileId, f.category, f.selected]), [[11, 'OPTIONAL', true], [10, 'MAIN', true], [12, 'OLD_VERSION', false]], 'the categories in Settings are preselected');
+  assert.deepStrictEqual(m.allFiles.map(f => [f.fileId, f.category, f.selected]), [[11, 'OPTIONAL', false], [10, 'MAIN', true], [12, 'OLD_VERSION', false]], 'by default only Main files are preselected');
+  settings.update({ categories: ['MAIN', 'OPTIONAL'] });
+  const both = await mgr.planLinks('https://www.nexusmods.com/cyberpunk2077/mods/5');
+  assert.deepStrictEqual(both.mods[0].allFiles.filter(f => f.selected).map(f => f.fileId), [11, 10], 'the categories in Settings are preselected');
   assert.strictEqual(m.allFiles.find(f => f.fileId === 10).description, 'The main file');
 
   await mgr.queuePlan(plan.token, [], { 5: [11, 12] });
@@ -295,4 +298,13 @@ test('Steam launch options: read from localconfig.vdf, and what Play through Ste
   assert.deepStrictEqual(missingLaunchOptions('-debug -no-tls', true), ['--launcher-skip', '-modded']);
   assert.deepStrictEqual(missingLaunchOptions('--launcher-skip -modded -skipStartScreen', true), []);
   assert.deepStrictEqual(missingLaunchOptions('-launcher-skip', false), ['--launcher-skip'], 'one dash does not skip it');
+});
+
+test('someone on the old default (nearly every category ticked) moves to Main only, once', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-cats-'));
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ categories: ['MAIN', 'UPDATE', 'OPTIONAL', 'MISCELLANEOUS'] }));
+  assert.deepStrictEqual(new Settings(dir, null).get('categories'), ['MAIN']);
+  const s = new Settings(dir, null);
+  s.update({ categories: ['MAIN', 'UPDATE', 'OPTIONAL', 'MISCELLANEOUS'] });
+  assert.deepStrictEqual(new Settings(dir, null).get('categories'), ['MAIN', 'UPDATE', 'OPTIONAL', 'MISCELLANEOUS'], 'a choice made after the move is kept');
 });

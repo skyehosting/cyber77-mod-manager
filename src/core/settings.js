@@ -17,7 +17,8 @@ class Settings {
       dataDir: path.join(userDataDir, 'data'),
       sevenZipPath: DEFAULT_SEVEN_ZIP,
       concurrentDownloads: 4,
-      categories: ['MAIN', 'UPDATE', 'OPTIONAL', 'MISCELLANEOUS'],
+      categories: ['MAIN'], // the file categories ticked for you when you download a mod
+      categoriesV2: false, // the old default (every category but old and archived) was moved to Main only
       autoInstall: 'main', // 'off' | 'main' | 'all'
       autoEnable: true,
       installDependencies: true,
@@ -39,6 +40,13 @@ class Settings {
       aiKeyEnc: '',
       aiKeyPlain: '',
     });
+    // The old default ticked nearly every file of a mod. Someone still on it moves to Main only.
+    const d = this.store.data;
+    if (!d.categoriesV2) {
+      if (Array.isArray(d.categories) && [...d.categories].sort().join() === 'MAIN,MISCELLANEOUS,OPTIONAL,UPDATE') d.categories = ['MAIN'];
+      d.categoriesV2 = true;
+      this.store.save();
+    }
   }
 
   get(key) {
@@ -119,7 +127,7 @@ class Settings {
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
     }
-    if (Array.isArray(patch.categories)) d.categories = patch.categories.map(String);
+    if (Array.isArray(patch.categories)) { d.categories = patch.categories.map(String); d.categoriesV2 = true; }
     this.store.save();
   }
 
