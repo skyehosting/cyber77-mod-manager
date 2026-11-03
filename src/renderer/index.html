@@ -486,6 +486,7 @@
           <div class="seg" id="gl-tabs" role="tablist" aria-label="View">
             <button class="seg-btn active" data-tab="timeline" role="tab" id="tab-timeline" aria-selected="true" aria-controls="gl-timeline">Timeline</button>
             <button class="seg-btn" data-tab="problems" role="tab" id="tab-problems" aria-selected="false" aria-controls="gl-problems" tabindex="-1">Problems <span class="seg-count seg-count-neutral" id="gl-prob-count" title="Distinct problems: repeats of the same error or warning count once"></span></button>
+            <button class="seg-btn" data-tab="crashes" role="tab" id="tab-crashes" aria-selected="false" aria-controls="gl-crashes" tabindex="-1" title="Each time the game crashed: where, in which mod, and what came before">Crashes <span class="seg-count" id="gl-crash-count"></span></button>
             <button class="seg-btn" data-tab="sources" role="tab" id="tab-sources" aria-selected="false" aria-controls="gl-sources" tabindex="-1">Sources</button>
             <button class="seg-btn" data-tab="manager" role="tab" id="tab-manager" aria-selected="false" aria-controls="gl-manager" tabindex="-1" title="What this app did: enables, disables, installs, updates. Not included in exported reports.">Manager</button>
           </div>
@@ -538,6 +539,10 @@
             <p class="empty-title">Nothing here</p>
             <p class="empty-text">Nothing matches these filters yet.</p>
           </div>
+        </div>
+
+        <div class="gl-view crash-view" id="gl-crashes" role="tabpanel" aria-labelledby="tab-crashes" hidden>
+          <div class="crash-list" id="gl-crash-list"></div>
         </div>
 
         <div class="table-card gl-view" id="gl-sources" role="tabpanel" aria-labelledby="tab-sources" hidden>

@@ -51,14 +51,17 @@ const LEVEL_SHORT = { error: 'ERROR', warn: 'WARN', info: 'INFO', success: 'GAME
 
 /** Rows carry data attributes only; one delegated listener on the list handles clicks. */
 function glRow(e) {
-  return h('div', { class: `lrow lv-${e.level}${e.marker ? ' marker' : ''}` },
+  return h('div', { class: `lrow lv-${e.level}${e.marker ? ' marker' : ''}${e.crash ? ' crash-row' : ''}` },
     h('span', { class: 'lrow-time', title: new Date(e.time).toLocaleString() }, fmtTime(e.time)),
-    h('span', { class: 'lrow-level' }, LEVEL_SHORT[e.level] || e.level.toUpperCase()),
+    h('span', { class: 'lrow-level' }, e.crash ? 'CRASH' : LEVEL_SHORT[e.level] || e.level.toUpperCase()),
     h('button', { class: 'lrow-source', dataset: { source: e.source }, title: e.file ? `${e.file}\nShow only ${e.source}` : `Show only ${e.source}` }, e.source),
-    h('span', { class: `lrow-text${e.lines > 3 ? ' clamp' : ''}`, title: e.lines > 3 ? 'Click to expand' : null }, e.text));
+    h('span', { class: `lrow-text${e.lines > 3 ? ' clamp' : ''}`, title: e.lines > 3 ? 'Click to expand' : null }, e.text,
+      e.crash ? h('button', { class: 'link-btn crash-link', dataset: { crash: e.crash } }, ' See the crash') : null));
 }
 
 $('#gl-list').addEventListener('click', ev => {
+  const crash = ev.target.closest('.crash-link');
+  if (crash) { showCrash(crash.dataset.crash); return; }
   const src = ev.target.closest('.lrow-source');
   if (src) { setSource(src.dataset.source); return; }
   const clamp = ev.target.closest('.lrow-text.clamp');
@@ -230,7 +233,7 @@ api.onLog(e => {
 });
 
 function renderView() {
-  for (const t of ['timeline', 'problems', 'sources', 'manager']) $(`#gl-${t}`).hidden = gl.tab !== t;
+  for (const t of ['timeline', 'problems', 'crashes', 'sources', 'manager']) $(`#gl-${t}`).hidden = gl.tab !== t;
   $('#gl-manager-note').hidden = gl.tab !== 'manager';
   // The game's log sources mean nothing for this app's own record.
   $('#gl-source').disabled = gl.tab === 'manager';
@@ -240,11 +243,13 @@ function renderView() {
     b.setAttribute('aria-selected', String(on));
     b.tabIndex = on ? 0 : -1;
   });
-  $('#gl-level').classList.toggle('is-disabled', gl.tab === 'sources');
-  $$('#gl-level .seg-btn').forEach(b => { b.disabled = gl.tab === 'sources'; });
+  const noLevel = gl.tab === 'sources' || gl.tab === 'crashes';
+  $('#gl-level').classList.toggle('is-disabled', noLevel);
+  $$('#gl-level .seg-btn').forEach(b => { b.disabled = noLevel; });
   if (gl.tab === 'timeline') renderTimeline();
   if (gl.tab === 'problems') renderProblems();
   if (gl.tab === 'sources') renderSources();
+  if (gl.tab === 'crashes') loadCrashes();
   if (gl.tab === 'manager') renderManager();
 }
 
@@ -378,6 +383,100 @@ function updatePauseLabel() {
 // ---------------------------------------------------------------- controls
 
 function setTab(t) { gl.tab = t; renderView(); }
+
+// ---------------------------------------------------------------- crashes
+
+/*
+ * Each crash the game's crash reporter recorded: when, what (an access violation…), the DLL it
+ * happened in and that DLL's mod (from the crash dump), and, opened, the errors from the minutes
+ * before it, the crash logs mods wrote, and the game's last log lines. Ask AI reads it all.
+ */
+const crash = { list: null, open: null, details: new Map() };
+
+const crashWhat = c => (/ACCESS_VIOLATION/i.test(c.expression || '') ? 'Access violation' : (c.expression || c.reason || 'Crash').replace(/\s*\(0x[0-9A-F]+\)$/i, ''));
+const crashWhere = c => (!c.module ? 'where is unknown (no crash dump)'
+  : c.module.system ? `in ${c.module.name} (a Windows file)`
+    : c.module.notInGame ? `in ${c.module.name} (not in the game folder: another program's, e.g. a driver or overlay)`
+      : `in ${c.module.name}${c.module.mod ? ` · ${c.module.mod}` : ''}`);
+const crashAsk = c => `My game crashed at ${new Date(c.time).toLocaleString()} (crash ${c.id}). Read the crash report (get_crash_report), compare it with my other crashes, and tell me what caused it and how to fix it.`;
+
+async function loadCrashes() {
+  const r = await api.crashList();
+  crash.list = r.ok || [];
+  const recent = crash.list.filter(c => Date.now() - c.time < 7 * 86400e3).length;
+  $('#gl-crash-count').textContent = recent || '';
+  $('#gl-crash-count').title = recent ? `${plural(recent, 'crash', 'crashes')} in the last 7 days` : '';
+  if (gl.tab === 'crashes') renderCrashes();
+}
+
+function renderCrashes() {
+  const box = $('#gl-crash-list');
+  if (!crash.list) { box.replaceChildren(h('p', { class: 'hint crash-empty' }, 'Reading crash reports…')); return; }
+  if (!crash.list.length) {
+    box.replaceChildren(h('div', { class: 'empty crash-empty' }, h('span', { class: 'empty-icon' }, icon('check')), h('p', { class: 'empty-title' }, 'No crashes recorded'), h('p', { class: 'empty-text' }, 'When the game crashes, its report shows here: where it crashed, in which mod, and what came before.')));
+    return;
+  }
+  const sameDll = c => (c.module ? crash.list.filter(o => o !== c && o.module?.name === c.module.name).length : 0);
+  box.replaceChildren(...crash.list.map(c => {
+    const isOpen = crash.open === c.id;
+    const repeat = sameDll(c);
+    const d = crash.details.get(c.id);
+    return h('article', { class: `crash-card${isOpen ? ' open' : ''}`, dataset: { id: c.id } },
+      h('div', { class: 'crash-head', role: 'button', tabindex: '0', 'aria-expanded': String(isOpen),
+        onclick: () => toggleCrash(c.id), onkeydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggleCrash(c.id); } } },
+        h('span', { class: 'crash-icon' }, icon('alert')),
+        h('div', { class: 'crash-titles' },
+          h('div', { class: 'crash-title' }, `${crashWhat(c)} ${crashWhere(c)}`),
+          h('div', { class: 'crash-meta' }, [new Date(c.time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }), c.module ? `${c.module.name}+${c.module.offset}` : ''].filter(Boolean).join('  ·  '))),
+        repeat ? h('span', { class: 'tag tag-warn', title: 'The same DLL in more than one crash is a strong lead' }, `same as ${plural(repeat, 'other crash', 'other crashes')}`) : null,
+        h('button', { class: 'btn btn-sm', onclick: ev => { ev.stopPropagation(); askAi(crashAsk(c)); } }, icon('sparkle'), h('span', {}, 'Ask AI why')),
+        h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Open the crash report folder', 'aria-label': 'Open the crash report folder', onclick: ev => { ev.stopPropagation(); run(api.crashOpen(c.id)); } }, icon('folder')),
+        icon('chevron', `crash-chev${isOpen ? ' open' : ''}`)),
+      isOpen ? crashBody(c, d) : null);
+  }));
+}
+
+function crashBody(c, d) {
+  if (!d) return h('div', { class: 'crash-body' }, h('p', { class: 'hint' }, 'Reading the crash…'));
+  const section = (title, ...kids) => h('section', { class: 'crash-sec' }, h('h4', {}, title), ...kids);
+  return h('div', { class: 'crash-body' },
+    section('What happened',
+      h('p', {}, `${d.reason || 'Crash'}${d.expression ? `: ${d.expression}` : ''}`),
+      d.message ? h('p', { class: 'hint' }, d.message) : null,
+      d.module ? h('p', {}, 'In ', h('code', {}, `${d.module.name}+${d.module.offset}`), d.module.mod ? `, from ${d.module.mod}` : '', d.module.file ? h('span', { class: 'hint' }, ` (${d.module.file})`) : '', d.module.notInGame ? ' (not in the game folder: another program\'s, e.g. a driver or overlay, or a mod file since removed)' : '', d.module.system ? ' (a Windows file: the real cause is usually what called it)' : '') : null),
+    section(`Errors and warnings in the 10 minutes before (${d.problemsBefore.length})`,
+      d.problemsBefore.length ? h('div', { class: 'crash-lines' }, d.problemsBefore.slice(-25).map(e => h('div', { class: `crash-line lv-${e.level}` }, h('span', { class: 'crash-src' }, e.source), h('span', {}, e.text))))
+        : h('p', { class: 'hint' }, 'None in the game\'s logs (or the app was not running then).')),
+    d.modCrashLogs.length ? section('Crash logs mods wrote', ...d.modCrashLogs.map(l => h('div', {}, h('p', { class: 'hint' }, l.file, l.mod ? ` · ${l.mod}` : ''), h('pre', { class: 'crash-pre' }, l.text)))) : null,
+    d.gameLog ? h('details', { class: 'crash-sec' }, h('summary', {}, 'The game\'s last log lines'), h('pre', { class: 'crash-pre' }, d.gameLog)) : null,
+    d.modDlls.length ? h('details', { class: 'crash-sec' }, h('summary', {}, `Mod DLLs that were loaded (${d.modDlls.length})`),
+      h('div', { class: 'crash-dlls' }, d.modDlls.map(m => h('span', { class: 'tag', title: m.mod || '' }, m.file.split('/').pop())))) : null);
+}
+
+async function toggleCrash(id) {
+  crash.open = crash.open === id ? null : id;
+  renderCrashes();
+  if (crash.open && !crash.details.has(id)) {
+    const r = await api.crashDetails(id);
+    if (r.ok) crash.details.set(id, r.ok);
+    renderCrashes();
+  }
+}
+
+/** Show one crash (from the timeline, or a crash just now). */
+async function showCrash(id) {
+  goTo('gamelog');
+  setTab('crashes');
+  await loadCrashes();
+  if (crash.open !== id) await toggleCrash(id);
+  $(`#gl-crash-list [data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'start' });
+}
+
+// The game just crashed: say so wherever the user is.
+api.onCrash(c => {
+  loadCrashes();
+  toast(`Cyberpunk 2077 crashed${c.module ? ` ${crashWhere(c)}` : ''}`, 'error', { label: 'See what happened', fn: () => showCrash(c.id) });
+});
 function setSource(s, rerender = true) {
   gl.source = s;
   syncSourceOptions();
@@ -428,7 +527,7 @@ $('#gl-stat-src').addEventListener('click', () => setTab('sources'));
 // Export the lines this view shows (its search, level and source), with every log's details.
 $('#gl-export').addEventListener('click', exportReport);
 
-pageHooks.gamelog = () => renderView();
+pageHooks.gamelog = () => { renderView(); loadCrashes(); };
 snapshotHooks.push(snap => {
   if (snap.gameStatus) { gl.status = snap.gameStatus; renderGameStatus(); }
   scheduleModProblems();

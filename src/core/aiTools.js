@@ -42,6 +42,11 @@ const TOOLS = [
     },
   },
   { name: 'get_mod', kind: 'read', description: 'One mod in detail: its files, conflicts with other mods, warnings, repair need and recent log errors.', params: { mod: str('Mod name or id') }, required: ['mod'] },
+  {
+    name: 'get_crash_report', kind: 'read',
+    description: 'A game crash in full: when, the error (e.g. an access violation), the DLL it happened in and the mod that owns it (read from the crash dump), the game\'s own last log lines, the game-log errors and warnings from the 10 minutes before it, crash logs mods wrote then, and the mod DLLs that were loaded. Start here when the game crashed. Without an id: the latest crash; "list" lists recent crashes.',
+    params: { id: str('A crash id from the list, "latest" (default) or "list"') },
+  },
   { name: 'get_problems', kind: 'read', description: 'Errors and warnings from the game\'s and mods\' logs, grouped (same message once, with a count), newest problems first, with the mod each comes from.', params: { limit: { type: 'number', description: 'At most this many groups (default 40)' } } },
   {
     name: 'get_game_log', kind: 'read', description: 'Recent lines from the game\'s and mods\' logs (CET, RED4ext, redscript, ArchiveXL, TweakXL, …).',
@@ -144,6 +149,7 @@ function makeTools(ctx) {
           updatesAvailable: Object.keys(snap.updates || {}).length,
           logErrors: prob.filter(e => e.level === 'error').length, logWarnings: prob.filter(e => e.level === 'warn').length,
           modsNeedingRepair: all.filter(m => m.health).map(m => m.name),
+          latestCrash: (() => { const c = ctx.crashes?.list(1)[0]; return c ? { id: c.id, time: iso(c.time), error: c.expression || c.reason, dll: c.module?.name, mod: c.module?.mod || undefined } : 'none'; })(),
           redmods: ctx.redmodStatus ? redmodView(ctx.redmodStatus()) : undefined,
           recentChanges: recent.map(m => ({ name: m.name, installedAt: iso(m.installedAt), enabledAt: iso(m.enabledAt), disabledAt: iso(m.disabledAt), enabled: !!m.enabled })),
         });
@@ -176,6 +182,20 @@ function makeTools(ctx) {
         const logs = gameLogs.entries.filter(e => e.root && roots.includes(e.root.toLowerCase()) && (e.level === 'error' || e.level === 'warn')).slice(-20);
         const own = manager.data.mods[m.id];
         return out({ ...brief(m), author: m.author, files: (own?.files || []).slice(0, 60), fileCount: m.fileCount ?? own?.files?.length, warnings: m.warnings, conflictsWith: conflicts, recentLogProblems: logs.map(e => ({ time: iso(e.time), level: e.level, source: e.source, text: e.text })) });
+      }
+      case 'get_crash_report': {
+        if (!ctx.crashes) return out({ error: 'Crash reports are not available.' });
+        if (a.id === 'list') return out({ crashes: ctx.crashes.list(15).map(c => ({ id: c.id, time: iso(c.time), error: c.expression || c.reason, module: c.module?.name, mod: c.module?.mod })) });
+        const d = ctx.crashes.details(a.id || 'latest');
+        if (!d) return out({ none: 'No crash reports found (the game writes one to %LOCALAPPDATA%\\REDEngine\\ReportQueue when it crashes).' });
+        return out({
+          id: d.id, time: iso(d.time), error: d.reason, expression: d.expression, message: d.message,
+          crashedIn: d.module ? { dll: d.module.name, offset: d.module.offset, file: d.module.file || d.module.path, mod: d.module.mod || undefined, windowsDll: d.module.system || undefined, note: d.module.notInGame ? 'No file with this name is in the game folder: it is another program\'s (a driver, an overlay, an injected component) or a mod file that was since removed.' : undefined } : 'unknown (no dump, or the address is in no module)',
+          problemsInTheMinutesBefore: d.problemsBefore.map(e => ({ ...e, time: iso(e.time) })),
+          modCrashLogs: d.modCrashLogs.map(l => ({ ...l, text: hide(l.text) })),
+          gameLogLastLines: d.gameLog,
+          modDllsLoaded: d.modDlls.slice(0, 60),
+        });
       }
       case 'get_problems': {
         const prob = gameLogs.entries.filter(e => e.level === 'error' || e.level === 'warn');

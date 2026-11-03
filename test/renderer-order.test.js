@@ -28,3 +28,15 @@ test('no window script uses a top-level const/let before it is declared', () => 
   });
   assert.deepStrictEqual(early, []);
 });
+
+test('no window script uses $(…) (one element) as a list: that is $$(…)', () => {
+  // $ finds one element, $$ all of them. A $(...).forEach throws as the page opens.
+  const dir = path.join(__dirname, '..', 'src', 'renderer');
+  const wrong = [];
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
+    fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/).forEach((line, i) => {
+      if (/(^|[^$\w])\$\((['`])[^'`]*\2\)\.(forEach|map|filter|some|every|find|slice)\(/.test(line)) wrong.push(`${f}:${i + 1}`);
+    });
+  }
+  assert.deepStrictEqual(wrong, []);
+});

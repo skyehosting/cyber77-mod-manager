@@ -447,9 +447,22 @@ class GameLogMonitor extends EventEmitter {
         this.discover().finally(() => { this.baseline = null; });
         const ran = this.game.since ? Math.round((Date.now() - this.game.since) / 60000) : 0;
         this.game = { running: false, since: null, pid: null };
+        const crashed = folder => {
+          this.note('error', `Cyberpunk 2077 crashed${ran ? ` after ${ran} min` : ''}. See Game log → Crashes.`);
+          this.entries[this.entries.length - 1].crash = path.basename(folder); // the timeline marks it, and links to it
+          this.flush();
+          this.emit('crash', path.basename(folder));
+        };
         const crash = this.newCrashReport();
-        if (crash) this.note('error', `Cyberpunk 2077 exited and wrote a crash report: ${crash}`);
-        else this.note('info', `Cyberpunk 2077 exited${ran ? ` after ${ran} min` : ''}`);
+        if (!crash) {
+          this.note('info', `Cyberpunk 2077 exited${ran ? ` after ${ran} min` : ''}`);
+          // The crash reporter writes its folder after the game is gone: look again shortly.
+          for (const ms of [10e3, 30e3]) setTimeout(() => { const late = this.newCrashReport(); if (late) crashed(late); }, ms);
+        }
+        this.flush();
+        this.emit('game', this.status());
+        if (crash) crashed(crash);
+        return;
       }
       this.flush();
       this.emit('game', this.status());

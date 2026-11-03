@@ -49,6 +49,7 @@ function systemPrompt() {
 - A name in an error (a record, property, script, file, effect like "RainOverhaulClouds"): search_mod_files for it, and find_mod_files for files named like it, to learn which mod it is. list_mods with search "a|b|c" finds mods by several names at once.
 - An error that names no mod (e.g. ArchiveXL "Line #2: Patch config must be a map or list"): find the candidate files (find_mod_files "xl" under archive/pc/mod, or the mod's folder), read_mod_file the suspects and check the line the error names. Recently installed or updated mods first.
 - A CET, RED4ext or redscript error: the mod's own folder usually has a log; read it.
+- The game crashed: get_crash_report first. The DLL the crash happened in, and its mod, is the strongest lead; then the errors in the minutes before it, the mods' own crash logs, and what changed recently. Say how sure you are (one crash in a mod's DLL is a lead; the same DLL in several crashes is near certain), and compare with earlier crashes (id "list").
 - Then get_mod for the mod you found (version, update, requirements, when installed), and check_for_updates or the web if a newer version or a known issue might explain it.
 - Settings files (.json, .ini, .toml, .cfg, .xml…) may hold the user's keys, so read_config_files asks the user first; keys come back as [hidden: set …] or [hidden: empty]. Never ask the user to paste a key or password into the chat: when one is missing or a setting must change, use ask_user_to_fill (a form; the app writes the file and you learn only that it was set), or show_file so they edit it in the app's editor.
 End with the exact mod and the exact fix (and propose the change for approval when it is one you can make). Ask the user only what no tool can tell you, such as what they saw on screen.`,
@@ -211,7 +212,7 @@ async function callModel({ provider, endpoint, key, model, history, tools, signa
 const ACTIVITY = {
   get_overview: () => 'Looked at the overview', list_mods: a => `Listed mods${a.filter && a.filter !== 'all' ? ` (${a.filter})` : ''}${a.sort ? `, ${a.sort.replace(/_/g, ' ')}` : ''}`,
   get_mod: a => `Looked at ${a.mod}`, get_problems: () => 'Read the problems in the game logs', get_game_log: a => `Read the game log${a.search ? `: "${a.search}"` : ''}`,
-  get_activity_log: () => 'Read the activity log', get_load_order: () => 'Read the load order', check_for_updates: () => 'Checked for updates',
+  get_crash_report: a => (a.id === 'list' ? 'Listed the game\'s crashes' : 'Read the crash report'), get_activity_log: () => 'Read the activity log', get_load_order: () => 'Read the load order', check_for_updates: () => 'Checked for updates',
   find_mod_files: a => `Looked for files: "${a.name}"`, search_mod_files: a => `Searched mod files for "${a.text}"`, read_mod_file: a => `Read ${a.path}`,
   search_nexus: a => `Searched Nexus: "${a.query}"`, web_search: a => `Searched the web: "${a.query}"`, read_web_page: a => `Read ${a.url}`,
 };

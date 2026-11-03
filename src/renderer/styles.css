@@ -1808,3 +1808,33 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .nav { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .nav > *, .nav-sub > * { flex-shrink: 0; }
 @media (max-width: 1080px) { .nav { scrollbar-width: none; } }
+
+/* ================================================================== Game log: crashes */
+.crash-view { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.crash-list { display: flex; flex-direction: column; gap: var(--sp-3); padding-bottom: var(--sp-4); }
+.crash-empty { padding: var(--sp-6) 0; }
+.crash-card { border: 1px solid var(--err-line); border-radius: var(--r-lg); background: linear-gradient(var(--err-tint), var(--err-tint)), var(--surface); overflow: hidden; }
+.crash-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); cursor: pointer; }
+.crash-head:hover { background: rgb(240 96 110 / 0.05); }
+.crash-head:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
+.crash-icon { display: grid; place-items: center; width: 2.2rem; height: auto; aspect-ratio: 1; flex: none; border-radius: var(--r); background: var(--err-soft); color: var(--err); }
+.crash-titles { flex: 1; min-width: 0; }
+.crash-title { font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crash-meta { color: var(--muted); font-size: var(--fs-xs); font-family: var(--mono); }
+.crash-chev { width: 1rem; flex: none; color: var(--muted); transition: transform .15s var(--ease); }
+.crash-chev.open { transform: rotate(180deg); }
+.crash-body { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top: 1px solid var(--err-line); background: var(--surface); }
+.crash-sec h4 { margin: 0 0 var(--sp-1); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.crash-sec p { margin: 0.15rem 0; }
+.crash-sec summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-2); }
+.crash-lines { display: flex; flex-direction: column; gap: 0.15rem; max-height: 16rem; overflow: auto; font: var(--fs-xs)/1.45 var(--mono); }
+.crash-line { display: flex; gap: var(--sp-2); }
+.crash-line.lv-error { color: var(--err-text); }
+.crash-line.lv-warn { color: var(--warn-text); }
+.crash-src { flex: none; width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.crash-pre { margin: var(--sp-1) 0 0; max-height: 18rem; overflow: auto; padding: var(--sp-2) var(--sp-3); background: var(--console-bg); border-radius: var(--r); font: var(--fs-xs)/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.crash-dlls { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: var(--sp-1); }
+/* The crash line in the timeline */
+.lrow.crash-row { background: var(--err-soft); }
+.lrow.crash-row .lrow-level { color: var(--err); font-weight: var(--fw-bold); }
+.crash-link { margin-left: var(--sp-2); font-weight: var(--fw-medium); }

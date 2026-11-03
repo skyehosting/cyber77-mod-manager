@@ -16,6 +16,7 @@ const { makeTools } = require('./core/aiTools');
 const { WebReader } = require('./core/web');
 const { GameFiles } = require('./core/gameFiles');
 const { ModConfig } = require('./core/modConfig');
+const { CrashReports } = require('./core/crashes');
 
 let win = null;
 let settings = null;
@@ -24,6 +25,7 @@ let gameLogs = null;
 let updater = null;
 let assistant = null;
 let modConfig = null;
+let crashes = null;
 let lastExport = '';
 
 const cipher = {
@@ -195,9 +197,12 @@ async function boot() {
   app.on('before-quit', () => gameLogs.stop());
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
   const gameFiles = new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot });
+  crashes = new CrashReports({ dir: () => path.join(process.env.LOCALAPPDATA || '', 'REDEngine', 'ReportQueue'), gameDir: () => manager.gameDir(), gameLogs, files: gameFiles });
+  // A crash: the window says so wherever the user is, and the Crashes view shows it.
+  gameLogs.on('crash', id => send('crash', crashes.list(1)[0] || { id }));
   modConfig = new ModConfig({ manager, files: gameFiles, ownerRoot, backupDir: path.join(app.getPath('userData'), 'edited-originals') });
   const tools = makeTools({
-    manager, gameLogs, logger, web: new WebReader(), files: gameFiles, config: modConfig,
+    manager, gameLogs, logger, web: new WebReader(), files: gameFiles, config: modConfig, crashes,
     allMods: () => {
       const snap = manager.snapshot();
       return [...snap.mods, ...(snap.vortex?.mods || []).map(v => ({ ...v, vortex: true }))];
@@ -212,6 +217,9 @@ async function boot() {
   handle('logs', () => logger.entries);
   handle('gamelog:snapshot', () => ({ entries: gameLogs.entries.slice(-4000), sources: gameLogs.sources(), status: gameLogs.status() }));
   handle('gamelog:sources', () => gameLogs.sources());
+  handle('crash:list', () => crashes.list(30));
+  handle('crash:details', id => crashes.details(String(id || 'latest')));
+  handle('crash:open', id => { const c = crashes.list(50).find(x => x.id === id); if (c) shell.openPath(c.folder); });
   handle('gamelog:reveal', rel => {
     const full = path.join(settings.get('gamePath'), String(rel));
     if (!full.startsWith(path.resolve(settings.get('gamePath')))) throw new Error('Not a game file');
