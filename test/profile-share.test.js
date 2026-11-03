@@ -312,3 +312,13 @@ test('a local mod named like its archive ("X.zip") is packed once as X.zip, and 
   assert.deepStrictEqual(doc.mods[0].fomodChoices, [[[0]]], 'the original archive keeps its installer choices');
   fs.rmSync(out, { force: true });
 });
+
+test('a profile zip says which packed mods carry program files (.dll, .asi, .exe)', { skip: !has7z && 'no 7-Zip' }, async () => {
+  const s = makeManager();
+  await s.installAs('Plain Local', { 'plain.archive': 'P' }, 0, 0);
+  await s.installAs('Unlocker', { 'Unlocker.asi': 'A', 'readme.txt': 'r' }, 0, 0);
+  const out = path.join(os.tmpdir(), `cmm-profile-${Date.now()}-r.zip`);
+  const res = await s.mgr.exportProfileZip('default', out);
+  assert.deepStrictEqual(res.risky, [{ mod: 'Unlocker', files: ['Unlocker.asi'] }]);
+  fs.rmSync(out, { force: true });
+});

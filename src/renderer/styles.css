@@ -1934,3 +1934,10 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .play-menu { overscroll-behavior: contain; }
 .crash-bar .hint { flex: 1; }
 .play-pick-btn.live { border-color: var(--ok-track); }
+
+/* Export warning: the program files a profile zip carries */
+.risk-body { display: flex; flex-direction: column; gap: var(--sp-3); }
+.risk-list { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 40vh; overflow-y: auto; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--warn-line, var(--line)); border-radius: var(--r); background: var(--surface-2); }
+.risk-mod { display: flex; flex-direction: column; gap: 0.2rem; }
+.risk-files { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.risk-files code { font-size: var(--fs-xs); }

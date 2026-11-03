@@ -1541,6 +1541,7 @@ class ModManager extends EventEmitter {
     const tmp = path.join(this.settings.tempDir, `export-${crypto.randomBytes(4).toString('hex')}`);
     const seven = sevenZip(this.settings.get('sevenZipPath'));
     let local = 0;
+    const risky = []; // packed mods with program files: { mod, files }
     try {
       fs.mkdirSync(path.join(tmp, 'local'), { recursive: true });
       for (const [i, m] of mods.entries()) {
@@ -1565,6 +1566,11 @@ class ModManager extends EventEmitter {
         // An original archive keeps the sender's installer choices: the receiver's installer starts with them.
         entry.archive = rel;
         local++;
+        // Program files (.dll, .asi, .exe) are what browsers and virus scanners flag: say which.
+        try {
+          const programs = (await archiveTools.list(seven, path.join(tmp, rel))).filter(f => /\.(dll|asi|exe)$/i.test(f));
+          if (programs.length) risky.push({ mod: m.name, files: programs.slice(0, 20) });
+        } catch { /* not listable: no warning to give */ }
       }
       fs.writeFileSync(path.join(tmp, 'profile.json'), JSON.stringify(doc, null, 2));
       fs.writeFileSync(path.join(tmp, 'share-code.txt'), [
@@ -1581,7 +1587,7 @@ class ModManager extends EventEmitter {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
     this.log.success(`Exported profile "${doc.name}" (${doc.mods.length} mods, ${local} from local files packed) to ${outFile}`);
-    return { file: outFile, count: doc.mods.length, local };
+    return { file: outFile, count: doc.mods.length, local, risky };
   }
 
   /**

@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, icon, run, toast, plural, fmtSize, state, modAction, drawerSections, snapshotHooks, withModal, showModal, keepFocus, pageHooks, goTo, setModFilter, CAT_LABEL, cfg, renderConfig, setSegActive, moveFromVortex, openDrawer */
+/* global api, $, h, icon, run, toast, plural, fmtSize, state, modAction, drawerSections, snapshotHooks, withModal, showModal, keepFocus, pageHooks, goTo, setModFilter, CAT_LABEL, cfg, renderConfig, setSegActive, moveFromVortex, openDrawer, modal */
 
 // ---------------------------------------------------------------- mod details: update and health
 
@@ -355,8 +355,30 @@ function switchTo(x) {
 function exportProfile(x) {
   return profGuard(async () => {
     const r = await run(api.exportProfile(x.id));
-    if (r) toast(`Exported "${x.name}" (${plural(r.count, 'mod')}${r.local ? `, ${r.local} from local files packed in` : ''})`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
+    if (!r) return;
+    if (r.risky?.length) { await programFilesWarning(x, r); return; }
+    toast(`Exported "${x.name}" (${plural(r.count, 'mod')}${r.local ? `, ${r.local} from local files packed in` : ''})`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
   }, 'Exporting…');
+}
+
+/**
+ * A profile zip that carries program files (.dll, .asi, .exe): browsers and virus scanners often
+ * flag those, usually wrongly for game mods. Say which, so the sender knows what they share.
+ */
+async function programFilesWarning(x, r) {
+  const files = r.risky.reduce((n, m) => n + m.files.length, 0);
+  const show = await modal({
+    title: `Exported "${x.name}": it carries program files`,
+    sub: `${plural(r.risky.length, 'mod')} from local files in the zip ${r.risky.length === 1 ? 'includes' : 'include'} ${plural(files, 'program file')} (.dll, .asi or .exe)`,
+    body: h('div', { class: 'risk-body' },
+      h('p', {}, 'Browsers and virus scanners often flag program files in a download. For game mods (frame generation unlockers, DLSS files, script extenders) this is usually a false positive, but not always.'),
+      h('div', { class: 'risk-list' }, r.risky.map(m => h('div', { class: 'risk-mod' },
+        h('span', { class: 'name' }, m.mod),
+        h('span', { class: 'risk-files' }, m.files.map(f => h('code', {}, f.split('/').pop())))))),
+      h('p', { class: 'hint' }, 'Only share files you trust and know the source of, and tell whoever gets it what is inside. To leave these out, share the profile code instead: it holds Nexus mods only.')),
+    buttons: [{ label: 'Show in folder', value: true }, { label: 'OK', value: false, kind: 'btn-primary' }],
+  });
+  if (show) api.revealExport();
 }
 
 function copyCode(x) {
