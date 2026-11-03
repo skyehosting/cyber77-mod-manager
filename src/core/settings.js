@@ -37,6 +37,7 @@ class Settings {
       aiEndpoint: '',
       aiModel: '',
       aiTimeout: 5, // minutes one request to the AI provider may take (local models can be slow)
+      aiContext: 0, // the model's context window in tokens; 0: ask the provider
       aiKeyEnc: '',
       aiKeyPlain: '',
     });
@@ -109,6 +110,7 @@ class Settings {
     if ('aiKey' in patch) this.aiKey = patch.aiKey;
     if ('aiProvider' in patch && ['openai', 'anthropic'].includes(patch.aiProvider)) d.aiProvider = patch.aiProvider;
     for (const k of ['aiEndpoint', 'aiModel']) if (typeof patch[k] === 'string') d[k] = patch[k].trim().slice(0, 300);
+    if ('aiContext' in patch) d.aiContext = Math.min(10e6, Math.max(0, Math.round(Number(patch.aiContext) || 0)));
     if ('aiTimeout' in patch && Number.isFinite(Number(patch.aiTimeout)) && patch.aiTimeout !== '') d.aiTimeout = Math.min(60, Math.max(1, Math.round(Number(patch.aiTimeout))));
     for (const k of ['gamePath', 'dataDir', 'sevenZipPath', 'autoInstall', 'deployMethod']) {
       if (typeof patch[k] === 'string') d[k] = patch[k].trim();

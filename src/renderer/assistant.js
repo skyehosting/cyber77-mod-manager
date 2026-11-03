@@ -438,8 +438,11 @@ function showChatTotal() {
   const el = $('#ai-model');
   if (!v?.model) { el.textContent = ''; return; }
   const u = v.usage;
-  el.textContent = `Model: ${v.model}${u && (u.input || u.output) ? `  ·  ${u.estimated ? '~' : ''}${fmtTok(u.input + u.output)} tokens this chat` : ''}`;
-  el.title = u ? `This chat so far: ${tokenLine(u)}. Clear chat starts the count again.` : '';
+  const c = v.context;
+  const fill = c?.tokens && c.used ? `  ·  context ${fmtTok(c.used)} of ${fmtTok(c.tokens)}` : '';
+  el.textContent = `Model: ${v.model}${u && (u.input || u.output) ? `  ·  ${u.estimated ? '~' : ''}${fmtTok(u.input + u.output)} tokens this chat` : ''}${fill}`;
+  el.title = [u ? `This chat so far: ${tokenLine(u)}. Clear chat starts the count again.` : '',
+    c?.tokens ? `The model reads up to ${c.tokens.toLocaleString()} tokens at once (${c.source}); the chat is now about ${(c.used || 0).toLocaleString()}. Near the limit, the older part is summarized and the recent part kept word for word${c.compactions ? ` (done ${c.compactions} time${c.compactions === 1 ? '' : 's'} in this chat)` : ''}.` : ''].filter(Boolean).join('\n');
 }
 
 async function sendText(text) {
@@ -462,7 +465,7 @@ api.onAi(e => {
   // Token counts change often: update them in place, without redrawing the chat.
   if (e.type === 'usage') {
     ai.live = { turn: e.turn, sending: e.sending };
-    if (ai.view) ai.view.usage = e.total;
+    if (ai.view) { ai.view.usage = e.total; if (e.context) ai.view.context = e.context; }
     showLiveTokens();
     showChatTotal();
     return;

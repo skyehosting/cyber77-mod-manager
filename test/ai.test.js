@@ -46,12 +46,12 @@ test('token use: counted per answer (every step) and per chat, sent as it goes, 
   ];
   const events = [];
   const a = new Assistant({
-    settings: fakeSettings(), tools: fakeTools(), file: file(),
+    settings: fakeSettings(), tools: fakeTools(), file: file(), detect: async () => ({ tokens: 0 }),
     call: async ({ onSend }) => { onSend?.(1234); return replies.shift(); },
   });
   a.on('event', e => { if (e.type === 'usage') events.push(e); });
   await a.send('check');
-  assert.deepStrictEqual(events[0], { type: 'usage', turn: { input: 0, output: 0, steps: 0, estimated: false }, sending: 1234, total: null }, 'the request size first');
+  assert.deepStrictEqual({ ...events[0], context: undefined }, { context: undefined, type: 'usage', turn: { input: 0, output: 0, steps: 0, estimated: false }, sending: 1234, total: null }, 'the request size first');
   assert.deepStrictEqual(events.at(-1).turn, { input: 2300, output: 100, steps: 2, estimated: false });
   assert.deepStrictEqual(a.view().usage, { input: 2300, output: 100, estimated: false });
   assert.deepStrictEqual(a.view().transcript.find(x => x.type === 'assistant').usage, { input: 2300, output: 100, steps: 2, estimated: false });
@@ -106,7 +106,7 @@ test('the assistant reads freely, but a change is only proposed until the user a
     { text: 'I asked to enable Codeware; approve the card if that is OK.', calls: [] },
     { text: 'Thanks, it is enabled now.', calls: [] },
   ]);
-  const a = new Assistant({ settings: fakeSettings(), tools, file: file(), call: model.call });
+  const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools, file: file(), call: model.call });
   await a.send('My game crashes');
   assert.deepStrictEqual(tools.ran.read, ['get_overview']);
   assert.deepStrictEqual(tools.ran.act, [], 'nothing changed without approval');
@@ -136,7 +136,7 @@ test('declined, expired and invalid proposals', async () => {
     { text: 'Approve this one?', calls: [] },
     { text: 'Understood.', calls: [] },
   ]);
-  const a = new Assistant({ settings: fakeSettings(), tools, file: file(), call: model.call });
+  const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools, file: file(), call: model.call });
   await a.send('fix it');
   assert.match(model.seen[1].at(-1).results[0].content, /No installed mod matches/, 'a bad proposal goes back to the model');
   const first = a.view().transcript.find(x => x.type === 'proposal');
@@ -153,16 +153,16 @@ test('declined, expired and invalid proposals', async () => {
 test('the chat is kept between sessions; Clear empties it', async () => {
   const f = file();
   const model = scripted([{ text: 'Hello.', calls: [] }]);
-  const a = new Assistant({ settings: fakeSettings(), tools: fakeTools(), file: f, call: model.call });
+  const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools: fakeTools(), file: f, call: model.call });
   await a.send('hi');
-  const b = new Assistant({ settings: fakeSettings(), tools: fakeTools(), file: f, call: model.call });
+  const b = new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools: fakeTools(), file: f, call: model.call });
   assert.deepStrictEqual(b.view().transcript.map(x => x.type), ['user', 'assistant']);
   b.clear();
-  assert.deepStrictEqual(new Assistant({ settings: fakeSettings(), tools: fakeTools(), file: f, call: model.call }).view().transcript, []);
+  assert.deepStrictEqual(new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools: fakeTools(), file: f, call: model.call }).view().transcript, []);
 });
 
 test('a provider error shows in the chat and leaves a usable history', async () => {
-  const a = new Assistant({ settings: fakeSettings(), tools: fakeTools(), file: file(), call: async () => { throw new Error('The AI provider answered 401: bad key'); } });
+  const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings: fakeSettings(), tools: fakeTools(), file: file(), call: async () => { throw new Error('The AI provider answered 401: bad key'); } });
   await a.send('hi');
   assert.strictEqual(a.view().transcript.at(-1).type, 'error');
   assert.strictEqual(a.busy, false);
@@ -209,7 +209,7 @@ test('over HTTP: an OpenAI-style endpoint, a tool round trip, the key in the hea
   const endpoint = `http://127.0.0.1:${server.address().port}/v1`;
   try {
     const settings = { get: k => ({ aiProvider: 'openai', aiEndpoint: endpoint, aiModel: 'local-model' })[k], aiKey: 'sk-test' };
-    const a = new Assistant({ settings, tools: fakeTools(), file: file(), call: callModel });
+    const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings, tools: fakeTools(), file: file(), call: callModel });
     await a.send('how many mods?');
     assert.strictEqual(seen[0].url, '/v1/chat/completions');
     assert.strictEqual(seen[0].auth, 'Bearer sk-test');
@@ -248,9 +248,9 @@ test('a slow model: waited for up to the time limit, then a clear message; Stop 
     await assert.rejects(ask(5000, stop.signal), e => e.stopped === true, 'Stop ends the wait at once');
     // The setting: minutes, 1 to 60, 5 by default.
     const s = { get: k => ({ aiTimeout: undefined })[k] };
-    assert.strictEqual(new Assistant({ settings: s, tools: fakeTools(), file: file(), call: async () => ({}) }).timeoutMs(), 5 * 60e3);
+    assert.strictEqual(new Assistant({ detect: async () => ({ tokens: 0 }), settings: s, tools: fakeTools(), file: file(), call: async () => ({}) }).timeoutMs(), 5 * 60e3);
     s.get = k => ({ aiTimeout: 12 })[k];
-    assert.strictEqual(new Assistant({ settings: s, tools: fakeTools(), file: file(), call: async () => ({}) }).timeoutMs(), 12 * 60e3);
+    assert.strictEqual(new Assistant({ detect: async () => ({ tokens: 0 }), settings: s, tools: fakeTools(), file: file(), call: async () => ({}) }).timeoutMs(), 12 * 60e3);
   } finally {
     server.closeAllConnections?.();
     server.close();

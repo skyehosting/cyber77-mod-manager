@@ -629,6 +629,12 @@
                 <span class="hint">minutes</span>
               </div>
               <p class="hint" id="s-ai-timeout-hint">How long to wait for the model before giving up (1 to 60). Local models can need several minutes for a long chat; Stop ends a wait at any time.</p>
+              <label class="label" for="s-ai-context">Context window</label>
+              <div class="field-row ai-timeout-row">
+                <input id="s-ai-context" type="number" min="0" step="1024" placeholder="Automatic" aria-describedby="s-ai-context-hint">
+                <span class="hint">tokens</span>
+              </div>
+              <p class="hint" id="s-ai-context-hint">How much the model can read at once. Empty: asked of your server (llama.cpp and llama-swap say it; Test shows what was found). Set it if your server does not say, e.g. 262144. Near the limit, the older part of the chat is summarized (goals, findings, what was done) so the assistant carries on without forgetting.</p>
               <p class="hint" id="s-ai-status">Your own provider and key: the assistant reads your mods and logs, searches the web, and can only change things you approve. The key is stored encrypted.</p>
             </section>
 

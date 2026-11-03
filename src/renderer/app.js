@@ -1156,7 +1156,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1339,6 +1339,7 @@ $('#s-ai-test').addEventListener('click', async () => {
 function readForm() {
   const patch = {};
   for (const [k, sel] of Object.entries(form)) patch[k] = $(sel).value;
+  patch.aiContext = Number(patch.aiContext) || 0; // empty: automatic
   for (const [k, sel] of Object.entries(checks)) patch[k] = $(sel).checked;
   patch.categories = $$('#s-cats input').filter(i => i.checked).map(i => i.value);
   const key = $('#s-apikey').value.trim();
@@ -1377,6 +1378,7 @@ async function loadSettings() {
   $('#s-ai-key').placeholder = s.hasAiKey ? `Saved key ${s.aiKeyHint} — paste a new one to replace it` : 'Paste your provider\'s API key (not needed for local models)';
   aiPlaceholders();
   for (const [k, sel] of Object.entries(form)) { $(sel).value = s[k] ?? ''; $(sel).title = String(s[k] ?? ''); }
+  if (!s.aiContext) { $('#s-ai-context').value = ''; $('#s-ai-context').title = ''; } // 0: automatic
   for (const [k, sel] of Object.entries(checks)) $(sel).checked = !!s[k];
   refreshNxm();
   refreshSteamHint();

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const { EventEmitter } = require('events');
+const ctx = require('./aiContext');
 
 /*
  * The AI assistant's engine. It talks to the user's own provider (any OpenAI-compatible endpoint,
@@ -17,10 +18,14 @@ const { EventEmitter } = require('events');
  *   { role: 'assistant', text, calls: [{ id, name, args }] }
  *   { role: 'tool', results: [{ id, name, content }] }
  * Events ('event'): activity, message, card, proposal, status, error — the page draws them.
+ *
+ * A chat that grows near the model's context window is compacted before the next request: the
+ * model summarizes the older part (goals, facts, what was tried and changed, open questions) and
+ * the last turns stay word for word. See aiContext.js.
  */
 
 const MAX_ROUNDS = 12;
-const KEEP_TURNS = 60;
+const KEEP_TURNS = 400; // a safety cap only: long chats are summarized to fit the model (aiContext.js)
 const OLD_TOOL_TEXT = 1500;
 const DEFAULT_TIMEOUT_MS = 5 * 60e3; // how long one request may take (Settings → AI assistant → Time limit)
 
@@ -202,7 +207,8 @@ async function callModel({ provider, endpoint, key, model, history, tools, signa
   const json = res.json;
   if (!res.ok) {
     const why = json?.error?.message || json?.error || json?.message || res.statusText;
-    throw new Error(`The AI provider answered ${res.status}: ${typeof why === 'string' ? why : JSON.stringify(why)}`);
+    const n = Number(json?.error?.n_ctx) || 0; // llama.cpp: { error: { type: 'exceed_context_size_error', n_ctx, n_prompt_tokens } }
+    throw Object.assign(new Error(`The AI provider answered ${res.status}: ${typeof why === 'string' ? why : JSON.stringify(why)}`), { status: res.status, contextLimit: n });
   }
   return anthropic ? anthropicReply(json) : openaiReply(json);
 }
@@ -218,8 +224,9 @@ const ACTIVITY = {
 };
 
 class Assistant extends EventEmitter {
-  constructor({ settings, tools, file, call = callModel }) {
+  constructor({ settings, tools, file, call = callModel, detect = ctx.detectContext }) {
     super();
+    this.detect = detect;
     this.settings = settings;
     this.tools = tools;
     this.file = file;
@@ -245,7 +252,98 @@ class Assistant extends EventEmitter {
   }
 
   view() {
-    return { configured: this.configured(), busy: this.busy, waiting: !!this.waiting, model: this.settings.get('aiModel') || '', transcript: this.state.transcript, usage: this.state.usage || null };
+    return { configured: this.configured(), busy: this.busy, waiting: !!this.waiting, model: this.settings.get('aiModel') || '', transcript: this.state.transcript, usage: this.state.usage || null, context: this.contextView() };
+  }
+
+  // ---- the context window (how much the model reads at once) and keeping the chat inside it
+
+  contextKey() { return [this.settings.get('aiProvider'), this.settings.get('aiEndpoint'), this.settings.get('aiModel')].join('|'); }
+
+  /** The model's window: Settings, else what the provider's error said, else what the server says (asked again every 10 minutes), else assumed. */
+  async contextWindow() {
+    const set = Number(this.settings.get('aiContext')) || 0;
+    if (set > 0) return { tokens: set, source: 'Settings' };
+    const key = this.contextKey();
+    const c = this.state.context?.key === key ? this.state.context : null;
+    if (c?.learned) return c;
+    if (c?.tokens && Date.now() - (c.at || 0) < 10 * 60e3) return c;
+    const d = await this.detect({ provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel') }).catch(() => ({ tokens: 0 }));
+    if (d?.tokens) { this.state.context = { key, tokens: d.tokens, source: d.source, at: Date.now() }; return this.state.context; }
+    return c?.tokens ? c : { tokens: ctx.ASSUMED_WINDOW, source: 'assumed: the provider does not say (set it in Settings)', assumed: true };
+  }
+
+  /** The provider said the request was too long, and how long it may be: remember that for this model. */
+  learnContext(limit) {
+    if (!limit || Number(this.settings.get('aiContext')) > 0) return;
+    this.state.context = { key: this.contextKey(), tokens: limit, source: 'the provider\'s "too long" error', learned: true, at: Date.now() };
+  }
+
+  /** About how many characters the next request has (system prompt, tool list, chat). */
+  requestChars(history = this.state.history) {
+    return systemPrompt().length + JSON.stringify(this.tools?.defs || []).length + JSON.stringify(history).length;
+  }
+
+  /** Characters → tokens, by what the provider counted last time (about 3.3 characters a token until then). */
+  tokensOf(chars) { return Math.ceil(chars * (this.state.tokPerChar || 0.3)); }
+
+  contextView() {
+    const c = Number(this.settings.get('aiContext')) > 0 ? { tokens: Number(this.settings.get('aiContext')), source: 'Settings' } : this.state.context?.key === this.contextKey() ? this.state.context : null;
+    return { tokens: c?.tokens || 0, source: c?.source || '', used: this.state.history.length ? this.tokensOf(this.requestChars()) : 0, compactions: this.state.compactions || 0 };
+  }
+
+  /**
+   * Before a request: if it would fill most of the window (or the provider said it was too long:
+   * `force`), summarize the older turns and keep the last ones word for word; if the current turn
+   * alone is too big, cut down its older tool output. Returns the tokens the summary used.
+   */
+  async fit(win, force, onUsage) {
+    const limit = win.tokens * ctx.COMPACT_AT;
+    if (!force && this.tokensOf(this.requestChars()) < limit) return;
+    const h = this.state.history;
+    const users = h.map((t, i) => (t.role === 'user' ? i : -1)).filter(i => i >= 0);
+    // Keep the last two exchanges word for word, or only the current one if two are already big.
+    let from = users.length >= 2 ? users[users.length - 2] : users[users.length - 1] ?? 0;
+    if (this.tokensOf(JSON.stringify(h.slice(from)).length) > win.tokens * ctx.TARGET) from = users[users.length - 1] ?? 0;
+    if (from > 0) await this.summarize(from, win, onUsage);
+    // Still too big (one very long turn): shorten the tool output the model has already read.
+    for (const max of [1500, 400, 120]) {
+      if (this.tokensOf(this.requestChars()) < limit) break;
+      const tools = this.state.history.map((t, i) => (t.role === 'tool' ? i : -1)).filter(i => i >= 0).slice(0, -1);
+      for (const i of tools) {
+        const t = this.state.history[i];
+        this.state.history[i] = { ...t, results: t.results.map(r => ({ ...r, content: r.content.length > max ? `${r.content.slice(0, max)}…[cut to fit the context window]` : r.content })) };
+      }
+    }
+  }
+
+  /** The model writes a summary of the history before `from`; it replaces that part. */
+  async summarize(from, win, onUsage) {
+    const older = this.state.history.slice(0, from);
+    const room = Math.floor((win.tokens * 0.6) / (this.state.tokPerChar || 0.3)) - ctx.SUMMARY_PROMPT.length - systemPrompt().length;
+    let text = '';
+    for (const max of [2000, 800, 250, 0]) { text = ctx.renderHistory(older, max); if (text.length <= room) break; }
+    if (text.length > room) {
+      // Keep an earlier summary whole (it is the start), and as much of the most recent part as fits.
+      const head = older[0]?.text?.startsWith(ctx.SUMMARY_HEAD) ? Math.min(older[0].text.length + 6, Math.floor(room / 2)) : 0;
+      text = `${text.slice(0, head)}\n…[part of the middle left out]…\n${text.slice(-(room - head - 40))}`;
+    }
+    const step = this.show({ type: 'activity', text: `Summarizing the earlier chat to stay within the model's ${Math.round(win.tokens / 1000)}k-token context`, status: 'running' });
+    try {
+      const reply = await this.call({
+        provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel'),
+        history: [{ role: 'user', text: `${ctx.SUMMARY_PROMPT}\n\n---\n\n${text}` }], tools: [], signal: this.abort?.signal, timeoutMs: this.timeoutMs(),
+        onSend: n => onUsage?.({ sending: n }),
+      });
+      const summary = String(reply.text || '').trim();
+      if (!summary) throw new Error('The model wrote no summary.');
+      onUsage?.({ used: reply.usage || { input: this.tokensOf(text.length + ctx.SUMMARY_PROMPT.length), output: this.tokensOf(summary.length) }, estimated: !reply.usage });
+      this.state.history = ctx.withSummary(summary, this.state.history.slice(from));
+      this.state.compactions = (this.state.compactions || 0) + 1;
+      this.update(step, { status: 'done', text: `Summarized the earlier chat to stay within the model's ${Math.round(win.tokens / 1000)}k-token context (goals, findings and what was done are kept)` });
+    } catch (err) {
+      this.update(step, { status: 'failed' });
+      throw err;
+    }
   }
 
   save() {
@@ -305,16 +403,41 @@ class Assistant extends EventEmitter {
     const proposal = [];
     // Tokens this answer used, across every step (a step = one request to the model).
     const turn = { input: 0, output: 0, steps: 0, estimated: false };
-    const usage = sending => this.emit('event', { type: 'usage', turn: { ...turn }, sending, total: this.state.usage || null });
+    const usage = sending => this.emit('event', { type: 'usage', turn: { ...turn }, sending, total: this.state.usage || null, context: this.contextView() });
     let answer = null;
     try {
+      const onFit = u => {
+        if (u.sending) { usage(u.sending); return; }
+        turn.input += u.used.input; turn.output += u.used.output; turn.steps++;
+        if (u.estimated) turn.estimated = true;
+        usage(0);
+      };
       for (let round = 0; round < MAX_ROUNDS; round++) {
         let guess = 0;
-        const reply = await this.call({
-          provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey,
-          model: this.settings.get('aiModel'), history: this.state.history, tools: this.tools.defs, signal: this.abort.signal,
-          onSend: n => { guess = n; usage(n); }, timeoutMs: this.timeoutMs(),
-        });
+        let chars = 0;
+        const ask = () => {
+          chars = this.requestChars();
+          return this.call({
+            provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey,
+            model: this.settings.get('aiModel'), history: this.state.history, tools: this.tools.defs, signal: this.abort.signal,
+            onSend: n => { guess = n; usage(n); }, timeoutMs: this.timeoutMs(),
+          });
+        };
+        let win = await this.contextWindow();
+        await this.fit(win, false, onFit);
+        let reply;
+        try {
+          reply = await ask();
+        } catch (err) {
+          const over = ctx.contextError(err);
+          if (!over.over || err.stopped) throw err;
+          this.learnContext(over.limit);
+          win = await this.contextWindow();
+          await this.fit(over.limit ? win : { ...win, tokens: Math.floor(this.tokensOf(chars) * 0.8) }, true, onFit);
+          reply = await ask();
+        }
+        // What the provider counted teaches how many characters make a token for this model.
+        if (reply.usage?.input && chars) this.state.tokPerChar = Math.min(0.6, Math.max(0.15, reply.usage.input / chars));
         // Providers that report no usage: count it roughly (about 4 characters a token).
         const used = reply.usage || { input: guess, output: estimateTokens(`${reply.text || ''}${JSON.stringify(reply.calls || [])}`) };
         if (!reply.usage) turn.estimated = true;
@@ -453,7 +576,9 @@ class Assistant extends EventEmitter {
       provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel'),
       history: [{ role: 'user', text: 'Reply with the single word: ready' }], tools: [], timeoutMs: this.timeoutMs(),
     });
-    return `${this.settings.get('aiModel')} replied "${(r.text || '').trim().slice(0, 60)}"`;
+    this.state.context = null; // ask the server again
+    const win = await this.contextWindow();
+    return `${this.settings.get('aiModel')} replied "${(r.text || '').trim().slice(0, 60)}". Context window: ${win.tokens.toLocaleString('en-US')} tokens (${win.source}).`;
   }
 }
 

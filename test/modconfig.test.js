@@ -232,7 +232,7 @@ test('AI: settings files are read only with approval and never with their secret
       { text: 'All set.', calls: [] },
     ];
     const seen = [];
-    const a = new Assistant({ settings, tools, file: path.join(root, 'chat.json'), call: async ({ history }) => { seen.push(JSON.parse(JSON.stringify(history))); return replies.shift(); } });
+    const a = new Assistant({ detect: async () => ({ tokens: 0 }), settings, tools, file: path.join(root, 'chat.json'), call: async ({ history }) => { seen.push(JSON.parse(JSON.stringify(history))); return replies.shift(); } });
     const until = async fn => { for (let i = 0; i < 200 && !fn(); i++) await new Promise(r => setTimeout(r, 5)); assert.ok(fn()); };
     const turn = a.send('Set up mod A');
     await until(() => a.view().transcript.some(x => x.type === 'access' && x.status === 'pending'));
