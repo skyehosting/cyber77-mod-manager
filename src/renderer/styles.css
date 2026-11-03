@@ -1918,3 +1918,12 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 #page-gamelog .toolbar { min-width: 0; }
 #page-gamelog .toolbar .search { flex: 1 1 14rem; width: auto; min-width: 8rem; max-width: 22rem; }
 #page-gamelog #gl-source { flex: 0 1 13rem; width: auto; min-width: 7.5rem; text-overflow: ellipsis; }
+/* The empty Crashes view: centred in the view like every other empty view. */
+.page > .crash-view { position: relative; flex: 1 1 auto; min-height: 14rem; } /* fills the page like the tables do */
+.crash-list > .empty.crash-empty { padding: var(--sp-5); }
+/* "Set up your AI provider": centred in the page, like the other empty views. */
+#page-ai > .ai-setup { flex: 1 1 auto; margin: 0; padding-bottom: var(--sp-6); }
+/* A stat's second line stays one line ("Cyberpunk 2077 · since 12:13:37 AM"), cut short if it must. */
+.stat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Profile cards' bottom rows line up whether they hold a button or a line of text. */
+.pcard-actions { min-height: calc(var(--control-h-sm) + var(--sp-3) + 1px); }
