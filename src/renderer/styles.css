@@ -1805,9 +1805,15 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
   .nav-subitem.active::before { left: -0.15rem; }
 }
 /* The sidebar's navigation scrolls when the window is too short for it (with Settings open, say). */
-.nav { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+/* A slim, faint blue bar with no arrows: visible, but quiet. (scrollbar-width would switch
+   Chromium back to the plain Windows bar, so the ::-webkit-scrollbar rules style it.) */
+.nav { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.nav::-webkit-scrollbar { width: 0.3rem; }
+.nav::-webkit-scrollbar-button { display: none; height: 0; }
+.nav::-webkit-scrollbar-thumb { background: var(--select-strong); border: 0; border-radius: var(--r-pill); }
+.nav::-webkit-scrollbar-thumb:hover, .nav::-webkit-scrollbar-thumb:active { background: var(--select); }
 .nav > *, .nav-sub > * { flex-shrink: 0; }
-@media (max-width: 1080px) { .nav { scrollbar-width: none; } }
+@media (max-width: 1080px) { .nav::-webkit-scrollbar { width: 0; } }
 
 /* ================================================================== Game log: crashes */
 .crash-view { flex: 1 1 auto; min-height: 0; overflow: auto; }
