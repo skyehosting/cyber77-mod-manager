@@ -1185,7 +1185,7 @@ class ModManager extends EventEmitter {
         let tag = '';
         try { tag = profileCode.fingerprint(profileCode.encode(this.exportProfile(p.id))); } catch { /* none */ }
         const mods = p.enabled.filter(id => this.data.mods[id]);
-        return { id: p.id, name: p.name, created: p.created || 0, count: mods.length, mods, codeTag: tag };
+        return { id: p.id, name: p.name, created: p.created || 0, count: mods.length, mods, codeTag: tag, fromVortex: p.fromVortex || '' };
       }),
     };
   }
@@ -1318,6 +1318,72 @@ class ModManager extends EventEmitter {
       this.library.save();
       this.log.success(`Deleted profile "${name}"`);
     });
+  }
+
+  /**
+   * A Vortex profile, seen from here: the mods it enables, which this app has already (moved over,
+   * or the same Nexus file), which would move over, and which other Vortex mods are on now.
+   */
+  vortexProfileParts(vxId, data = this.vortex.read()) {
+    const p = (data.profiles || []).find(x => x.id === vxId);
+    if (!p) throw new Error('That Vortex profile no longer exists.');
+    const adopted = this.data.vortexAdopted || {};
+    const twins = this.vortexTwins(data);
+    const known = new Set((data.mods || []).map(m => m.vortexId));
+    const wanted = p.enabledIds.filter(id => known.has(id));
+    const ours = id => (this.data.mods[adopted[id]] ? adopted[id] : this.data.mods[twins[id]] ? twins[id] : '');
+    const move = wanted.filter(id => !ours(id));
+    const want = new Set(wanted);
+    // Vortex keeps placing its enabled mods: the ones this profile does not have, and the ones this app has its own copy of.
+    const others = (data.mods || []).filter(m => m.enabled && !adopted[m.vortexId] && (!want.has(m.vortexId) || twins[m.vortexId]));
+    const existing = Object.values(this.data.profiles.list).find(x => x.fromVortex === vxId);
+    return { p, wanted, move, ours, others, existing };
+  }
+
+  /** What "Use here" would do with a Vortex profile (shown before anything changes). */
+  vortexProfilePlan(vxId) {
+    const { p, wanted, move, others, existing } = this.vortexProfileParts(vxId);
+    return {
+      name: p.name, mods: wanted.length, here: wanted.length - move.length, move: move.length, others: others.length,
+      profile: existing?.name || '', vortexRunning: !!this.vortexRunning,
+    };
+  }
+
+  /**
+   * Use a Vortex profile in this app: its mods this app lacks move over (as "Move to this app"
+   * does: linked from Vortex's folders, Vortex keeps them switched off), a profile here gets its
+   * name and exactly its enabled mods, and this app switches to it. With switchOffOthers, Vortex
+   * stops placing the mods it has on that this profile does not have, so the game gets that setup.
+   * Using the same Vortex profile again updates the profile made the first time.
+   */
+  async useVortexProfile(vxId, { switchOffOthers = true } = {}) {
+    if (!this.vortex.installed) throw new Error('Vortex is not installed.');
+    const first = this.vortexProfileParts(vxId);
+    if (first.move.length) await this.adoptFromVortex(first.move.map(id => `vx:${id}`));
+    const now = this.vortexProfileParts(vxId);
+    if (switchOffOthers && now.others.length) {
+      const changes = now.others.map(m => ({ vortexId: m.vortexId, enabled: false }));
+      await this.vortex.apply(changes);
+      this.noteVortexToggles(changes);
+    }
+    const enabled = [...new Set(now.wanted.map(now.ours).filter(Boolean))];
+    const id = await this.op(async () => {
+      const list = this.data.profiles.list;
+      let pid = Object.values(list).find(x => x.fromVortex === vxId)?.id;
+      if (!pid) {
+        const taken = new Set(Object.values(list).map(x => x.name.toLowerCase()));
+        let name = `${now.p.name} (Vortex)`.slice(0, 60);
+        for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${now.p.name} (Vortex ${n})`.slice(0, 60);
+        pid = crypto.randomBytes(5).toString('hex');
+        list[pid] = { id: pid, name, enabled: [], created: Date.now(), fromVortex: vxId };
+        this.log.success(`Created profile "${name}" from the Vortex profile "${now.p.name}"`);
+      }
+      list[pid].enabled = enabled;
+      this.library.save();
+      return pid;
+    });
+    await this.switchProfile(id);
+    return { id, name: this.data.profiles.list[id].name, enabled: enabled.length, moved: first.move.length };
   }
 
   // ---------------------------------------------------------------- sharing profiles

@@ -467,7 +467,8 @@ function profileRow(x, p) {
   },
   avatarEl(x),
   h('div', { class: 'prow-main' },
-    h('div', { class: 'prow-name' }, h('span', { class: 'name', title: x.name }, x.name), active ? h('span', { class: 'tag tag-ok' }, 'Active') : null),
+    h('div', { class: 'prow-name' }, h('span', { class: 'name', title: x.name }, x.name), active ? h('span', { class: 'tag tag-ok' }, 'Active') : null,
+      x.fromVortex ? h('span', { class: 'tag tag-info', title: 'Made from a Vortex profile ("Use here" under Vortex profiles updates it)' }, 'From Vortex') : null),
     h('div', { class: 'subname' }, [x.created ? `Created ${fmtDay(x.created)}` : '', `last played ${played ? fmtDay(played) : 'never'}`].filter(Boolean).join(' · '))),
   h('div', { class: 'prow-mods', title: `${on} of this app's ${plural(total, 'mod')} are on in this profile` },
     h('span', { class: 'prow-count' }, h('b', {}, String(on)), ` of ${total} mods on`),
@@ -591,9 +592,43 @@ function vortexProfileRow(x) {
     h('span', { class: 'vrow-icon', 'aria-hidden': 'true' }, icon('vortex')),
     h('span', { class: 'vrow-name' }, h('span', { class: 'name', title: x.name }, x.name), x.active ? h('span', { class: 'tag tag-info' }, 'Active in Vortex') : null),
     h('span', { class: 'vrow-count' }, `${x.count} ${x.count === 1 ? 'mod' : 'mods'} enabled`),
-    x.active
-      ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => { goTo('mods'); setModFilter('vortex'); } }, h('span', {}, 'Show its mods'))
-      : h('span', { class: 'vrow-hint' }, 'Switch to it in Vortex'));
+    h('span', { class: 'vrow-acts' },
+      x.active ? h('button', { class: 'btn btn-sm btn-ghost', dataset: { key: `vx:${x.id}:mods` }, onclick: () => { goTo('mods'); setModFilter('vortex'); } }, h('span', {}, 'Show its mods')) : null,
+      h('button', {
+        class: 'btn btn-sm', dataset: { key: `vx:${x.id}:use` }, title: 'Set this app up the way this Vortex profile is: its mods, and only them, in a profile here',
+        'aria-label': `Use the Vortex profile ${x.name} in this app`, onclick: useVortexProfile(x),
+      }, icon('import'), h('span', {}, 'Use here'))));
+}
+
+/** A Vortex profile in this app: what it would do first, then it moves the mods over and switches. */
+function useVortexProfile(x) {
+  return profGuard(async () => {
+    const plan = await run(api.vortexProfilePlan(x.id));
+    if (!plan) return;
+    const offBox = h('input', { type: 'checkbox', checked: true });
+    const lines = [
+      `${plural(plan.mods, 'mod')} enabled in it${plan.here ? `, ${plan.here} already in this app` : ''}.`,
+      plan.move ? `${plural(plan.move, 'mod')} move from Vortex into this app: their files are linked from Vortex's folders (no copies), and Vortex keeps them, switched off.` : '',
+      plan.profile ? `The profile "${plan.profile}" (made from it before) is updated to match, and becomes the active one.`
+        : `A profile called "${plan.name} (Vortex)" is made with exactly these mods, and becomes the active one.`,
+      plan.vortexRunning && (plan.move || plan.others) ? 'Vortex is open: it closes for a moment while its records change, and opens again.' : '',
+    ].filter(Boolean);
+    const ok = await modal({
+      title: `Use "${plan.name}" from Vortex?`,
+      body: h('div', { class: 'vx-use' },
+        ...lines.map(t => h('p', {}, t)),
+        plan.others ? h('label', { class: 'check' }, offBox, h('span', {},
+          h('span', {}, `Switch off the ${plural(plan.others, 'other Vortex mod')} on now`),
+          h('span', { class: 'check-sub' }, "So the game gets only this profile's mods. Vortex keeps them; switch them back on there any time."))) : null),
+      buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Use here', value: true, kind: 'btn-primary' }],
+    });
+    if (!ok) return;
+    if (state.gameRunning) toast('The game is running: the new setup takes effect when you restart it');
+    const r = await run(api.useVortexProfile(x.id, { switchOffOthers: offBox.checked }));
+    if (!r) return;
+    prof.selected = r.id;
+    toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} moved from Vortex` : ''})`, 'success');
+  }, 'Setting up…');
 }
 
 /** New profile: a name, and whether it starts with what is enabled now. */
@@ -623,7 +658,7 @@ function newProfileDialog() {
       h('div', { class: 'modal-head' }, h('h3', { id: 'np-title' }, 'New profile'), h('div', { class: 'sub' }, 'A separate set of enabled mods and conflict order')),
       h('div', { class: 'modal-body' },
         h('label', { class: 'label' }, 'Name', nameInput),
-        h('label', { class: 'check' }, copyBox, h('span', {}, 'Start with the mods enabled now'), h('span', { class: 'check-sub' }, 'Untick for an empty profile. Nothing changes in the game folder until you activate it.'))),
+        h('label', { class: 'check' }, copyBox, h('span', {}, h('span', {}, 'Start with the mods enabled now'), h('span', { class: 'check-sub' }, 'Untick for an empty profile. Nothing changes in the game folder until you activate it.')))),
       h('div', { class: 'modal-foot' }, err,
         h('button', { class: 'btn', onclick: () => { if (!busy) close(null); } }, 'Cancel'),
         h('button', { class: 'btn btn-primary', onclick: create }, 'Create')),

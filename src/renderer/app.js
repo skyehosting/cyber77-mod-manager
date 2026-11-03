@@ -174,6 +174,7 @@ function setSidebar(collapsed, remember = true) {
   t.setAttribute('aria-expanded', String(!collapsed));
   t.querySelector('use').setAttribute('href', collapsed ? '#i-panel-open' : '#i-panel');
   if (remember) store.set('side.collapsed', collapsed);
+  if (collapsed) closeProfileMenu(); // the rail has no profile field: its Profiles icon is the way there
 }
 // Narrow windows fold it to the rail by themselves; widening the window brings back the remembered state.
 const narrowWindow = matchMedia('(max-width: 1080px)');
@@ -596,7 +597,7 @@ function renderMods() {
         m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
         upd ? tagBtn('tag-info', `Update available: ${upd.name}${upd.version ? ` v${upd.version}` : ''} — click for details`, 'update', upd.version ? `${upd.version} available` : 'Update', { 'aria-label': `Update to ${upd.version || 'a newer version'}` }) : null,
         conflictCell(m, byId))),
-    h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : m.version || ''));
+    h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : h('span', { class: 'ver-text' }, m.version || '')));
   })), null);
 
   markInspected();
@@ -1010,25 +1011,24 @@ $('#drawer-close').addEventListener('click', closeDrawer);
 
 /// ---------------------------------------------------------------- downloads page
 /*
- * One list, like Vortex: downloads in progress at the top with live progress and speed, then every
- * downloaded archive with whether it is installed. A network panel graphs the total speed.
+ * Downloads in progress in their own panel (progress, speed, time left), then one table of every
+ * downloaded archive with whether it is installed, and the downloads that failed or were cancelled.
  */
 
-const dl = { filter: 'all', speeds: new Array(120).fill(0), sessionBytes: 0, peak: 0, lastReceived: new Map() };
+const dl = { filter: 'all' };
 // 'waiting': a free account's file, waiting for its "Slow download" click on Nexus.
 const ACTIVE = ['queued', 'downloading', 'waiting'];
 
 function dlRows() {
   const q = $('#dl-search').value.trim().toLowerCase();
   const match = (...t) => !q || t.join(' ').toLowerCase().includes(q);
-  const jobs = [...state.jobs.values()].filter(j => j.status !== 'done').sort((a, b) => (ACTIVE.includes(b.status) - ACTIVE.includes(a.status)) || b.id - a.id)
+  const jobs = [...state.jobs.values()].filter(j => j.status !== 'done' && !ACTIVE.includes(j.status)).sort((a, b) => b.id - a.id)
     .filter(j => match(j.name, j.fileName, j.modName))
     .map(j => ({ kind: 'job', id: `job:${j.id}`, j }));
   const recs = state.snap.downloads.filter(d => match(d.name, d.fileName, d.modName))
     .sort((a, b) => (b.downloadedAt || 0) - (a.downloadedAt || 0))
     .map(d => ({ kind: 'rec', id: d.key, d }));
   const f = dl.filter;
-  if (f === 'active') return jobs.filter(r => ACTIVE.includes(r.j.status));
   if (f === 'failed') return jobs.filter(r => ['error', 'cancelled'].includes(r.j.status));
   if (f === 'new') return recs.filter(r => !r.d.installed);
   if (f === 'installed') return recs.filter(r => r.d.installed);
@@ -1057,6 +1057,61 @@ function jobStatusCell(j) {
   }
   if (j.status === 'error') return h('span', { class: 'status status-err', title: j.error }, 'Failed');
   return h('span', { class: 'status' }, 'Cancelled');
+}
+
+/** One download in progress: what, how far, how fast, and Cancel (or Get, for a free account's click). */
+function progressRow(j) {
+  const ico = j.status === 'downloading' ? 'download' : j.status === 'waiting' ? 'alert' : 'clock';
+  const act = j.status === 'waiting'
+    ? h('button', { class: 'btn btn-sm btn-primary', dataset: { key: `job:${j.id}:get` }, title: 'Open its Nexus download page', onclick: () => startFreeDownloads(j.id) }, 'Get')
+    : h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: { key: `job:${j.id}:x` }, title: 'Cancel', 'aria-label': `Cancel ${j.name}`, onclick: () => run(api.cancelJob(j.id)) }, icon('x'));
+  const row = h('div', { class: `dlp-row ${j.status}`, role: 'listitem', dataset: { job: String(j.id) } },
+    h('span', { class: 'dlp-icon', 'aria-hidden': 'true' }, icon(ico)),
+    h('div', { class: 'dlp-name', title: `${j.name}\n${j.fileName || ''}` },
+      h('span', { class: 'name' }, j.name),
+      h('span', { class: 'dlp-file' }, [j.fileName || j.modName, j.dependencyOf ? `required by ${j.dependencyOf}` : '', j.forProfiles?.length ? 'for an imported profile' : ''].filter(Boolean).join(' · '))),
+    h('div', { class: 'dlp-prog' },
+      h('div', { class: 'bar', role: 'progressbar', 'aria-label': j.name, 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('div')),
+      h('span', { class: 'dlp-note' })),
+    h('span', { class: 'dlp-speed' }),
+    h('div', { class: 'dlp-act' }, act));
+  paintProgressRow(row, j);
+  return row;
+}
+
+/** The live parts of a progress row (every update touches only these). */
+function paintProgressRow(row, j) {
+  const pct = j.total ? Math.min(100, (j.received / j.total) * 100) : 0;
+  const eta = j.speed > 0 && j.total ? Math.max(0, (j.total - j.received) / j.speed) : 0;
+  const bar = row.querySelector('.bar');
+  bar.hidden = j.status !== 'downloading';
+  bar.setAttribute('aria-valuenow', String(Math.round(pct)));
+  bar.firstChild.style.width = `${pct.toFixed(1)}%`;
+  row.querySelector('.dlp-note').textContent = j.status === 'downloading'
+    ? [`${Math.floor(pct)}%`, j.total ? `${fmtSize(j.received)} of ${fmtSize(j.total)}` : '', eta ? `${fmtEta(eta)} left` : ''].filter(Boolean).join(' · ')
+    : j.status === 'waiting' ? 'Needs one click on "Slow download" on Nexus (free account)' : 'Queued · starts when a slot frees up';
+  row.querySelector('.dlp-speed').textContent = j.status === 'downloading' && j.speed ? `${fmtSize(j.speed)}/s` : '';
+}
+
+function renderDlProgress() {
+  const jobs = [...state.jobs.values()].filter(j => ACTIVE.includes(j.status))
+    .sort((a, b) => (b.status === 'downloading') - (a.status === 'downloading') || a.id - b.id);
+  $('#dl-progress').hidden = !jobs.length;
+  $('#dl-progress-n').textContent = jobs.length ? String(jobs.length) : '';
+  const list = $('#dl-progress-list');
+  keepFocus(list, () => list.replaceChildren(...jobs.map(progressRow)), null);
+  paintNetwork();
+}
+
+/** The panel's header: the total speed, and how many run and wait. */
+function paintNetwork() {
+  const jobs = [...state.jobs.values()];
+  const running = jobs.filter(j => j.status === 'downloading');
+  const speed = running.reduce((n, j) => n + (j.speed || 0), 0);
+  const queued = jobs.filter(j => j.status === 'queued').length;
+  $('#net-now').textContent = [running.length ? `${fmtSize(speed)}/s · ${running.length} downloading` : 'Waiting', queued ? `${queued} queued` : ''].filter(Boolean).join(' · ');
+  $('#net-now').classList.toggle('live', running.length > 0);
+  $('#dl-premium').hidden = !(running.length && state.keyUser?.isPremium);
 }
 
 const fmtEta = s => (s < 60 ? `${Math.ceil(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`);
@@ -1120,15 +1175,24 @@ function renderDownloads() {
     : 'Paste a mod link above and pick its files. Downloads show their progress here.';
   paintDlSelection();
   renderDlCounts();
+  renderDlProgress();
+  paintDlHead();
+}
+
+/** Under the title: what the downloads folder holds. */
+function paintDlHead() {
+  const list = state.snap.downloads.filter(d => d.exists !== false);
+  $('#dl-sub').textContent = list.length
+    ? `${plural(list.length, 'file')} · ${fmtSize(list.reduce((n, d) => n + (d.size || 0), 0))} in your downloads folder`
+    : 'Paste a Nexus Mods link and pick its files';
 }
 
 function renderDlCounts() {
   const jobs = [...state.jobs.values()];
   const active = jobs.filter(j => ACTIVE.includes(j.status)).length;
   const failed = jobs.filter(j => ['error', 'cancelled'].includes(j.status)).length;
-  $('#dl-active-count').textContent = active || '';
   $('#dl-failed-count').textContent = failed || '';
-  $('#dl-clear').disabled = !jobs.some(j => ['done', 'cancelled', 'error'].includes(j.status));
+  $('#dl-clear').hidden = !jobs.some(j => ['done', 'cancelled', 'error'].includes(j.status));
   const nav = $('#nav-dl-count');
   nav.textContent = active ? `${active} active` : '';
   nav.classList.toggle('live', active > 0);
@@ -1137,42 +1201,16 @@ function renderDlCounts() {
 
 /** Live job updates touch only their own row; a finished job re-renders the list. */
 function updateJobRow(j) {
-  const tr = $(`#dl-table tr[data-job="${j.id}"]`);
-  if (!tr || !ACTIVE.includes(j.status)) { scheduleDlRender(); return; }
-  tr.className = `row job-row ${j.status}`;
-  tr.querySelector('.status-cell').replaceChildren(jobStatusCell(j));
-  tr.querySelector('.num').textContent = fmtSize(j.total);
+  const row = $(`#dl-progress-list [data-job="${j.id}"]`);
+  if (!row || !ACTIVE.includes(j.status) || !row.classList.contains(j.status)) { scheduleDlRender(); return; }
+  paintProgressRow(row, j);
+  paintNetwork();
 }
 const scheduleDlRender = (() => {
   let t = null;
   return () => { if (!t) t = setTimeout(() => { t = null; renderDownloads(); }, 150); };
 })();
 
-// The network panel: total speed sampled every second, two minutes of history.
-function sampleNetwork() {
-  const jobs = [...state.jobs.values()];
-  const speed = jobs.filter(j => j.status === 'downloading').reduce((n, j) => n + (j.speed || 0), 0);
-  for (const j of jobs) {
-    const prev = dl.lastReceived.get(j.id) || 0;
-    if (j.received > prev) dl.sessionBytes += j.received - prev;
-    dl.lastReceived.set(j.id, j.received || 0);
-  }
-  dl.speeds.push(speed);
-  dl.speeds.shift();
-  dl.peak = Math.max(dl.peak, speed);
-  const active = jobs.filter(j => j.status === 'downloading').length;
-  $('#net-now').textContent = active ? `${fmtSize(speed)}/s` : 'Idle';
-  $('#net-now').classList.toggle('live', active > 0);
-  $('#net-active').textContent = active;
-  $('#net-queued').textContent = jobs.filter(j => j.status === 'queued').length;
-  $('#net-total').textContent = fmtSize(dl.sessionBytes) === '—' ? '0 B' : fmtSize(dl.sessionBytes);
-  $('#net-peak').textContent = dl.peak ? `${fmtSize(dl.peak)}/s` : '—';
-  const max = Math.max(...dl.speeds, 1024 * 1024);
-  const pts = dl.speeds.map((v, i) => `${i},${(40 - (v / max) * 36).toFixed(2)}`);
-  $('#net-graph .net-line').setAttribute('d', `M${pts.join(' L')}`);
-  $('#net-graph .net-area').setAttribute('d', `M0,40 L${pts.join(' L')} L119,40 Z`);
-}
-setInterval(sampleNetwork, 1000);
 
 $('#dl-search').addEventListener('input', debounce(renderDownloads, 120));
 $$('#dl-filter .seg-btn').forEach(b => b.addEventListener('click', () => {
@@ -1188,7 +1226,11 @@ $('#dl-sel-clear').addEventListener('click', () => { state.dlSel.clear(); paintD
 
 // The links box grows with its content, up to its max-height.
 const linksBox = $('#dl-links');
-const growLinks = () => { linksBox.style.height = 'auto'; linksBox.style.height = `${linksBox.scrollHeight + 2}px`; };
+const growLinks = () => {
+  linksBox.style.height = 'auto';
+  linksBox.style.height = `${linksBox.scrollHeight + 2}px`;
+  $('#dl-go').classList.toggle('is-idle', !linksBox.value.trim());
+};
 linksBox.addEventListener('input', growLinks);
 
 $('#dl-go').addEventListener('click', async () => {
@@ -1196,7 +1238,7 @@ $('#dl-go').addEventListener('click', async () => {
   const btn = $('#dl-go');
   const label = btn.querySelector('span');
   btn.disabled = true;
-  label.textContent = 'Reading files…';
+  label.textContent = 'Reading…';
   const hint = $('#dl-hint');
   hint.className = 'hint';
   hint.textContent = '';
@@ -1215,7 +1257,7 @@ $('#dl-go').addEventListener('click', async () => {
     }
   } finally {
     btn.disabled = false;
-    label.textContent = 'Choose files';
+    label.textContent = 'Download';
   }
 });
 linksBox.addEventListener('keydown', ev => {
@@ -1549,7 +1591,7 @@ $$('[data-open]').forEach(b => b.addEventListener('click', () => run(api.openPat
 function renderStatus() {
   const g = state.snap.game || {};
   $('#st-game-dot').className = `dot ${g.valid ? 'ok' : 'bad'}`;
-  $('#st-game').textContent = g.valid ? 'Game folder' : 'No game folder';
+  $('#st-game').textContent = g.valid ? 'Game' : 'No game';
   $('#st-game-row').title = g.valid ? `Game folder: ${g.path}` : 'Set the Cyberpunk 2077 folder in Settings';
   const s = state.settings;
   const hasKey = s?.hasApiKey;
@@ -1560,16 +1602,20 @@ function renderStatus() {
   $('#st-avatar').classList.toggle('bad', !hasKey);
   const vx = state.snap.vortex;
   $('#st-vx-row').hidden = !vx?.installed;
+  const vxState = vx?.installed ? `Vortex ${vx.busy ? 'applying…' : vx.running ? 'open' : 'closed'}` : '';
   if (vx?.installed) {
-    $('#st-vx').textContent = `Vortex ${vx.busy ? 'applying…' : vx.running ? 'open' : 'closed'}`;
     $('#st-vx-dot').className = `dot ${vx.running || vx.busy ? 'warn' : ''}`;
-    $('#st-vx-row').title = `Vortex profile: ${vx.activeProfileName || '—'} · ${plural(vx.mods.length, 'mod')}`;
+    $('#st-vx-row').title = `${vxState} · profile ${vx.activeProfileName || '—'} · ${plural(vx.mods.length, 'mod')}`;
   }
+  // One short line under the name: the full counts are in its tooltip.
   const r = state.snap.rate || {};
-  $('#st-rate').textContent = r.hourly != null ? `API ${r.hourly}/h · ${r.daily}/day left` : '';
+  const rateFull = r.hourly != null ? `Nexus API: ${r.hourly} requests left this hour, ${r.daily} today` : '';
+  const short = n => (n >= 10000 ? `${Math.floor(n / 1000)}k` : n >= 1000 ? `${(Math.floor(n / 100) / 10).toFixed(1)}k` : String(n));
+  $('#st-rate').textContent = r.daily != null ? `${short(r.daily)} left` : '';
+  $('#st-rate').title = rateFull;
   // The collapsed rail shows only the avatar: everything above is its tooltip.
   $('#side-foot').title = [user ? `${user.name}${user.isPremium ? ' · Premium' : ''}` : hasKey ? 'Nexus API key saved' : 'No Nexus API key',
-    g.valid ? 'Game folder found' : 'Game folder not set', vx?.installed ? $('#st-vx').textContent : '', $('#st-rate').textContent].filter(Boolean).join(' · ');
+    g.valid ? 'Game folder found' : 'Game folder not set', vxState, rateFull].filter(Boolean).join('\n');
   renderProfileSwitch();
   const gs = $('#s-game-status');
   gs.className = g.valid ? 'hint ok' : 'hint bad';
@@ -1624,15 +1670,14 @@ function openProfileMenu() {
   paintProfileMenu();
   menu.hidden = false;
   btn.setAttribute('aria-expanded', 'true');
-  // Below the button in the sidebar; beside it on the narrow rail. Kept inside the window.
+  // A dropdown: right under the field, as wide as it, drawn over what is below (nothing moves).
+  // It opens upward only when the window is too short below.
   const r = btn.getBoundingClientRect();
-  const rail = $('#shell').classList.contains('side-collapsed');
-  const w = menu.offsetWidth;
+  menu.style.width = `${Math.round(r.width)}px`;
   const hgt = menu.offsetHeight;
-  const left = rail ? r.right + 8 : r.left;
-  const top = rail ? r.top : r.bottom + 6;
-  menu.style.left = `${Math.max(8, Math.min(left, innerWidth - w - 8))}px`;
-  menu.style.top = `${Math.max(8, Math.min(top, innerHeight - hgt - 8))}px`;
+  const below = r.bottom + 4;
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.top = `${Math.round(below + hgt > innerHeight - 8 && r.top - hgt - 4 > 8 ? r.top - hgt - 4 : below)}px`;
   (menu.querySelector('.menu-item.on') || menu.querySelector('.menu-item'))?.focus();
 }
 

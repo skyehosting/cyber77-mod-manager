@@ -31,6 +31,35 @@ function move(i, to) {
   saveOrder(order).then(() => $(`#lo-list [data-key="${CSS.escape(n)}"]`)?.focus());
 }
 
+/**
+ * A row's number, which takes a new one: type 20 on the 37th and it becomes the 20th, the rows
+ * from 20 to 36 each move down one. Enter or leaving the box applies it; Esc puts the number back.
+ */
+function posInput(a, i) {
+  const n = lo.view.archives.length;
+  const input = h('input', {
+    class: 'lo-pos', type: 'text', inputmode: 'numeric', value: String(i + 1), maxlength: String(String(n).length),
+    'aria-label': `Position of ${a.name}, 1 to ${n}`, title: `Type a new position (1 to ${n}) and press Enter`,
+    draggable: 'false',
+  });
+  const apply = () => {
+    const want = Number.parseInt(input.value, 10);
+    if (!Number.isFinite(want) || want === i + 1) { input.value = String(i + 1); return; }
+    move(i, Math.min(n, Math.max(1, want)) - 1);
+  };
+  // A text box in a draggable row: while it has the focus, the row does not drag (so the mouse selects text).
+  input.addEventListener('focus', () => { input.closest('.lo-row').draggable = false; input.select(); });
+  input.addEventListener('blur', () => { input.closest('.lo-row')?.setAttribute('draggable', 'true'); apply(); });
+  input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, ''); });
+  input.addEventListener('keydown', ev => {
+    if (ev.altKey) return; // Alt+arrows: the row moves itself
+    ev.stopPropagation();
+    if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); input.value = String(i + 1); input.blur(); }
+  });
+  return input;
+}
+
 function renderLoadOrder() {
   const v = lo.view;
   if (!v) return;
@@ -72,7 +101,7 @@ function renderLoadOrder() {
       },
     },
       h('span', { class: 'lo-grip', 'aria-hidden': 'true' }, '⋮⋮'),
-      h('span', { class: 'lo-pos' }, String(i + 1)),
+      posInput(a, i),
       h('span', { class: 'lo-main' },
         h('span', { class: 'lo-name', title: a.name }, a.name),
         h('span', { class: 'lo-mod' }, [a.mod || SRC.other, needs ? `needs ${needs.join(', ')}` : ''].filter(Boolean).join(' · '))),

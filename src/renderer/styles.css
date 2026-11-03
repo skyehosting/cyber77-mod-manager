@@ -1316,26 +1316,12 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 /* ================================================================== downloads */
 /* One slim row: the link box and a compact network readout. */
 .dl-keybanner { margin-bottom: var(--sp-3); }
-.dl-top { display: flex; align-items: stretch; gap: var(--sp-3); margin-bottom: var(--sp-2); flex-wrap: wrap; }
 .dl-add { flex: 1 1 26rem; min-width: 0; display: flex; gap: var(--sp-2); align-items: flex-start; }
 .dl-input textarea { min-height: var(--control-h); height: var(--control-h); max-height: 7.5rem; padding-top: 0.45rem; padding-bottom: 0.45rem; resize: none; line-height: 1.35; }
 .dl-input .i { top: 0.6rem; }
 .dl-add .btn { flex: none; height: var(--control-h); }
 .dl-hint { margin: 0 0 var(--sp-3); }
 .dl-hint:empty { display: none; }
-.net { flex: 0 1 26rem; min-width: 16rem; display: flex; align-items: center; gap: var(--sp-3); height: var(--control-h); padding: 0 var(--sp-3) 0 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
-.net-graph-box { flex: none; width: auto; height: 100%; aspect-ratio: 3 / 1; border-right: 1px solid var(--line); background: var(--bg); }
-.net-graph { display: block; width: 100%; height: 100%; }
-.net-line { fill: none; stroke: var(--select); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
-.net-area { fill: var(--select-soft); stroke: none; }
-.net-read { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-.net-now { font-size: var(--fs-sm); font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
-.net-now.live { color: var(--select); }
-.net-meta { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.net-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.net-side b { font-weight: var(--fw-medium); color: var(--text-2); }
-.net-side .stat-label { font-size: var(--fs-xs); }
-@container (max-width: 44rem) { .net-side { display: none; } }
 .toolbar > .push { margin-left: auto; }
 .grid col.w-progress { width: 15rem; }
 #dl-table col.w-actions { width: 8rem; }
@@ -2444,10 +2430,6 @@ body.drawer-open .main { margin-right: var(--panel-w); }
 .bar > div { background: var(--accent); transition: width .4s linear; }
 .job-row.paused .bar > div { background: var(--muted); }
 .job-row.done .bar > div { background: var(--ok); }
-.dl-top .net { background: var(--surface); border-color: var(--line); }
-.net-line { stroke: var(--accent); }
-.net-area { fill: var(--accent-soft); }
-.net-now.live { color: var(--accent); }
 .dl-input textarea { height: var(--control-h); min-height: var(--control-h); background: var(--side-bg); }
 
 /* Mod files: 48px mod rows. */
@@ -2470,3 +2452,102 @@ body.drawer-open .main { margin-right: var(--panel-w); }
 .toolbar { flex-wrap: wrap; height: auto; min-height: var(--control-h); row-gap: 0.6rem; }
 .toolbar .seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 @media (max-width: 1400px) { .brand-name { font-size: 0.9rem; } .brand-sub { font-size: max(0.7rem, 9.5px); } }
+
+/* ================================================================== 2026-11 feedback pass */
+/* Sidebar: Play, then the profile as a dropdown field; the rail keeps only Play (Profiles is in its nav). */
+.sidebar { user-select: none; }
+.play-card { gap: 0.5rem; border: 0; background: transparent; overflow: visible; }
+.play-btn { border-radius: var(--r-lg); }
+.prof-switch { height: var(--control-h); padding: 0 0.7rem; gap: 0.5rem; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); }
+.prof-switch:hover { background: var(--surface-2); border-color: var(--field-line); }
+.prof-switch[aria-expanded="true"] { background: var(--surface-2); border-color: var(--accent); }
+.prof-switch-label { font-size: max(0.7rem, 9.5px); font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }
+.prof-switch-chev { transition: transform .15s var(--ease); }
+.prof-switch[aria-expanded="true"] .prof-switch-chev { transform: rotate(180deg); }
+.menu.prof-menu { min-width: 0; max-width: none; z-index: 60; }
+.side-collapsed .prof-switch { display: none; }
+
+/* The account: two short lines (the full details are in the tooltips). */
+.side-foot { gap: 0.6rem; padding: 0.7rem 1rem; }
+.avatar { width: 1.85rem; font-size: var(--fs-xs); }
+.side-foot-text { flex: 1; gap: 0.15rem; }
+.side-user .tag-premium { height: auto; padding: 0.05rem 0.3rem; border: 0; font: var(--fw-bold) max(0.62rem, 9px)/1.45 var(--font); }
+.side-dots { flex-wrap: nowrap; gap: 0.6rem; overflow: hidden; }
+.side-dots .status-rate { margin-left: auto; min-width: 0; }
+
+/* Mods: the warning icon centred in its chip; the sort box never cut short (the row wraps instead). */
+.tag.tag-icon { display: inline-grid; place-items: center; padding: 0; width: 1.65rem; }
+.tag.tag-icon .i { display: block; width: 0.9rem; }
+.toolbar .sort-pick select { max-width: none; }
+/* Versions: a picked version's text ends where the plain versions end, inside the column. */
+#mods-table col.w-version { width: 9.5rem; }
+#mods-table .ver-select { width: auto; max-width: 100%; padding-right: 1.7rem; }
+.ver-cell .ver-text { display: inline-block; padding-right: calc(1.7rem + 1px); }
+/* An empty list: the icon and its words centred together in the whole card. */
+.table-card.is-empty .empty { inset: 0; }
+
+/* A fact on the right of a page title (counts, status), and buttons at the end of a toolbar. */
+.head-meta { align-self: flex-end; margin-left: auto; min-width: 0; max-width: 100%; padding-bottom: 0.1rem; color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toolbar-end { margin-left: auto; display: flex; gap: var(--sp-2); flex: none; }
+.toolbar.selecting > .toolbar-end { display: none; }
+
+/* Load order: each number is a box that takes a new position. */
+.lo-status { margin: 0 0 0 auto; }
+input.lo-pos { flex: none; width: 3.2rem; height: 2rem; padding: 0 0.3rem; text-align: center; font: var(--fs-sm) var(--mono); color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: var(--r-sm); }
+.lo-row:hover input.lo-pos { border-color: var(--line-strong); color: var(--text-2); }
+input.lo-pos:focus { color: var(--text); background: var(--bg); border-color: var(--accent); }
+
+/* Browse: the count beside the title; Log in to Nexus in green, on the filter row, only while signed out. */
+.page-head .browse-status { min-height: 0; margin: 0; }
+.btn-login { flex: none; height: var(--control-h); background: var(--ok-soft); border-color: var(--ok-line); color: var(--ok-text); }
+.btn-login:hover:not(:disabled) { background: rgb(76 201 138 / 0.2); border-color: var(--ok); }
+.browse-search input { height: var(--control-h); }
+
+/* Downloads: the link row, an In progress panel while anything downloads, then the table. */
+.dl-add { display: flex; align-items: flex-start; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.dl-add .btn { flex: none; height: var(--control-h); }
+#dl-go.is-idle { background: #2a2a1e; color: #8c8566; }
+#dl-go.is-idle:hover:not(:disabled) { background: #33321f; }
+.dl-progress { flex: none; margin-bottom: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.dl-progress-head { display: flex; align-items: center; gap: 0.6rem; height: 2.75rem; padding: 0 1rem; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.dl-progress-head h2 { margin: 0; color: var(--muted); font-size: max(0.72rem, 10px); font-weight: var(--fw-bold); letter-spacing: 0.08em; text-transform: uppercase; }
+.dl-progress-n { color: var(--muted); font: var(--fw-medium) var(--fs-xs) var(--mono); }
+.dl-progress-speed { margin-left: auto; color: var(--text-2); font: var(--fw-medium) var(--fs-sm) var(--mono); white-space: nowrap; }
+.dl-progress-speed.live { color: var(--text); }
+.dl-progress .tag-premium { height: auto; padding: 0.15rem 0.35rem; border: 0; font: var(--fw-bold) max(0.62rem, 9px)/1.4 var(--font); }
+.dl-progress-list { max-height: calc(3.75rem * 4); overflow-y: auto; }
+.dlp-row { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) minmax(10rem, 22rem) 7rem 4.5rem; align-items: center; min-height: 3.75rem; padding: 0 0.75rem 0 1rem; border-bottom: 1px solid var(--line-soft); }
+.dlp-row:last-child { border-bottom: 0; }
+.dlp-icon { width: 1.75rem; height: auto; aspect-ratio: 1; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--surface-3); color: var(--muted); }
+.dlp-icon .i { width: 1.05rem; }
+.dlp-row.downloading .dlp-icon { color: var(--accent); }
+.dlp-row.waiting .dlp-icon { color: var(--warn); }
+.dlp-name { min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; padding-right: 1.25rem; }
+.dlp-name .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlp-file { color: var(--muted); font: var(--fs-xs)/1.3 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlp-prog { min-width: 0; display: flex; flex-direction: column; gap: 0.45rem; padding-right: 1.5rem; }
+.dlp-note { color: var(--text-2); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlp-row.waiting .dlp-note { color: var(--warn); }
+.dlp-speed { padding-right: 1rem; text-align: right; color: var(--text-2); font: var(--fs-sm) var(--mono); white-space: nowrap; }
+.dlp-act { display: flex; justify-content: flex-end; }
+@container (max-width: 52rem) {
+  .dlp-row { grid-template-columns: 2.5rem minmax(0, 1fr) minmax(7rem, 12rem) 4.5rem; }
+  .dlp-speed { display: none; }
+}
+
+/* AI: the chat scrolls from anywhere across the page; code blocks and the message box a step lighter. */
+.ai-chat { max-width: none; margin: 0; padding-inline: max(var(--sp-1), calc((100% - 62rem) / 2)); }
+.ai-code { background: var(--surface-2); border: 1px solid var(--line); }
+.ai-bubble .ai-code code { background: none; padding: 0; border-radius: 0; }
+.ai-compose { background: var(--surface-2); border-color: var(--line-strong); }
+.ai-compose textarea::placeholder { color: var(--muted); }
+
+/* Profiles: Export file under Copy code; Vortex profiles can be used here. */
+.pshare { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2); align-items: center; }
+.pshare .pcode { grid-column: 1; grid-row: 1; }
+.pshare .btn { grid-column: 2; justify-content: flex-start; }
+.vrow-acts { flex: none; display: flex; gap: var(--sp-2); }
+.vrow .btn { width: auto; justify-content: center; }
+.vx-use p { margin: 0 0 0.6rem; }
+.vx-use .check { margin-top: 0.4rem; }
+.page-head h1:focus { outline: none; } /* focused for screen readers when a page opens: no ring */

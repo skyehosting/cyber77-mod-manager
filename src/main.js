@@ -461,6 +461,9 @@ async function boot() {
   handle('profiles:create', (name, copyCurrent) => manager.createProfile(name, { copyCurrent }));
   handle('profiles:rename', (id, name) => manager.renameProfile(id, name));
   handle('profiles:delete', id => manager.deleteProfile(id));
+  handle('vortex:profilePlan', id => manager.vortexProfilePlan(String(id)));
+  handle('vortex:useProfile', (id, opts) => manager.useVortexProfile(String(id), { switchOffOthers: opts?.switchOffOthers !== false }));
+  handle('nexus:signedIn', () => nexusSignedIn());
   handle('profiles:export', async id => {
     await manager.resolveProfileFiles(id); // mods moved from Vortex: their Nexus files, so they are not "local"
     const doc = manager.exportProfile(id);
@@ -701,6 +704,12 @@ async function runRedmodDeploy(dir, force) {
  */
 const NEXUS_PAGE = /^https:\/\/([a-z0-9-]+\.)*nexusmods\.com(\/|$)/i;
 const NEXUS_PARTITION = 'persist:nexus';
+// nexusmods.com keeps a login in this cookie: Browse hides its Log in button while it is there (only its presence is read).
+const NEXUS_LOGIN_COOKIE = 'nexusmods_session';
+async function nexusSignedIn() {
+  const list = await session.fromPartition(NEXUS_PARTITION).cookies.get({ name: NEXUS_LOGIN_COOKIE }).catch(() => []);
+  return list.some(c => /(^|\.)nexusmods\.com$/i.test(String(c.domain || '').replace(/^\./, '')) && !!c.value);
+}
 function guardWebviews() {
   app.on('web-contents-created', (_e, wc) => {
     wc.on('will-attach-webview', (ev, prefs, params) => {
@@ -739,6 +748,7 @@ function guardWebviews() {
     if (!/(^|\.)nexusmods\.com$/i.test(host)) return;
     clearTimeout(flushTimer);
     flushTimer = setTimeout(flush, 2000);
+    if (cookie.name === NEXUS_LOGIN_COOKIE) send('nexus:signedIn', !removed && !!cookie.value);
     if (removed || !cookie.session || !cookie.value) return;
     nexusSession.cookies.set({
       url: `https://${host}${cookie.path || '/'}`, name: cookie.name, value: cookie.value,

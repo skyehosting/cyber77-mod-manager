@@ -527,3 +527,15 @@ function askAi(question) {
 }
 
 pageHooks.ai = () => loadAi().then(() => setTimeout(() => $('#ai-input')?.focus()));
+
+// The wheel anywhere on the page (its header, the margins, the message box) scrolls the chat,
+// unless what is under the pointer scrolls by itself (the message box once it is long, a code block).
+$('#page-ai').addEventListener('wheel', ev => {
+  const chat = $('#ai-chat');
+  if (ev.ctrlKey || chat.contains(ev.target) || $('#ai-main').hidden) return;
+  for (let el = ev.target; el && el !== ev.currentTarget; el = el.parentElement) {
+    if (el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(el).overflowY)) return;
+  }
+  const dy = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaMode === 2 ? ev.deltaY * chat.clientHeight : ev.deltaY;
+  chat.scrollTop += dy;
+}, { passive: true });

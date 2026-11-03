@@ -137,6 +137,11 @@ function openLogin() {
 }
 $('#browse-login').addEventListener('click', openLogin);
 
+// Log in to Nexus shows only while signed out (the app checks that its Nexus login is there, never what it holds).
+const paintSignIn = () => api.nexusSignedIn().then(r => { $('#browse-login').hidden = r.ok === true; });
+paintSignIn();
+api.onNexusSignedIn(debounce(paintSignIn, 500));
+
 // ---------------------------------------------------------------- free accounts: one click per file
 
 /*

@@ -89,8 +89,8 @@
           <span class="play-label" id="play-label">Play</span>
           <span class="play-sub" id="play-sub"></span>
         </button>
-        <button class="prof-switch" id="prof-switch" aria-haspopup="menu" aria-expanded="false" aria-controls="prof-menu" title="Switch profile">
-          <svg class="i"><use href="#i-users"/></svg><span class="prof-switch-label">Profile</span><span class="prof-switch-name" id="prof-switch-name">Default</span><svg class="i prof-switch-chev"><use href="#i-updown"/></svg>
+        <button class="prof-switch" id="prof-switch" aria-haspopup="menu" aria-expanded="false" aria-controls="prof-menu" title="Switch profile" aria-label="Profile">
+          <svg class="i"><use href="#i-users"/></svg><span class="prof-switch-label">Profile</span><span class="prof-switch-name" id="prof-switch-name">Default</span><svg class="i prof-switch-chev"><use href="#i-chevron"/></svg>
         </button>
       </div>
       <nav class="nav" aria-label="Main navigation">
@@ -138,10 +138,10 @@
         <div class="side-foot-text">
           <div class="side-user"><span class="side-user-name" id="st-key">No API key</span><span class="tag tag-premium" id="st-premium" hidden>Premium</span></div>
           <div class="side-dots">
-            <span class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span id="st-game">Game folder</span></span>
+            <span class="status-row" id="st-game-row"><span class="dot" id="st-game-dot"></span><span id="st-game">Game</span></span>
             <span class="status-row" id="st-vx-row" hidden><span class="dot" id="st-vx-dot"></span><span id="st-vx">Vortex</span></span>
+            <span class="status-rate" id="st-rate"></span>
           </div>
-          <div class="status-rate" id="st-rate"></div>
         </div>
       </div>
     </aside>
@@ -251,9 +251,7 @@
               <h1 id="h-browse">Browse Nexus</h1>
               <p class="page-sub" id="browse-sub">Cyberpunk 2077 mods on Nexus Mods</p>
             </div>
-            <div class="head-actions">
-              <button class="btn btn-ghost collapsible" id="browse-login" title="Sign in to nexusmods.com for the pages shown here (once; it is remembered). Downloads in this app only need the API key." aria-label="Log in to Nexus"><svg class="i"><use href="#i-users"/></svg><span>Log in to Nexus</span></button>
-            </div>
+            <div class="head-meta browse-status" id="browse-status" role="status" aria-live="polite"></div>
           </header>
           <div class="browse-bar">
             <label class="search browse-search">
@@ -282,8 +280,8 @@
               <option value="60">60 per page</option>
               <option value="80">80 per page</option>
             </select>
+            <button class="btn btn-login" id="browse-login" hidden title="Sign in to nexusmods.com for the pages shown here (once; it is remembered). Downloads in this app only need the API key." aria-label="Log in to Nexus"><svg class="i"><use href="#i-users"/></svg><span>Log in to Nexus</span></button>
           </div>
-          <div class="browse-status" id="browse-status" role="status" aria-live="polite"></div>
           <div class="browse-grid" id="browse-grid"></div>
           <div class="pager" id="browse-pager" hidden>
             <button class="btn btn-sm" id="browse-prev"><svg class="i"><use href="#i-arrow-left"/></svg><span>Previous</span></button>
@@ -317,32 +315,29 @@
             <p class="page-sub" id="dl-sub">Paste a Nexus Mods link and choose its files</p>
           </div>
           <div class="head-actions">
-            <button class="btn btn-ghost collapsible" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg><span>Open folder</span></button>
+            <button class="btn collapsible" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg><span>Open folder</span></button>
           </div>
         </header>
 
         <div class="banner banner-warn dl-keybanner" id="dl-keybanner" hidden role="status"><svg class="i"><use href="#i-key"/></svg><span id="dl-keybanner-text">Add your Nexus Mods API key in Settings before downloading.</span><button class="btn btn-sm" data-goto="settings" data-sec="nexus">Open Settings</button></div>
-        <div class="dl-top">
-          <div class="dl-add">
-            <div class="input-icon dl-input">
-              <svg class="i"><use href="#i-link"/></svg>
-              <textarea id="dl-links" rows="1" aria-label="Nexus Mods links" title="Enter: choose files · Shift+Enter: another link" placeholder="Paste Nexus mod links"></textarea>
-            </div>
-            <button class="btn btn-primary" id="dl-go"><svg class="i"><use href="#i-download"/></svg><span>Choose files</span></button>
+        <div class="dl-add">
+          <div class="input-icon dl-input">
+            <svg class="i"><use href="#i-link"/></svg>
+            <textarea id="dl-links" rows="1" aria-label="Nexus Mods links" title="Enter: pick its files · Shift+Enter: another link" placeholder="Paste a Nexus Mods link, like nexusmods.com/cyberpunk2077/mods/12345"></textarea>
           </div>
-          <div class="net" aria-label="Network">
-            <div class="net-graph-box"><svg class="net-graph" id="net-graph" viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true"><path class="net-area" d=""/><path class="net-line" d=""/></svg></div>
-            <div class="net-read">
-              <b class="net-now" id="net-now">Idle</b>
-              <span class="net-meta"><span id="net-active">0</span> active · <span id="net-queued">0</span> queued</span>
-            </div>
-            <div class="net-side">
-              <span title="Downloaded since the app started"><span class="stat-label">Session</span> <b id="net-total">0 B</b></span>
-              <span title="Fastest speed this session"><span class="stat-label">Peak</span> <b id="net-peak">—</b></span>
-            </div>
-          </div>
+          <button class="btn btn-primary is-idle" id="dl-go" title="Read the link and pick which of its files to download"><svg class="i"><use href="#i-download"/></svg><span>Download</span></button>
         </div>
         <p class="hint dl-hint" id="dl-hint"></p>
+
+        <section class="dl-progress" id="dl-progress" aria-labelledby="dl-progress-h" hidden>
+          <div class="dl-progress-head">
+            <h2 id="dl-progress-h">In progress</h2>
+            <span class="dl-progress-n" id="dl-progress-n"></span>
+            <span class="dl-progress-speed" id="net-now">Idle</span>
+            <span class="tag tag-premium" id="dl-premium" hidden title="Your Nexus Premium account downloads at full speed">Premium speed</span>
+          </div>
+          <div class="dl-progress-list" id="dl-progress-list" role="list" aria-label="Downloads in progress"></div>
+        </section>
 
         <div class="toolbar" id="dl-toolbar">
           <label class="search">
@@ -351,12 +346,11 @@
           </label>
           <div class="seg" id="dl-filter" role="group" aria-label="Filter">
             <button class="seg-btn active" data-f="all" aria-pressed="true">All</button>
-            <button class="seg-btn" data-f="active">Active <span class="seg-count seg-count-info" id="dl-active-count"></span></button>
             <button class="seg-btn" data-f="new">Not installed</button>
             <button class="seg-btn" data-f="installed">Installed</button>
             <button class="seg-btn" data-f="failed">Failed <span class="seg-count" id="dl-failed-count"></span></button>
           </div>
-          <button class="btn btn-sm btn-ghost push" id="dl-clear">Clear finished</button>
+          <button class="btn btn-ghost push" id="dl-clear" title="Take finished, failed and cancelled downloads off this list (the files stay)"><svg class="i"><use href="#i-check"/></svg><span>Clear finished</span></button>
           <div class="selbar" id="dl-bulk" hidden>
             <span class="sel-count" id="dl-sel-count">0 selected</span>
             <button class="btn btn-primary" data-act="installEnable" title="Install &amp; enable"><svg class="i"><use href="#i-check"/></svg><span>Install &amp; enable</span></button>
@@ -398,9 +392,6 @@
             <h1 id="h-config">Mod files</h1>
             <p class="page-sub" id="cfg-sub">Every mod's files, enabled or not. Point at a text file and click the pencil to edit it.</p>
           </div>
-          <div class="head-actions">
-            <button class="btn btn-ghost collapsible" id="cfg-refresh" title="Read the mod folders again" aria-label="Refresh"><svg class="i"><use href="#i-refresh"/></svg><span>Refresh</span></button>
-          </div>
         </header>
         <div class="toolbar">
           <label class="search">
@@ -413,6 +404,9 @@
             <button class="seg-btn" data-f="disabled" aria-pressed="false">Disabled</button>
             <button class="seg-btn" data-f="vortex" aria-pressed="false">Vortex</button>
             <button class="seg-btn" data-f="hand" aria-pressed="false" title="Files in the mod folders that no mod manager put there">Not from a manager</button>
+          </div>
+          <div class="toolbar-end">
+            <button class="btn collapsible" id="cfg-refresh" title="Read the mod folders again" aria-label="Refresh"><svg class="i"><use href="#i-refresh"/></svg><span>Refresh</span></button>
           </div>
         </div>
         <div class="card cfg-card"><div class="cfg-list" id="cfg-list" role="tree" aria-label="Mods and their files"></div></div>
@@ -452,20 +446,20 @@
             <h1 id="h-lo">Load order</h1>
             <p class="page-sub">Archives load top to bottom. When two change the same file, the higher one wins.</p>
           </div>
-          <div class="head-actions">
-            <button class="btn btn-ghost collapsible" id="lo-reset" title="Remove the custom order: the game loads archives alphabetically by file name" aria-label="Reset to alphabetical"><svg class="i"><use href="#i-rotate"/></svg><span>Reset to alphabetical</span></button>
-            <button class="btn btn-primary collapsible" id="lo-auto" title="Put every mod above the mods it needs (from Nexus), so add-ons and patches win; the rest keeps its place" aria-label="Auto-sort"><svg class="i"><use href="#i-sort"/></svg><span>Auto-sort</span></button>
-          </div>
+          <span class="head-meta lo-status" id="lo-status"></span>
         </header>
         <div class="toolbar">
           <label class="search">
             <svg class="i"><use href="#i-search"/></svg>
             <input id="lo-search" placeholder="Search archives or mods" type="search" aria-label="Search archives">
           </label>
-          <span class="lo-status" id="lo-status"></span>
+          <div class="toolbar-end">
+            <button class="btn collapsible" id="lo-reset" title="Remove the custom order: the game loads archives alphabetically by file name" aria-label="Reset to alphabetical"><svg class="i"><use href="#i-rotate"/></svg><span>Reset to alphabetical</span></button>
+            <button class="btn btn-primary collapsible" id="lo-auto" title="Put every mod above the mods it needs (from Nexus), so add-ons and patches win; the rest keeps its place" aria-label="Auto-sort"><svg class="i"><use href="#i-sort"/></svg><span>Auto-sort</span></button>
+          </div>
         </div>
         <div class="card lo-card"><div class="lo-list" id="lo-list" role="list" aria-label="Archive load order"></div></div>
-        <p class="hint lo-hint">Drag a row, or use the arrows (Alt+↑ / Alt+↓). Changes apply at once, through archive\pc\mod\modlist.txt, which lists every archive. REDmods load after all archives, by folder name.</p>
+        <p class="hint lo-hint">Drag a row, type a new number in its place, or use the arrows (Alt+↑ / Alt+↓). Changes apply at once, through archive\pc\mod\modlist.txt, which lists every archive. REDmods load after all archives, by folder name.</p>
       </section>
 
       <!-- GAME LOG -->
@@ -515,6 +509,10 @@
         </div>
 
         <div class="toolbar">
+          <label class="search">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="gl-search" placeholder="Search logs" type="search" aria-label="Search logs">
+          </label>
           <div class="seg" id="gl-tabs" role="tablist" aria-label="View">
             <button class="seg-btn active" data-tab="timeline" role="tab" id="tab-timeline" aria-selected="true" aria-controls="gl-timeline">Timeline</button>
             <button class="seg-btn" data-tab="problems" role="tab" id="tab-problems" aria-selected="false" aria-controls="gl-problems" tabindex="-1">Problems <span class="seg-count seg-count-neutral" id="gl-prob-count" title="Distinct problems: repeats of the same error or warning count once"></span></button>
@@ -522,10 +520,6 @@
             <button class="seg-btn" data-tab="sources" role="tab" id="tab-sources" aria-selected="false" aria-controls="gl-sources" tabindex="-1">Sources</button>
             <button class="seg-btn" data-tab="manager" role="tab" id="tab-manager" aria-selected="false" aria-controls="gl-manager" tabindex="-1" title="What this app did: enables, disables, installs, updates. Not included in exported reports.">Manager</button>
           </div>
-          <label class="search">
-            <svg class="i"><use href="#i-search"/></svg>
-            <input id="gl-search" placeholder="Search logs" type="search" aria-label="Search logs">
-          </label>
           <div class="seg" id="gl-level" role="group" aria-label="Level">
             <button class="seg-btn active" data-level="all" aria-pressed="true">All</button>
             <button class="seg-btn" data-level="warn">Warnings</button>
@@ -604,7 +598,7 @@
             <div id="prof-outside"></div>
             <div class="section-head" id="vx-prof-head" hidden>
               <h2>Vortex profiles</h2>
-              <span class="section-note">Read from Vortex. Switch them in Vortex; their mods show up on the Mods page.</span>
+              <span class="section-note">Read from Vortex. "Use here" sets this app up the same way, as a profile of its own.</span>
             </div>
             <div class="vx-list" id="vx-prof-grid" role="list" aria-label="Vortex profiles" hidden></div>
           </div>

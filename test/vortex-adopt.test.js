@@ -48,7 +48,10 @@ function setup() {
   fs.writeFileSync(path.join(vx, 'temp', 'state_backups_full', 'hourly.json'), JSON.stringify({
     persistent: {
       mods: { cyberpunk2077: { alpha: attrs('alpha', 10, 100), beta: attrs('beta', 20, 200), gamma: attrs('gamma', 30, 300) } },
-      profiles: { p1: { id: 'p1', gameId: 'cyberpunk2077', name: 'Main', modState: { alpha: { enabled: true }, beta: { enabled: true } } } },
+      profiles: {
+        p1: { id: 'p1', gameId: 'cyberpunk2077', name: 'Main', modState: { alpha: { enabled: true }, beta: { enabled: true } } },
+        p2: { id: 'p2', gameId: 'cyberpunk2077', name: 'Photo', modState: { alpha: { enabled: false }, gamma: { enabled: true } } },
+      },
     },
     settings: { profiles: { lastActiveProfile: { cyberpunk2077: 'p1' } } },
   }));
@@ -178,4 +181,26 @@ test('enabling and disabling remembers when (for sorting by recent changes)', as
   await mgr.setEnabled(['vx:alpha'], false); // a Vortex mod switched from here
   const alpha = mgr.vortexView().mods.find(v => v.vortexId === 'alpha');
   assert.ok(alpha.disabledAt >= t0, 'Vortex keeps no such times: this app remembers its own switches');
+});
+
+test('using a Vortex profile here: its mods move over, a profile gets exactly its setup, Vortex stops placing the rest', async () => {
+  const { mgr, game, cli } = setup();
+  const plan = mgr.vortexProfilePlan('p2');
+  assert.deepStrictEqual([plan.name, plan.mods, plan.here, plan.move, plan.others], ['Photo', 1, 0, 1, 2]);
+
+  const r = await mgr.useVortexProfile('p2');
+  assert.deepStrictEqual([r.name, r.enabled, r.moved], ['Photo (Vortex)', 1, 1]);
+  const prof = mgr.data.profiles.list[mgr.data.profiles.active];
+  assert.strictEqual(prof.name, 'Photo (Vortex)', 'this app switched to it');
+  assert.deepStrictEqual(prof.enabled.map(id => mgr.data.mods[id].name), ['GAMMA']);
+  assert.strictEqual(read(game, 'r6/scripts/Gamma/g.reds'), 'G', 'its mod is in the game');
+  const sets = cli.flat().filter(a => a.includes('modState'));
+  assert.ok(sets.some(a => a.includes('alpha.enabled=false')) && sets.some(a => a.includes('beta.enabled=false')), 'Vortex switched off what the profile does not have');
+  assert.ok(!fs.existsSync(path.join(game, 'archive/pc/mod/alpha.archive')));
+
+  // Again: the same profile is updated, not a second one made.
+  const n = Object.keys(mgr.data.profiles.list).length;
+  await mgr.useVortexProfile('p2');
+  assert.strictEqual(Object.keys(mgr.data.profiles.list).length, n);
+  await assert.rejects(() => mgr.useVortexProfile('nope'), /no longer exists/);
 });
