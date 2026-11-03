@@ -3,6 +3,8 @@ const API = 'https://api.nexusmods.com/v1';
 const GRAPHQL = 'https://api.nexusmods.com/v2/graphql';
 /** Browse's "Adult (18+)" entry: only mods flagged as adult content. */
 const ADULT_ONLY = '__adult';
+// Browse's time filter: how many days back each choice reaches.
+const PERIOD_DAYS = { day: 1, week: 7, month: 30, year: 365 };
 const APP_NAME = 'CyberModManager';
 const APP_VERSION = '1.0.0';
 
@@ -157,7 +159,11 @@ class NexusClient {
    * match); a number is also looked up as a mod id, which comes first.
    * sort: endorsements | downloads | updatedAt | createdAt | name | relevance
    */
-  async searchMods({ game = 'cyberpunk2077', gameId = 3333, query = '', category = '', sort = 'endorsements', adult = false, page = 1, perPage = 20 } = {}) {
+  /**
+   * period ('day' | 'week' | 'month' | 'year' | '' for all time) keeps mods from that time: updated
+   * in it when sorted by last update, else published in it (as Nexus's own "time" filter).
+   */
+  async searchMods({ game = 'cyberpunk2077', gameId = 3333, query = '', category = '', sort = 'endorsements', period = '', adult = false, page = 1, perPage = 20 } = {}) {
     const fields = 'modId name summary author version category adultContent downloads endorsements thumbnailUrl pictureUrl updatedAt createdAt uploader { name }';
     const q = String(query || '').trim().slice(0, 100);
     const filter = { gameDomainName: [{ value: game }] };
@@ -170,6 +176,12 @@ class NexusClient {
     }
     const SORTS = { endorsements: 'DESC', downloads: 'DESC', updatedAt: 'DESC', createdAt: 'DESC', name: 'ASC', relevance: 'DESC' };
     const key = SORTS[sort] ? sort : 'endorsements';
+    const days = PERIOD_DAYS[period];
+    if (days) {
+      // Nexus wants Unix seconds here (an ISO date makes its search fail).
+      const since = String(Math.floor((Date.now() - days * 86400000) / 1000));
+      filter[key === 'updatedAt' ? 'updatedAt' : 'createdAt'] = [{ value: since, op: 'GTE' }];
+    }
     const count = Math.min(Math.max(Number(perPage) || 20, 1), 100);
     const offset = (Math.max(Number(page) || 1, 1) - 1) * count;
     const gql = `query($f: ModsFilter, $s: [ModsSort!], $count: Int, $offset: Int) {

@@ -201,6 +201,35 @@ test('a clicked "Slow download" (nxm link) continues the file that waits for it'
   assert.strictEqual(mgr.downloader.jobs.size, 1);
 });
 
+test('Browse time filter: updated in the period when sorted by update, else published in it, in Unix seconds', async () => {
+  const { NexusClient } = require('../src/core/nexus');
+  const sent = [];
+  const realFetch = global.fetch;
+  global.fetch = async (_url, init) => {
+    sent.push(JSON.parse(init.body).variables);
+    return { ok: true, status: 200, json: async () => ({ data: { mods: { totalCount: 0, nodes: [] } } }) };
+  };
+  try {
+    const n = new NexusClient(() => '', { info() {} });
+    const now = Math.floor(Date.now() / 1000);
+    await n.searchMods({ sort: 'updatedAt', period: 'week' });
+    const week = Number(sent[0].f.updatedAt[0].value);
+    assert.strictEqual(sent[0].f.updatedAt[0].op, 'GTE');
+    assert.ok(Math.abs(now - 7 * 86400 - week) < 5, 'a week ago, as Unix seconds (Nexus rejects ISO dates)');
+    assert.deepStrictEqual(sent[0].s, [{ updatedAt: { direction: 'DESC' } }], 'newest update first');
+    assert.strictEqual(sent[0].f.createdAt, undefined);
+    await n.searchMods({ sort: 'endorsements', period: 'month' });
+    assert.ok(Math.abs(now - 30 * 86400 - Number(sent[1].f.createdAt[0].value)) < 5, 'most endorsed of the mods published this month');
+    assert.strictEqual(sent[1].f.updatedAt, undefined);
+    await n.searchMods({ sort: 'updatedAt', period: '' });
+    assert.ok(!sent[2].f.updatedAt && !sent[2].f.createdAt, 'all time: no date filter');
+    await n.searchMods({ period: 'bogus' });
+    assert.ok(!sent[3].f.updatedAt && !sent[3].f.createdAt);
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test('Browse "Adult (18+)" asks Nexus for adult mods only', async () => {
   const { NexusClient, ADULT_ONLY } = require('../src/core/nexus');
   const sent = [];

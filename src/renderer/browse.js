@@ -13,6 +13,7 @@ const br = {
   q: '',
   category: '',
   sort: store.get('browse.sort', 'endorsements'),
+  period: store.get('browse.period', ''), // '' all time | day | week | month | year
   perPage: store.get('browse.perPage', 20),
   adult: true, // adult mods are always included
   page: 1,
@@ -35,7 +36,7 @@ async function search() {
   const status = $('#browse-status');
   status.textContent = 'Searching…';
   status.classList.add('busy');
-  const res = await api.searchMods({ query: br.q, category: br.category, sort: br.sort, adult: br.adult, page: br.page, perPage: br.perPage });
+  const res = await api.searchMods({ query: br.q, category: br.category, sort: br.sort, period: br.period, adult: br.adult, page: br.page, perPage: br.perPage });
   if (seq !== br.seq) return; // the user typed on; a newer search is on its way
   status.classList.remove('busy');
   if (res.error) {
@@ -233,6 +234,7 @@ $('#browse-q').addEventListener('input', ev => {
 $('#browse-q').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); br.page = 1; search(); } });
 $('#browse-cat').addEventListener('change', ev => { br.category = ev.target.value; br.page = 1; search(); });
 $('#browse-sort').addEventListener('change', ev => { br.sort = ev.target.value; store.set('browse.sort', br.sort); br.page = 1; search(); });
+$('#browse-period').addEventListener('change', ev => { br.period = ev.target.value; store.set('browse.period', br.period); br.page = 1; search(); });
 $('#browse-per').addEventListener('change', ev => { br.perPage = Number(ev.target.value); store.set('browse.perPage', br.perPage); br.page = 1; search(); });
 const turn = d => { br.page = Math.max(1, br.page + d); search().then(() => { $('#page-browse').scrollTop = 0; }); };
 $('#browse-prev').addEventListener('click', () => turn(-1));
@@ -250,6 +252,7 @@ pageHooks.browse = () => {
   if (br.loaded) return;
   br.loaded = true;
   $('#browse-sort').value = br.sort;
+  $('#browse-period').value = br.period;
   $('#browse-per').value = String(br.perPage);
   loadCategories();
   search();
