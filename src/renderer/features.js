@@ -627,7 +627,7 @@ $('#prof-new').addEventListener('click', async () => {
   const id = await newProfileDialog();
   if (id) setTimeout(() => profFocus(`${id}:switch`));
 });
-/** Import: a pasted share code (or profile JSON), or a .json file. Resolves the plan, or null. */
+/** Import: a pasted share code (or profile JSON), or a profile file (.zip with its local mods, or .json). Resolves the plan, or null. */
 function importDialog() {
   return withModal(() => new Promise(resolve => {
     const m = $('#modal');
@@ -654,9 +654,9 @@ function importDialog() {
       if (busy) return;
       const plan = await pickProfileFile();
       if (plan) close(plan);
-    } }, icon('import'), h('span', {}, 'Choose a .json file…'));
+    } }, icon('import'), h('span', {}, 'Choose a file (.zip or .json)…'));
     m.replaceChildren(
-      h('div', { class: 'modal-head' }, h('h3', { id: 'imp-src-title' }, 'Import a profile'), h('div', { class: 'sub' }, 'Someone\'s profile code, or a profile file they sent you')),
+      h('div', { class: 'modal-head' }, h('h3', { id: 'imp-src-title' }, 'Import a profile'), h('div', { class: 'sub' }, 'Someone\'s profile code, or the profile file they sent you (a profile .zip can also be dropped anywhere on the app)')),
       h('div', { class: 'modal-body' }, box,
         h('p', { class: 'hint' }, 'Next you see every mod in it and what importing does with each one; nothing changes until you confirm.')),
       h('div', { class: 'modal-foot' }, fromFile, err, h('button', { class: 'btn', onclick: () => close(null) }, 'Cancel'), read),
