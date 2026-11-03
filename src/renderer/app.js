@@ -143,7 +143,16 @@ function showSettingsSection(sec) {
   $('#page-settings').scrollTop = 0;
 }
 
-$$('.nav-item').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.page)));
+$$('.nav-item').forEach(btn => btn.addEventListener('click', () => {
+  // Settings again while it is open folds its sections away (or back out).
+  if (btn.dataset.page === 'settings' && $('#page-settings').classList.contains('active')) {
+    const open = $('#nav-settings-sub').hidden;
+    $('#nav-settings-sub').hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    return;
+  }
+  goTo(btn.dataset.page);
+}));
 $$('.nav-subitem').forEach(btn => btn.addEventListener('click', () => {
   state.settingsSec = btn.dataset.sec;
   if (!$('#page-settings').classList.contains('active')) goTo('settings'); else showSettingsSection(btn.dataset.sec);
