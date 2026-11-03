@@ -232,3 +232,36 @@ test('profile codes: damaged, foreign and pasted-JSON input', async () => {
   await assert.rejects(mgr.planProfileCode('{"format":"something-else","mods":[]}'), /not a Cyber Mod Manager profile/);
   await assert.rejects(mgr.planProfileCode('   '), /Paste a profile code/);
 });
+
+test('a profile exported as a .zip carries its local mods; importing it installs them and downloads the rest', { skip: !has7z && 'no 7-Zip' }, async () => {
+  const sender = makeManager();
+  await sender.installAs('Alpha', { 'alpha.archive': 'A' }, 10, 100);
+  await sender.installAs('Local Thing', { 'local.archive': 'L' }, 0, 0);
+  const lost = await sender.installAs('Lost Local', { 'lost.archive': 'X' }, 0, 0);
+  // Its archive was deleted since: the zip carries the files it installed instead.
+  fs.rmSync(sender.mgr.data.downloads[lost].path);
+  const out = path.join(os.tmpdir(), `cmm-profile-${Date.now()}.zip`);
+  const res = await sender.mgr.exportProfileZip('default', out);
+  assert.strictEqual(res.local, 2);
+  assert.ok(fs.existsSync(out));
+
+  const receiver = makeManager();
+  receiver.mgr.nexus.getFiles = async () => ({ files: [{ file_id: 100, name: 'Alpha', file_name: 'Alpha.zip', category_name: 'MAIN', size_in_bytes: 5 }], file_updates: [] });
+  assert.strictEqual(await receiver.mgr.planProfileZip(receiver.zip('plain-mod.zip', { 'x.archive': 'x' })), null, 'an ordinary mod zip is not a profile');
+  const plan = await receiver.mgr.planProfileZip(out);
+  assert.deepStrictEqual(plan.mods.map(m => [m.name, m.status]), [['Alpha', 'download'], ['Local Thing', 'bundled'], ['Lost Local', 'bundled']]);
+
+  const queued = [];
+  receiver.mgr.downloader.enqueue = spec => { queued.push(spec); return spec; };
+  const done = await receiver.mgr.applyProfileImport(plan.token, 'From a friend');
+  assert.deepStrictEqual(queued.map(q => q.fileId), [100], 'the Nexus mod downloads');
+  // The local ones install from the zip into the new profile (after the import itself).
+  for (let i = 0; i < 100 && Object.values(receiver.mgr.data.mods).filter(m => m.enabled).length < 2; i++) await new Promise(r => setTimeout(r, 50));
+  await receiver.mgr.chain;
+  const on = Object.values(receiver.mgr.data.mods).filter(m => m.enabled).map(m => m.name).sort();
+  assert.deepStrictEqual(on, ['Local Thing', 'Lost Local']);
+  assert.ok(receiver.mgr.data.profiles.list[done.profile].enabled.length === 2);
+  assert.ok(fs.existsSync(path.join(receiver.game, 'archive/pc/mod/local.archive')));
+  assert.ok(fs.existsSync(path.join(receiver.game, 'archive/pc/mod/lost.archive')));
+  fs.rmSync(out, { force: true });
+});

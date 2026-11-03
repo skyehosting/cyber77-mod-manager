@@ -425,11 +425,17 @@ async function boot() {
     // A safe default file name: no reserved characters, no trailing dots, no device names (CON, NUL, …).
     let safe = doc.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim() || 'profile';
     if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(safe)) safe = `profile-${safe}`;
+    // A profile with mods from local files is best shared as a .zip that carries them.
+    const locals = doc.mods.filter(m => !(m.modId > 0 && m.fileId > 0)).length;
+    const zip = { name: 'Profile with its local mods (.zip)', extensions: ['zip'] };
+    const json = { name: 'Profile, Nexus mods only (.json)', extensions: ['json'] };
     const r = await dialog.showSaveDialog(win, {
-      title: 'Export profile', defaultPath: path.join(app.getPath('documents'), `${safe}.cmmprofile.json`),
-      filters: [{ name: 'Cyber Mod Manager profile', extensions: ['json'] }],
+      title: 'Export profile', defaultPath: path.join(app.getPath('documents'), `${safe}.cmmprofile.${locals ? 'zip' : 'json'}`),
+      filters: locals ? [zip, json] : [json, zip],
     });
     if (r.canceled || !r.filePath) return null;
+    lastExport = r.filePath;
+    if (/\.zip$/i.test(r.filePath)) return manager.exportProfileZip(id, r.filePath);
     fs.writeFileSync(r.filePath, JSON.stringify(doc, null, 2));
     lastExport = r.filePath;
     logger.success(`Exported profile "${doc.name}" (${doc.mods.length} mods) to ${r.filePath}`);
@@ -438,10 +444,15 @@ async function boot() {
   handle('profiles:importPlan', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Import profile', properties: ['openFile'],
-      filters: [{ name: 'Cyber Mod Manager profile', extensions: ['json'] }],
+      filters: [{ name: 'Cyber Mod Manager profile', extensions: ['zip', 'json'] }],
     });
     if (r.canceled || !r.filePaths[0]) return null;
     const file = r.filePaths[0];
+    if (/\.zip$/i.test(file)) {
+      const plan = await manager.planProfileZip(file);
+      if (!plan) throw new Error('That .zip is not a profile exported by Cyber Mod Manager (it has no profile.json).');
+      return plan;
+    }
     if (fs.statSync(file).size > 5 * 1024 * 1024) throw new Error('That file is too large to be a profile.');
     let doc;
     try { doc = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { throw new Error('That file is not valid JSON.'); }
@@ -477,6 +488,11 @@ async function boot() {
     const ok = (Array.isArray(paths) ? paths : []).filter(p => typeof p === 'string' && /\.(zip|7z|rar)$/i.test(p) && path.isAbsolute(p))
       .filter(p => { try { return fs.statSync(p).isFile(); } catch { return false; } });
     if (!ok.length) throw new Error('Drop .zip, .7z or .rar mod archives to install them.');
+    // One .zip that is a shared profile: set the profile up instead of installing it as a mod.
+    if (ok.length === 1 && /\.zip$/i.test(ok[0])) {
+      const plan = await manager.planProfileZip(ok[0]);
+      if (plan) return { profile: plan };
+    }
     const keys = await manager.importArchives(ok);
     const results = await manager.install(keys);
     return { count: ok.length, skipped: (paths?.length || 0) - ok.length, results };

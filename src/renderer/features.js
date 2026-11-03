@@ -316,6 +316,7 @@ const IMPORT_STATUS = {
   downloaded: { label: 'Will install', tag: '', ok: true },
   download: { label: 'Will download', tag: 'tag-info', ok: true },
   newer: { label: 'Newer version', tag: 'tag-warn', ok: true },
+  bundled: { label: 'In the zip', tag: 'tag-ok', ok: true },
   local: { label: 'Not available', tag: 'tag-err', ok: false },
   unavailable: { label: 'Not available', tag: 'tag-err', ok: false },
 };
@@ -353,7 +354,7 @@ function switchTo(x) {
 function exportProfile(x) {
   return profGuard(async () => {
     const r = await run(api.exportProfile(x.id));
-    if (r) toast(`Exported "${x.name}" (${plural(r.count, 'mod')})`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
+    if (r) toast(`Exported "${x.name}" (${plural(r.count, 'mod')}${r.local ? `, ${r.local} from local files packed in` : ''})`, 'success', { label: 'Show in folder', fn: () => api.revealExport() });
   }, 'Exporting…');
 }
 
@@ -362,7 +363,8 @@ function copyCode(x) {
     const r = await run(api.profileCode(x.id));
     if (!r) return;
     await navigator.clipboard.writeText(r.code);
-    toast(`Copied the code for "${x.name}": ${plural(r.mods, 'mod')}${r.local ? ` (${r.local} from local files left out)` : ''}, ${r.code.length.toLocaleString()} characters`, 'success');
+    toast(`Copied the code for "${x.name}": ${plural(r.mods, 'mod')}${r.local ? ` (${r.local} from local files left out: a code holds Nexus mods only)` : ''}, ${r.code.length.toLocaleString()} characters`, 'success',
+      r.local ? { label: 'Export as zip', fn: () => exportProfile(x)() } : undefined);
   });
 }
 
@@ -412,7 +414,7 @@ function deleteConfirm(x, key) {
 
 const shareButtons = (x, key) => [
   h('button', { class: 'btn btn-sm', dataset: key('code'), title: 'Copy a code that sets up this profile, as it is now, on someone else\'s PC', 'aria-label': `Copy the share code of ${x.name}`, onclick: copyCode(x) }, icon('copy'), h('span', {}, 'Copy code')),
-  h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('export'), title: 'Save this profile as a .json file', 'aria-label': `Export ${x.name} as a file`, onclick: exportProfile(x) }, icon('share')),
+  h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: key('export'), title: 'Save this profile as a file: a .zip that also carries its mods from local files, or a .json with its Nexus mods', 'aria-label': `Export ${x.name} as a file`, onclick: exportProfile(x) }, icon('share')),
 ];
 
 /** A profile: its name, how many of this app's mods it has active, and what can be done with it. */
@@ -556,7 +558,7 @@ function importReview(plan) {
     const count = s => plan.mods.filter(x => s.includes(x.status)).length;
     const downloadSize = plan.mods.filter(x => ['download', 'newer'].includes(x.status)).reduce((n, x) => n + (x.size || 0), 0);
     const toDownload = count(['download', 'newer']);
-    const usable = count(['installed', 'downloaded', 'download', 'newer']);
+    const usable = count(['installed', 'downloaded', 'download', 'newer', 'bundled']);
     // Downloads need an API key (and, without Premium, a click per file): say so before the user commits.
     const keyProblem = toDownload && (!state.settings?.hasApiKey ? 'no-key' : '');
     const freeAccount = toDownload && state.keyUser && !state.keyUser.isPremium;

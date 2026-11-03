@@ -729,6 +729,7 @@ window.addEventListener('drop', async ev => {
   const paths = [...(ev.dataTransfer?.files || [])].map(f => api.pathForFile(f)).filter(Boolean);
   if (!paths.length) return;
   const r = await run(api.installPaths(paths));
+  if (r?.profile) { goTo('profiles'); importReview(r.profile); return; } // a shared profile .zip
   if (r) toast(`Installing ${plural(r.count, 'archive')}${r.skipped ? ` · ${r.skipped} skipped (not .zip, .7z or .rar)` : ''}`, 'success');
 });
 $('#mods-import').addEventListener('click', importArchives);

@@ -23,6 +23,33 @@ function extract(sevenZipPath, archivePath, outDir) {
   });
 }
 
+/** Run 7-Zip; resolves on exit code 0 or 1 (warnings). */
+function run7z(sevenZipPath, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    if (!sevenZipPath || !fs.existsSync(sevenZipPath)) {
+      reject(new Error(`7-Zip not found at "${sevenZipPath}". Install 7-Zip or set its path in Settings.`));
+      return;
+    }
+    const child = spawn(sevenZipPath, args, { windowsHide: true, ...opts });
+    let stderr = '';
+    child.stderr.on('data', d => { stderr += d; });
+    child.on('error', reject);
+    child.on('close', code => (code === 0 || code === 1 ? resolve() : reject(new Error(`7-Zip failed (exit ${code}): ${stderr.trim() || 'no details'}`))));
+  });
+}
+
+/** Zip everything in `srcDir` into `outFile` (stored, not recompressed: mod archives are already compressed). */
+async function pack(sevenZipPath, srcDir, outFile) {
+  fs.rmSync(outFile, { force: true });
+  await run7z(sevenZipPath, ['a', '-tzip', '-mx=0', '-y', '-bso0', '-bsp0', outFile, '*'], { cwd: srcDir });
+}
+
+/** Extract only these files (by their path inside the archive) into `outDir`; missing ones are skipped. */
+async function extractSome(sevenZipPath, archivePath, outDir, names) {
+  fs.mkdirSync(outDir, { recursive: true });
+  await run7z(sevenZipPath, ['x', '-y', '-bso0', '-bsp0', `-o${outDir}`, '--', archivePath, ...names]);
+}
+
 /** Recursively list files under `dir` as forward-slash paths relative to it. */
 function listFiles(dir) {
   const out = [];
@@ -37,4 +64,4 @@ function listFiles(dir) {
   return out;
 }
 
-module.exports = { extract, listFiles };
+module.exports = { extract, listFiles, pack, extractSome };

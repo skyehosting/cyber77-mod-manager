@@ -19,6 +19,7 @@ const loadOrder = require('./loadOrder');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
 const profileCode = require('./profileCode');
+const archiveTools = require('./archive');
 const MAX_PROFILE_MODS = 1000;
 
 /** FOMOD choices from a shared file: { step: { group: [optionIndex] } } with small integers only. */
@@ -1273,7 +1274,7 @@ class ModManager extends EventEmitter {
    *   local      — a local archive on the sender's PC; it can't be fetched
    *   unavailable — not on Nexus any more, with no replacement
    */
-  async planProfileImport(doc) {
+  async planProfileImport(doc, { bundleDir = '' } = {}) {
     if (!doc || doc.format !== PROFILE_FORMAT || !Array.isArray(doc.mods)) {
       throw new Error('This file is not a Cyber Mod Manager profile.');
     }
@@ -1302,7 +1303,14 @@ class ModManager extends EventEmitter {
       } else if (m.fileId && this.data.downloads[key] && fs.existsSync(this.data.downloads[key].path)) {
         rows.push({ ...m, status: 'downloaded', key, detail: 'Downloaded — will be installed' });
       } else if (!m.modId || !m.fileId) {
-        rows.push({ ...m, status: 'local', detail: 'A local file on the sender\'s PC — ask them for it' });
+        // In the zip it came in (only inside that folder), or already installed here under that name.
+        const inZip = bundleDir && typeof raw.archive === 'string' ? path.resolve(bundleDir, raw.archive) : '';
+        const here = Object.values(this.data.mods).find(x => !(Number(x.fileId) > 0) && x.name.toLowerCase() === m.name.toLowerCase());
+        if (here) rows.push({ ...m, status: 'installed', key: here.id, detail: 'Already installed (from a local file)' });
+        else if (inZip && inZip.startsWith(path.resolve(bundleDir) + path.sep) && fs.existsSync(inZip)) {
+          const key = `local-${crypto.createHash('sha1').update(inZip).digest('hex').slice(0, 10)}`; // what importArchives names it
+          rows.push({ ...m, status: 'bundled', archive: inZip, key, detail: 'In the zip: will be installed', size: fs.statSync(inZip).size });
+        } else rows.push({ ...m, status: 'local', detail: 'A local file on the sender\'s PC: ask them for the profile as a zip' });
       } else {
         const row = { ...m, status: 'pending' };
         rows.push(row);
@@ -1341,7 +1349,7 @@ class ModManager extends EventEmitter {
       if (!r.version) r.version = here?.version || r.file?.version || '';
     }
     const token = crypto.randomBytes(6).toString('hex');
-    this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows });
+    this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows, bundleDir });
     while (this.profileImports.size > 3) this.profileImports.delete(this.profileImports.keys().next().value);
     return {
       token,
@@ -1406,16 +1414,105 @@ class ModManager extends EventEmitter {
       }
       summary.downloading = q.queued;
       summary.skipped = plan.rows.filter(r => r.status === 'local' || r.status === 'unavailable').length;
+      const bundled = plan.rows.filter(r => r.status === 'bundled');
       this.library.save();
       this.log.success(`Imported profile "${clean}": ${summary.enabled} enabled, ${toInstall.length} to install, ${summary.downloading} downloading${summary.skipped ? `, ${summary.skipped} unavailable` : ''}`);
       // Installing goes through the normal queue (FOMOD wizards included) after this operation.
       if (toInstall.length) setImmediate(() => this.install(toInstall, { forProfiles: [id], fomodChoices: presets }).catch(() => {}));
-      summary.installing = toInstall.length;
+      // Mods from local files that came in the zip: into the downloads, then installed into this profile.
+      if (bundled.length || plan.bundleDir) {
+        setImmediate(async () => {
+          try {
+            if (bundled.length) {
+              const keys = await this.importArchives(bundled.map(r => r.archive));
+              // The sender's names and versions, not the packed file names ("002-Name.zip").
+              keys.forEach((k, i) => { const rec = this.data.downloads[k]; if (rec) Object.assign(rec, { name: bundled[i].name, modName: bundled[i].modName || bundled[i].name, version: bundled[i].version || rec.version }); });
+              await this.install(keys, { forProfiles: [id] });
+            }
+          } catch (err) {
+            this.log.error('Could not install the mods from the profile zip', err.message);
+          } finally {
+            if (plan.bundleDir) fs.rmSync(plan.bundleDir, { recursive: true, force: true });
+          }
+        });
+      }
+      summary.installing = toInstall.length + bundled.length;
       return summary;
     });
   }
 
-  cancelProfileImport(token) { this.profileImports.delete(token); }
+  cancelProfileImport(token) {
+    const plan = this.profileImports.get(token);
+    if (plan?.bundleDir) fs.rmSync(plan.bundleDir, { recursive: true, force: true });
+    this.profileImports.delete(token);
+  }
+
+  /**
+   * A profile as one .zip anyone can drop into the app: profile.json (the profile, with where each
+   * local mod is in the zip), share-code.txt (the code, for pasting), and local/… — every mod of the
+   * profile that is not on Nexus: its original archive, or (if that is gone) the files it installed.
+   */
+  async exportProfileZip(id, outFile) {
+    const doc = this.exportProfile(id);
+    const p = this.data.profiles.list[id];
+    const mods = p.enabled.map(mid => this.data.mods[mid]).filter(Boolean).sort((a, b) => a.priority - b.priority);
+    const tmp = path.join(this.settings.tempDir, `export-${crypto.randomBytes(4).toString('hex')}`);
+    const seven = sevenZip(this.settings.get('sevenZipPath'));
+    let local = 0;
+    try {
+      fs.mkdirSync(path.join(tmp, 'local'), { recursive: true });
+      for (const [i, m] of mods.entries()) {
+        const entry = doc.mods[i];
+        if (entry.source !== 'local' && entry.fileId) continue;
+        const safe = `${String(i + 1).padStart(3, '0')}-${String(m.name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').slice(0, 60) || 'mod'}`;
+        const rec = this.data.downloads[m.id];
+        let rel;
+        if (rec?.path && fs.existsSync(rec.path)) {
+          rel = `local/${safe}${path.extname(rec.path).toLowerCase() || '.zip'}`;
+          try { fs.linkSync(rec.path, path.join(tmp, rel)); } catch { fs.copyFileSync(rec.path, path.join(tmp, rel)); }
+        } else {
+          // The archive is gone: pack what the mod installed, laid out as in the game folder.
+          const staged = path.join(this.settings.stagingDir, m.id);
+          if (!fs.existsSync(staged)) continue;
+          rel = `local/${safe}.zip`;
+          await archiveTools.pack(seven, staged, path.join(tmp, rel));
+        }
+        entry.archive = rel;
+        entry.fomodChoices = undefined; // the receiver installs the very files packed here
+        local++;
+      }
+      fs.writeFileSync(path.join(tmp, 'profile.json'), JSON.stringify(doc, null, 2));
+      fs.writeFileSync(path.join(tmp, 'share-code.txt'), [
+        `Cyber Mod Manager profile "${doc.name}"`,
+        '',
+        'Drag this .zip onto Cyber Mod Manager (or Profiles → Import) to set the profile up, with the mods',
+        'from local files that are inside it. The code below sets up only its Nexus mods:',
+        '',
+        profileCode.encode(doc),
+        '',
+      ].join('\r\n'));
+      await archiveTools.pack(seven, tmp, outFile);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+    this.log.success(`Exported profile "${doc.name}" (${doc.mods.length} mods, ${local} from local files packed) to ${outFile}`);
+    return { file: outFile, count: doc.mods.length, local };
+  }
+
+  /**
+   * A dropped or opened .zip: if it is a profile made by Export as zip, plan its import (the local
+   * mods inside it install from the zip). Returns null for any other zip (a mod archive).
+   */
+  async planProfileZip(file) {
+    const seven = sevenZip(this.settings.get('sevenZipPath'));
+    const dir = path.join(this.settings.tempDir, `profile-${crypto.randomBytes(4).toString('hex')}`);
+    await archiveTools.extractSome(seven, file, dir, ['profile.json']);
+    let doc = null;
+    try { doc = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* not a profile zip */ }
+    if (!doc || doc.format !== PROFILE_FORMAT) { fs.rmSync(dir, { recursive: true, force: true }); return null; }
+    await archiveTools.extract(seven, file, dir);
+    try { return await this.planProfileImport(doc, { bundleDir: dir }); } catch (err) { fs.rmSync(dir, { recursive: true, force: true }); throw err; }
+  }
 
   /**
    * Add an installed mod to the imported profiles waiting for it. Returns the active profile if it is
