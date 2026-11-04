@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, modal, confirmBox, plural, pageHooks, keepFocus, fmtSize, ago, state */
+/* global api, $, $$, h, icon, run, toast, modal, confirmBox, plural, pageHooks, keepFocus, fmtSize, ago, state, goTo */
 
 // ---------------------------------------------------------------- the Saves page (Manage saves)
 // Playthroughs (a character's saves, newest first) and backups (by day). Backups and restores run in
@@ -90,11 +90,26 @@ function renderSaves() {
 
 // ---- playthroughs
 
+/** Per-profile saves off: where to turn them on (copying playthroughs between profiles comes with it). */
+function perProfileHint(v) {
+  if (v.perProfile) return [];
+  const open = () => {
+    state.settingsJump = 'saves';
+    goTo('settings');
+    $('#s-save-perprofile')?.focus();
+  };
+  return [h('p', { class: 'sv-foot sv-hint' }, icon('users'),
+    h('span', {}, v.profiles.length > 1
+      ? 'Want each profile to keep its own saves, and to copy playthroughs between profiles? Turn on "Separate saves for each profile". '
+      : 'With a second profile, each profile can keep its own saves, and playthroughs can be copied between them: "Separate saves for each profile". ',
+    h('button', { class: 'link-btn', dataset: { key: 'pt:perprofile-hint' }, onclick: open }, 'Open the Save manager settings')))];
+}
+
 function playthroughsView(v) {
   const others = otherProfilesView(v);
   if (!v.playthroughs.length) {
     return [...others, h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('save')), h('div', { class: 'empty-title' }, 'No saves yet'),
-      h('div', { class: 'empty-text' }, `Saves appear here once you play. This app reads them from ${v.savesDir}.`))];
+      h('div', { class: 'empty-text' }, `Saves appear here once you play. This app reads them from ${v.savesDir}.`)), ...perProfileHint(v)];
   }
   const byFolder = new Map(v.saves.map(s => [s.folder, s]));
   return [h('div', { class: 'sv-list', role: 'list', 'aria-label': 'Playthroughs' }, ...v.playthroughs.map(p => {
@@ -123,7 +138,7 @@ function playthroughsView(v) {
         h('span', { class: 'sv-cell' }, hours(s.playTime)),
         h('span', { class: 'sv-cell', title: s.time ? when(s.time) : '' }, s.time ? ago(s.time) : ''),
         h('span', { class: 'sv-cell num' }, s.gameVersion ? `v${s.gameVersion}` : '')))));
-  })), ...others];
+  })), ...others, ...perProfileHint(v)];
 }
 
 /** With per-profile saves: the playthroughs other profiles keep, each with Copy here. */

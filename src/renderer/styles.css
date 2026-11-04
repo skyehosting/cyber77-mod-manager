@@ -2877,6 +2877,8 @@ html[data-setup="open"] #shell { visibility: hidden; }
 /* The shared empty state is laid over a table card (absolute); here it is part of the page, centred in it.
    Absolute here would cover the whole window and take every click. */
 #saves-body .empty { position: static; inset: auto; min-height: 18rem; }
+.sv-hint { display: flex; align-items: baseline; gap: var(--sp-2); }
+.sv-hint .i { flex: none; width: 0.95rem; align-self: flex-start; margin-top: 0.2em; color: var(--info-text); }
 .sv-restore { display: flex; flex-direction: column; gap: var(--sp-3); }
 .sv-restore .check { margin-top: 0; }
 .sv-pick > .link-btn { align-self: flex-start; }
