@@ -56,6 +56,11 @@ function setup() {
     settings: { profiles: { lastActiveProfile: { cyberpunk2077: 'p1' } } },
   }));
 
+  // Vortex deployed, then wrote its snapshot; both a while ago (what this app does next is newer).
+  const ago = s => new Date(Date.now() - s * 1000);
+  fs.utimesSync(path.join(game, 'vortex.deployment.json'), ago(120), ago(120));
+  fs.utimesSync(path.join(vx, 'temp', 'state_backups_full', 'hourly.json'), ago(60), ago(60));
+
   const before = process.env.CMM_VORTEX_APPDATA;
   process.env.CMM_VORTEX_APPDATA = path.join(root, 'appdata');
   const settings = new Settings(path.join(root, 'ud'), null);
@@ -203,4 +208,95 @@ test('using a Vortex profile here: its mods move over, a profile gets exactly it
   await mgr.useVortexProfile('p2');
   assert.strictEqual(Object.keys(mgr.data.profiles.list).length, n);
   await assert.rejects(() => mgr.useVortexProfile('nope'), /no longer exists/);
+});
+
+test('a twin installed over Vortex\'s copy, then switched off: Vortex\'s files do not come back', async () => {
+  const { mgr, game } = setup();
+  // This app installs beta (same Nexus file) while Vortex's beta is in the game: its files are set aside.
+  const files = ['archive/pc/mod/beta.archive', 'archive/pc/mod/shared.archive'];
+  for (const rel of files) {
+    fs.mkdirSync(path.dirname(path.join(mgr.settings.stagingDir, '200', rel)), { recursive: true });
+    fs.writeFileSync(path.join(mgr.settings.stagingDir, '200', rel), 'ours');
+  }
+  mgr.data.mods['200'] = { id: '200', key: '200', name: 'BETA', modName: 'BETA', modId: 20, fileId: 200, game: 'cyberpunk2077', version: '1.0', category: 'MAIN', files, enabled: true, priority: 1 };
+  mgr.deploy();
+  assert.strictEqual(read(game, 'archive/pc/mod/beta.archive'), 'ours');
+  await mgr.switchOffVortexTwins(['200']);
+  await mgr.setEnabled(['200'], false);
+  for (const rel of files) assert.ok(!fs.existsSync(path.join(game, rel)), `${rel}: off here and off in Vortex, so not in the game`);
+  assert.strictEqual(read(game, 'archive/pc/mod/alpha.archive'), 'A', 'other Vortex mods are untouched');
+});
+
+test('an original that is not Vortex\'s, or whose Vortex mod is still placed, is still put back', async () => {
+  const { mgr, game } = setup();
+  fs.writeFileSync(path.join(game, 'archive', 'pc', 'mod', 'own.archive'), 'by hand');
+  const files = ['archive/pc/mod/own.archive', 'archive/pc/mod/alpha.archive'];
+  for (const rel of files) {
+    fs.mkdirSync(path.dirname(path.join(mgr.settings.stagingDir, '300', rel)), { recursive: true });
+    fs.writeFileSync(path.join(mgr.settings.stagingDir, '300', rel), 'ours');
+  }
+  mgr.data.mods['300'] = { id: '300', key: '300', name: 'OTHER', modName: 'OTHER', modId: 99, fileId: 999, game: 'cyberpunk2077', version: '1.0', category: 'MAIN', files, enabled: true, priority: 1 };
+  mgr.deploy();
+  await mgr.setEnabled(['300'], false);
+  assert.strictEqual(read(game, 'archive/pc/mod/own.archive'), 'by hand');
+  assert.strictEqual(read(game, 'archive/pc/mod/alpha.archive'), 'A', 'alpha is still on in Vortex');
+});
+
+test('Vortex files left in the game for a mod Vortex has off are cleared at start, with Vortex\'s empty folders', async () => {
+  const { mgr, game, staging } = setup();
+  // gamma is off in Vortex's active profile and not in its record, yet its file is in the game (an older version put it back).
+  fs.mkdirSync(path.join(game, 'r6', 'scripts', 'Gamma'), { recursive: true });
+  fs.linkSync(path.join(staging, 'gamma', 'r6', 'scripts', 'Gamma', 'g.reds'), path.join(game, 'r6', 'scripts', 'Gamma', 'g.reds'));
+  fs.writeFileSync(path.join(game, 'r6', 'scripts', 'Gamma', '__folder_managed_by_vortex'), '{}');
+  // A copy of the same file (not Vortex's link): someone's own, left alone.
+  fs.mkdirSync(path.join(game, 'r6', 'scripts', 'Mine'), { recursive: true });
+  fs.copyFileSync(path.join(staging, 'gamma', 'r6', 'scripts', 'Gamma', 'g.reds'), path.join(game, 'r6', 'scripts', 'Mine', 'g.reds'));
+  mgr.vortex.isRunning = async () => true;
+  assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 }, 'never while Vortex is open');
+  mgr.vortex.isRunning = async () => false;
+  const r = await mgr.clearVortexLeftovers();
+  assert.strictEqual(r.removed, 1);
+  assert.ok(!fs.existsSync(path.join(game, 'r6', 'scripts', 'Gamma')), 'the folder Vortex made for it went too');
+  assert.ok(fs.existsSync(path.join(game, 'r6', 'scripts')), 'the game\'s own folders stay');
+  assert.ok(fs.existsSync(path.join(staging, 'gamma', 'r6', 'scripts', 'Gamma', 'g.reds')), 'Vortex still has it');
+  assert.ok(fs.existsSync(path.join(game, 'r6', 'scripts', 'Mine', 'g.reds')));
+  assert.strictEqual(read(game, 'archive/pc/mod/beta.archive'), 'B', 'mods Vortex places are untouched');
+});
+
+test('Vortex files are left alone whenever it is not certain they are left behind', async () => {
+  const leftover = (game, staging, id, rel) => {
+    fs.mkdirSync(path.dirname(path.join(game, rel)), { recursive: true });
+    fs.mkdirSync(path.dirname(path.join(staging, id, rel)), { recursive: true });
+    if (!fs.existsSync(path.join(staging, id, rel))) fs.writeFileSync(path.join(staging, id, rel), id);
+    fs.linkSync(path.join(staging, id, rel), path.join(game, rel));
+  };
+  // A mod Vortex installed after its last snapshot (it may be on), placed through another record.
+  {
+    const { mgr, game, staging } = setup();
+    leftover(game, staging, 'delta', 'mods/Delta/info.json');
+    assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 });
+  }
+  // A record that cannot be read.
+  {
+    const { mgr, game, staging } = setup();
+    leftover(game, staging, 'gamma', 'r6/scripts/Gamma/g.reds');
+    fs.writeFileSync(path.join(game, 'vortex.deployment.redmod.json'), '{ not json');
+    assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 });
+    fs.writeFileSync(path.join(game, 'vortex.deployment.redmod.json'), JSON.stringify({ files: [{ relPath: path.win32.join('r6', 'scripts', 'Gamma', 'g.reds'), source: 'gamma' }] }));
+    assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 }, 'listed by a record of another mod type');
+  }
+  // Vortex deployed after its snapshot: the snapshot may be out of date.
+  {
+    const { mgr, game, staging } = setup();
+    leftover(game, staging, 'gamma', 'r6/scripts/Gamma/g.reds');
+    fs.utimesSync(path.join(game, 'vortex.deployment.json'), new Date(), new Date());
+    assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 });
+  }
+  // A mod enabled here ships the path (taken over from Vortex: the same file), with this app's record lost.
+  {
+    const { mgr, game, staging } = setup();
+    leftover(game, staging, 'gamma', 'r6/scripts/Gamma/g.reds');
+    mgr.data.mods['300'] = { id: '300', key: '300', name: 'GAMMA', modId: 30, fileId: 300, game: 'cyberpunk2077', version: '1.0', category: 'MAIN', files: ['r6/scripts/Gamma/g.reds'], enabled: true, priority: 1 };
+    assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 });
+  }
 });

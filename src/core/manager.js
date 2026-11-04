@@ -15,7 +15,7 @@ const { sanitizeName } = require('./layout');
 const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
 const { VortexBridge, parseFolderName } = require('./vortex');
-const { listFiles } = require('./vortexDeploy');
+const { listFiles, removeEmptyDirs } = require('./vortexDeploy');
 const { Mo2Bridge } = require('./mo2');
 const { ProfileSaves, defaultStoreDir, defaultHomeDir, ID: PROFILE_ID } = require('./profileSaves');
 
@@ -113,6 +113,7 @@ class ModManager extends EventEmitter {
     // The 7-Zip set in Settings, else the copy that ships with the installed app.
     this.installer = new Installer({ getSevenZip: () => sevenZip(settings.get('sevenZipPath')), tempDir: () => settings.tempDir, log });
     this.deployer = new Deployer({ manifestFile: path.join(dataDir, 'deployment.json'), backupDir: settings.backupDir, log });
+    this.deployer.staleOriginal = (dest, file) => this.vortexStaleCopy(dest, file);
     this.pendingFomod = new Map();
     this.plans = new Map();
     this.profileImports = new Map();
@@ -1027,6 +1028,128 @@ class ModManager extends EventEmitter {
     this.log.info(`Switched off Vortex's copy of ${nameList(clash)}: ${clash.length === 1 ? 'it is' : 'they are'} enabled in this app`);
     this.emit('changed');
     return { switched: clash.length };
+  }
+
+  /** The Vortex mod whose staged file for this game path is this very file (a hardlink of it), or null. */
+  vortexStagedOwner(file, rel, vx = this.vortex.read()) {
+    let st;
+    try { st = fs.statSync(file, { bigint: true }); } catch { return null; }
+    if (st.nlink < 2n || st.ino === 0n) return null;
+    const staging = this.vortex.stagingDir();
+    return (vx.mods || []).find(m => {
+      try {
+        const s = fs.statSync(path.join(staging, m.vortexId, rel), { bigint: true });
+        return s.ino === st.ino && s.dev === st.dev;
+      } catch { return false; }
+    }) || null;
+  }
+
+  /**
+   * Off in Vortex's active profile: taken over by this app (Vortex keeps those off), else what this
+   * app last switched (when newer than Vortex's snapshot, which is only written while Vortex runs),
+   * else the snapshot. Not knowing counts as on.
+   */
+  vortexModOff(vx, vortexId) {
+    if (this.data.vortexAdopted?.[vortexId]) return true;
+    const t = this.data.vortexToggled?.[vortexId];
+    const at = Math.max(t?.enabledAt || 0, t?.disabledAt || 0);
+    if (at && at > (vx.snapshotTime || 0)) return (t.disabledAt || 0) > (t.enabledAt || 0);
+    // The snapshot only for a mod it knows, and only when no deployment came after it (Vortex may
+    // have switched the mod on since).
+    if (!(vx.mods || []).find(m => m.vortexId === vortexId)?.known) return false;
+    if (vx.deployedAt && (vx.snapshotTime || 0) < vx.deployedAt) return false;
+    const active = (vx.profiles || []).find(p => p.active);
+    return !!active && !active.enabledIds.includes(vortexId);
+  }
+
+  /**
+   * A file the deployer set aside is Vortex's own copy of a path Vortex no longer places (its mod was
+   * switched off meanwhile, as a twin of ours): put back, no record would list it and nothing would
+   * ever remove it (a mod off in both places, still loaded by the game). Vortex keeps it in staging.
+   */
+  // (Told by the file's identity: a backup folder on another drive holds a copy, and that is put back.)
+  vortexStaleCopy(dest, file) {
+    try {
+      if (!this.vortex.installed) return false;
+      const vx = this.vortex.read();
+      const recorded = this.vortexRecordedPaths();
+      if (!recorded || recorded.has(String(dest).replace(/\\/g, '/').toLowerCase())) return false;
+      const owner = this.vortexStagedOwner(file, dest, vx);
+      return !!owner && this.vortexModOff(vx, owner.vortexId);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Every path a Vortex deployment record in the game folder lists (lower case, '/'): its main one
+   * and any per mod type. null when one cannot be read (then nothing of Vortex's is touched).
+   */
+  vortexRecordedPaths() {
+    const out = new Set();
+    let names;
+    try { names = fs.readdirSync(this.gameDir()).filter(n => /^vortex\.deployment(\.[^.]+)?\.json$/i.test(n)); } catch { return null; }
+    for (const n of names) {
+      let rec;
+      try { rec = JSON.parse(fs.readFileSync(path.join(this.gameDir(), n), 'utf8')); } catch { return null; }
+      for (const f of rec?.files || []) out.add(String(f.relPath).replace(/\\/g, '/').toLowerCase());
+    }
+    return out;
+  }
+
+  /**
+   * Files of Vortex mods that are in the game folder although Vortex has the mod off and no record
+   * lists them (hardlinks into its staging folder): what older versions of this app put back after a
+   * twin was switched off in Vortex. They are removed, with the folders Vortex made for them once
+   * empty; Vortex keeps every one in its staging folder. Not while Vortex runs or is being changed
+   * (it writes its record after the files), never a path a mod enabled here ships, and nothing at
+   * all when a record is unreadable or this app's own record does not fit the game folder.
+   */
+  clearVortexLeftovers() {
+    return this.op(() => this.clearVortexLeftoversNow());
+  }
+
+  async clearVortexLeftoversNow() {
+    if (!this.vortex.installed || this.vortex.busy) return { removed: 0 };
+    const game = this.gameDir();
+    if (!isGameDir(game) || await this.vortex.isRunning()) return { removed: 0 };
+    const vx = this.vortex.read();
+    const recorded = this.vortexRecordedPaths();
+    if (!recorded) return { removed: 0 };
+    // This app's record must be the game folder's, and whole: it is what keeps our own files safe.
+    const ours = this.deployer.store.data;
+    const enabled = Object.values(this.data.mods).filter(m => m.enabled);
+    if (ours.gameDir && path.resolve(ours.gameDir).toLowerCase() !== path.resolve(game).toLowerCase()) return { removed: 0 };
+    if (!Object.keys(ours.deployed).length && enabled.some(m => m.files?.length)) return { removed: 0 };
+    const shipped = new Set(enabled.flatMap(m => (m.files || []).map(f => f.replace(/\\/g, '/').toLowerCase())));
+    const staging = this.vortex.stagingDir();
+    const removed = [];
+    const dirs = [];
+    for (const m of vx.mods || []) {
+      // Vortex places this mod, or may have it on: its own files.
+      if (m.deployedFiles?.length || !this.vortexModOff(vx, m.vortexId)) continue;
+      const root = path.join(staging, m.vortexId);
+      for (const rel of listFiles(root)) {
+        const key = rel.replace(/\\/g, '/').toLowerCase();
+        if (ours.deployed[key] || shipped.has(key) || recorded.has(key)) continue;
+        const full = path.join(game, rel);
+        try {
+          const a = fs.lstatSync(full, { bigint: true });
+          const b = fs.statSync(path.join(root, rel), { bigint: true });
+          // The very same file as Vortex's staged one (a hardlink: two names, a real file id).
+          if (!a.isFile() || !b.isFile() || a.nlink < 2n || a.ino === 0n || a.ino !== b.ino || a.dev !== b.dev) continue;
+          fs.rmSync(full, { force: true });
+          removed.push({ rel, mod: m.name });
+          dirs.push(path.dirname(rel));
+        } catch { /* not there, or in use: left */ }
+      }
+    }
+    if (!removed.length) return { removed: 0 };
+    removeEmptyDirs(game, dirs);
+    const mods = [...new Set(removed.map(r => r.mod))];
+    this.log.warn(`Removed ${plural(removed.length, 'file')} of ${nameList(mods.map(name => ({ name })))} from the game folder: Vortex has ${mods.length === 1 ? 'that mod' : 'those mods'} off and no longer places them, but they had been left behind (Vortex still has them in its own folder)`);
+    this.emit('changed');
+    return { removed: removed.length, mods };
   }
 
   // ---------------------------------------------------------------- archive load order

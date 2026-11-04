@@ -25,6 +25,9 @@ class Deployer {
     this.backupDir = backupDir;
     this.log = log;
     this.store = new JsonStore(manifestFile, { gameDir: '', deployed: {}, createdDirs: [] });
+    // (dest, backupFile) => true when the original must not go back (the manager sets it: Vortex's
+    // copy of a file Vortex no longer places).
+    this.staleOriginal = null;
   }
 
   get deployed() { return this.store.data.deployed; }
@@ -68,10 +71,7 @@ class Deployer {
         try {
           this.removeFile(gameDir, entry);
           result.removed++;
-          if (!want && entry.backup) {
-            this.restoreBackup(gameDir, entry);
-            result.restored++;
-          }
+          if (!want && entry.backup && this.restoreBackup(gameDir, entry)) result.restored++;
           if (want && entry.backup) want.backup = entry.backup;
           delete data.deployed[key];
         } catch (err) {
@@ -149,19 +149,27 @@ class Deployer {
     fs.rmSync(full, { force: true });
   }
 
+  /** Put the original back; true when it was. */
   restoreBackup(gameDir, entry) {
     const full = path.join(gameDir, entry.dest);
     if (!fs.existsSync(entry.backup)) {
       this.log.warn(`Backup for ${entry.dest} is missing; nothing to restore.`);
-      return;
+      return false;
     }
     if (fs.existsSync(full)) {
       this.log.warn(`${entry.dest} exists again; kept its backup at ${entry.backup} instead of restoring.`);
-      return;
+      return false;
+    }
+    if (this.staleOriginal?.(entry.dest, entry.backup)) {
+      // Vortex's own copy (it has the file in its staging folder): back in the game, no record would list it.
+      fs.rmSync(entry.backup, { force: true });
+      this.log.info(`Did not put back ${entry.dest}: it was Vortex's copy, and that mod is off in Vortex now`);
+      return false;
     }
     fs.mkdirSync(path.dirname(full), { recursive: true });
     moveFile(entry.backup, full);
     this.log.info(`Restored original ${entry.dest}`);
+    return true;
   }
 
   placeFile(gameDir, want, method) {

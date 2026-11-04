@@ -150,4 +150,27 @@ function runDeploy(plan, manifest, manifestFile) {
   return { linked: added.length, removed: plan.remove.length, deferred: plan.deferred.length, kept: plan.keep.length };
 }
 
-module.exports = { planDeploy, runDeploy, listFiles };
+/**
+ * Remove these folders (relative to the game folder) and their parents while they hold nothing but
+ * Vortex's own marker file, up to the folders the game needs. Returns how many went.
+ */
+function removeEmptyDirs(gameDir, relDirs) {
+  let n = 0;
+  for (const d of [...new Set(relDirs)].sort((a, b) => b.length - a.length)) {
+    let rel = d;
+    while (rel && rel !== '.' && !KEEP_DIRS.has(rel.toLowerCase().replace(/\//g, '\\'))) {
+      const full = path.join(gameDir, rel);
+      try {
+        const left = fs.readdirSync(full);
+        if (left.some(e => e !== '__folder_managed_by_vortex')) break;
+        if (left.length) fs.rmSync(path.join(full, left[0]), { force: true });
+        fs.rmdirSync(full);
+        n++;
+      } catch { break; }
+      rel = path.dirname(rel);
+    }
+  }
+  return n;
+}
+
+module.exports = { planDeploy, runDeploy, listFiles, removeEmptyDirs };

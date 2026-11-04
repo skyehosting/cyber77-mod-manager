@@ -214,6 +214,8 @@ async function boot() {
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
   manager.startVortexWatch();
+  // Vortex files an older version put back after Vortex's copy was switched off (they still loaded).
+  manager.clearVortexLeftovers().catch(err => logger.warn('Could not check the game folder for files Vortex left behind', err.message));
   manager.startMo2Watch();
   applyNxmSetting().catch(err => logger.error('Could not set the Nexus link handler', err.message));
   updater = new AppUpdater({
