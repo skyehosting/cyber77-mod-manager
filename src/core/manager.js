@@ -178,6 +178,7 @@ class ModManager extends EventEmitter {
       .map(d => ({ ...d, installed: installedKeys.has(d.key), exists: fs.existsSync(d.path) }))
       .sort((a, b) => (a.modName.localeCompare(b.modName)) || (a.category.localeCompare(b.category)) || a.name.localeCompare(b.name));
     const game = this.gameDir();
+    const vortex = this.vortexView();
     return {
       mods: mods.map(m => ({
         ...m, fileCount: m.files.length, files: undefined,
@@ -193,8 +194,9 @@ class ModManager extends EventEmitter {
       updates: this.data.updates || {},
       lastUpdateCheck: this.data.lastUpdateCheck || 0,
       profiles: this.profilesView(),
-      vortex: this.vortexView(),
+      vortex,
       mo2: this.mo2View(),
+      reqs: this.requirementsView(vortex),
     };
   }
 
@@ -1410,6 +1412,106 @@ class ModManager extends EventEmitter {
     return { id, name: this.data.profiles.list[id].name, enabled: enabled.length, moved: first.move.length };
   }
 
+  // ---------------------------------------------------------------- requirements (the Mods page)
+
+  /**
+   * Every mod's requirements, resolved against what is installed, for the Mods page:
+   * { [row id]: [{ id, modId, name, state, version, url, notes, inferred }] } where state is
+   *   on / off      a mod here (this app's or Vortex's) that is on or off; id is its row
+   *   missing       not installed (Download)
+   *   outside       in the game folder from something else (no switch)
+   *   external      hosted off Nexus (a link)
+   * From Nexus (cached, fetched in the background) and from the mod's own files.
+   */
+  requirementsView(vortex = this.vortexView()) {
+    const cache = this.data.requirements || {};
+    const game = this.gameDir();
+    let vxFiles = new Map();
+    try { vxFiles = new Map((this.vortex.read().mods || []).map(v => [v.id, v.deployedFiles || []])); } catch { /* no Vortex */ }
+    const rows = [
+      ...Object.values(this.data.mods).map(m => ({ id: m.id, modId: Number(m.modId) || 0, enabled: !!m.enabled, name: m.name, version: m.version || '', files: m.files || [], priority: m.priority || 0 })),
+      ...(vortex.mods || []).map(v => ({ id: v.id, modId: Number(v.modId) || 0, enabled: !!v.enabled, name: v.name, version: v.version || '', files: vxFiles.get(v.id) || [], priority: 0 })),
+    ];
+    // The row that stands for a Nexus mod: the enabled one, else the highest priority.
+    const byModId = new Map();
+    for (const r of rows) {
+      if (!r.modId) continue;
+      const cur = byModId.get(r.modId);
+      if (!cur || (r.enabled && !cur.enabled) || (r.enabled === cur.enabled && r.priority > cur.priority)) byModId.set(r.modId, r);
+    }
+    const outside = new Map();
+    const isOutside = (modId, name) => {
+      if (!outside.has(modId)) outside.set(modId, !!foundInGame(game, { modId, modName: name }));
+      return outside.get(modId);
+    };
+    const out = {};
+    const unknown = [];
+    for (const r of rows) {
+      const list = [];
+      const seen = new Set(r.modId ? [r.modId] : []);
+      const entry = r.modId ? cache[r.modId] : null;
+      if (r.modId && !entry) unknown.push(r.modId);
+      for (const q of entry?.list || []) {
+        if (q.modId && seen.has(q.modId)) continue;
+        if (q.modId) seen.add(q.modId);
+        list.push(q);
+      }
+      for (const modId of inferRequirements(r.files)) {
+        if (seen.has(modId)) continue;
+        seen.add(modId);
+        list.push({ modId, name: FRAMEWORK_NAMES[modId], inferred: true });
+      }
+      if (!list.length) continue;
+      out[r.id] = list.map(q => {
+        const base = { modId: q.modId || 0, notes: q.notes || '', inferred: !!q.inferred };
+        if (q.external || !q.modId) return { ...base, name: q.name || 'A mod not on Nexus', state: 'external', url: q.url || '' };
+        const hit = byModId.get(q.modId);
+        if (hit) return { ...base, id: hit.id, name: hit.name, state: hit.enabled ? 'on' : 'off', version: hit.version };
+        return { ...base, name: q.name || FRAMEWORK_NAMES[q.modId] || `Nexus mod ${q.modId}`, state: isOutside(q.modId, q.name) ? 'outside' : 'missing' };
+      });
+    }
+    // Mods never looked up (new here, or moved in): fetch their requirements in the background.
+    if (unknown.length) this.requirementsSoon();
+    return out;
+  }
+
+  /** Read requirements from Nexus a moment from now (one request per 50 mods). */
+  requirementsSoon(delay = 3000) {
+    if (this.reqTimer || this.reqFetching || Date.now() - (this.reqFailedAt || 0) < 300000) return;
+    this.reqTimer = setTimeout(() => {
+      this.reqTimer = null;
+      this.refreshRequirements().catch(err => {
+        this.reqFailedAt = Date.now();
+        this.log.warn('Could not read mod requirements from Nexus', err.message);
+      });
+    }, delay);
+    this.reqTimer.unref?.();
+  }
+
+  /** Fetch requirements for mods never looked up, or looked up over 3 days ago (all with force). */
+  async refreshRequirements({ force = false } = {}) {
+    if (this.reqFetching) return 0;
+    this.reqFetching = true;
+    try {
+      this.data.requirements ||= {};
+      const cache = this.data.requirements;
+      let vx = [];
+      try { vx = this.vortex.read().mods || []; } catch { /* no Vortex */ }
+      const ids = [...new Set([...Object.values(this.data.mods), ...vx].map(m => Number(m.modId)).filter(n => n > 0))];
+      const stale = ids.filter(id => force || !cache[id] || Date.now() - cache[id].at > 3 * 86400000);
+      if (!stale.length) return 0;
+      const got = await this.nexus.requirementsMany('cyberpunk2077', stale);
+      const at = Date.now();
+      // A mod Nexus no longer has gets an empty list, so it is not asked again for 3 days.
+      for (const id of stale) cache[id] = { at, list: got.get(id) || [] };
+      this.library.save();
+      this.emit('changed');
+      return stale.length;
+    } finally {
+      this.reqFetching = false;
+    }
+  }
+
   // ---------------------------------------------------------------- Mod Organizer 2 (read only)
 
   /** This app's mod for an MO2 mod: moved before, or the same Nexus file installed here. */
@@ -2138,6 +2240,31 @@ function pickMainFiles(files, catOf) {
   }
   const newest = [...current].sort((a, b) => (b.uploaded_timestamp ?? b.uploaded ?? 0) - (a.uploaded_timestamp ?? a.uploaded ?? 0))[0];
   return newest ? [newest] : [];
+}
+
+/** The frameworks a mod's files show it needs, by Nexus mod id. */
+const FRAMEWORK_NAMES = { 107: 'Cyber Engine Tweaks', 1511: 'redscript', 2380: 'RED4ext', 4197: 'TweakXL', 4198: 'ArchiveXL' };
+
+/**
+ * What a mod's files show it needs: redscript scripts (.reds) need redscript, ArchiveXL files (.xl)
+ * ArchiveXL, TweakXL tweaks (r6/tweaks) TweakXL, CET mods (cyber_engine_tweaks/mods) CET, and
+ * RED4ext plugins RED4ext. A framework never needs itself (its own marker file is among its files).
+ */
+function inferRequirements(files) {
+  const need = new Set();
+  const own = new Set();
+  for (const raw of files || []) {
+    const f = String(raw).replace(/\\/g, '/').toLowerCase();
+    if (f.endsWith('.reds')) need.add(1511);
+    else if (f.startsWith('archive/pc/mod/') && f.endsWith('.xl')) need.add(4198);
+    else if (f.startsWith('r6/tweaks/') && /\.(ya?ml|tweak)$/.test(f)) need.add(4197);
+    if (f.startsWith('bin/x64/plugins/cyber_engine_tweaks/mods/')) need.add(107);
+    if (f.startsWith('red4ext/plugins/')) need.add(2380);
+    for (const [id, marker] of Object.entries(FRAMEWORK_MARKERS)) if (f === marker.toLowerCase()) own.add(Number(id));
+  }
+  // RED4ext's plugins of the frameworks themselves still need RED4ext; a framework does not need itself.
+  for (const id of own) need.delete(id);
+  return [...need];
 }
 
 /** Marker files of the common frameworks, by Nexus mod id. */

@@ -108,6 +108,27 @@ class NexusClient {
     return out;
   }
 
+  /**
+   * Every requirement of many mods at once, with names and links (the Mods page lists them):
+   * Map modId → [{ modId, name, url, notes, external }]. Public data: no API key needed.
+   */
+  async requirementsMany(game, modIds) {
+    const out = new Map();
+    const ids = [...new Set(modIds.map(Number).filter(n => n > 0))];
+    for (let i = 0; i < ids.length; i += 50) {
+      const data = await this.graphql(`query($ids: [CompositeDomainWithIdInput!]!) {
+        legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId modName url notes externalRequirement } } } } } }`,
+      { ids: ids.slice(i, i + 50).map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
+      for (const n of data.legacyModsByDomain?.nodes || []) {
+        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).map(r => ({
+          modId: Number(r.modId) || 0, name: String(r.modName || '').slice(0, 200), url: /^https?:\/\//i.test(r.url || '') ? r.url : '',
+          notes: String(r.notes || '').slice(0, 300), external: !!r.externalRequirement,
+        })));
+      }
+    }
+    return out;
+  }
+
   async getRequirements(game, modId) {
     const query = `query($ids: [CompositeDomainWithIdInput!]!) {
       legacyModsByDomain(ids: $ids) { nodes { modId gameId modRequirements {

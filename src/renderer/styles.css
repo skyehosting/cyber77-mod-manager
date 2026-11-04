@@ -602,6 +602,27 @@ input[type=checkbox], input[type=radio] { width: 1rem; height: auto; aspect-rati
   font-size: var(--fs-md);
 }
 .grid tbody tr:last-child td { border-bottom: 0; }
+/* Requirements under each mod: smaller inset copies on a tree line (Settings → Interface). */
+.grid tr.row.has-reqs td { border-bottom-color: var(--line-soft); }
+.grid tr.req-row td { height: calc(var(--row-h) * 0.64); border-bottom: 0; background: color-mix(in srgb, var(--bg) 45%, var(--surface)); font-size: var(--fs-sm); }
+.grid tr.req-row.last td { border-bottom: 1px solid var(--line); }
+.req-cell { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; height: 100%; }
+.req-line { align-self: stretch; flex: none; width: 1rem; margin-left: 0.15rem; border-left: 1px solid var(--line-strong); position: relative; }
+.req-line::after { content: ""; position: absolute; left: 0; top: 50%; width: 0.75rem; border-top: 1px solid var(--line-strong); }
+.req-row.last .req-line { align-self: flex-start; height: 50%; }
+.switch.sm { width: 1.95rem; flex: none; }
+.req-noswitch { width: 1.95rem; flex: none; }
+.req-name { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-name:hover { color: var(--text); text-decoration: underline; text-underline-offset: 0.2em; }
+.req-row.req-off .req-name, .req-row.req-missing .req-name, .req-row.req-outside .req-name, .req-row.req-external .req-name { color: var(--muted); }
+.req-note { flex: 0 1000 auto; min-width: 0; color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-ver { color: var(--muted); font-size: var(--fs-sm); }
+/* Narrow windows: the notes (also in the name's tooltip) give their room to the name. */
+@media (max-width: 1180px) { .req-note { display: none; } }
+.req-toggle { display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 0 0 0.15rem; border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.req-toggle:hover { color: var(--text); }
+.req-toggle .i { width: 0.9rem; transition: transform .15s var(--ease); }
+.req-toggle .i.turn { transform: rotate(90deg); }
 .grid tr.row { cursor: default; user-select: none; outline: none; }
 .grid tr.row:hover td { background: var(--hover); }
 .grid tr.row:focus-visible td { background: var(--hover); box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent); }

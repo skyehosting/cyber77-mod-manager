@@ -51,8 +51,17 @@
     { id: 6, name: 'Mod Settings', modName: 'Mod Settings', category: 'MAIN', status: 'error', received: 0, total: 900_000, speed: 0, error: 'Forbidden (403). Without Premium, Nexus gives a download only after a click on \"Slow download\".' },
     { id: 5, name: 'ArchiveXL', modName: 'ArchiveXL', category: 'MAIN', status: 'done', received: 1_843_200, total: 1_843_200, speed: 0 },
   ];
+  // Requirements (the Mods page): what each mod needs, by demo id; '!' not installed, '~' in the game folder from elsewhere.
+  const needs = {
+    m3: ['m2'], m4: ['m2'], m5: ['m1', 'm13'], m6: ['m4', 'm3'], m7: ['m1', 'm2', '~Input Loader'], m8: ['m1', 'm14'],
+    m9: ['m4'], m10: ['m3', 'm4', 'm13', 'm14', '!Native Settings UI'], m11: ['m3'], m12: ['m3'], m13: ['m2'],
+  };
+  const byId = Object.fromEntries(mods.map(m => [m.id, m]));
+  const reqs = Object.fromEntries(Object.entries(needs).map(([id, list]) => [id, list.map(r => (r[0] === '!' ? { modId: 3518, name: r.slice(1), state: 'missing' }
+    : r[0] === '~' ? { modId: 4575, name: r.slice(1), state: 'outside' }
+      : { id: r, modId: byId[r].modId, name: byId[r].name, state: byId[r].enabled ? 'on' : 'off', version: byId[r].version }))]));
   const snap = {
-    mods, conflicts, downloads, jobs, pendingFomod: [],
+    mods, conflicts, downloads, jobs, pendingFomod: [], reqs,
     game: { path: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Cyberpunk 2077', valid: true },
     rate: { hourly: 2491, daily: 19876 },
     gameStatus: { running: true, since: now - 23 * 60000, pid: 1234, sources: 119, followed: 35 },

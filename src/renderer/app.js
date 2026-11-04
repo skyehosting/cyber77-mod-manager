@@ -92,6 +92,7 @@ const state = {
   jobs: new Map(),
   settings: null,
   modSel: new Set(),
+  reqOpen: new Set(), // mods whose requirements are opened (with the Collapsed setting)
   dlSel: new Set(),
   modFilter: 'all',
   lastModClick: null,
@@ -535,7 +536,83 @@ function paintModSelection() {
 }
 
 /** Mods that need attention: missing files, install warnings or game-log errors. */
-const hasProblem = m => !!(m.health || m.warnings?.length || state.modLogProblems[m.id]);
+// ---------------------------------------------------------------- requirements under each mod
+
+/** A mod's requirements, resolved by the app: [{ id, modId, name, state, version, url, notes, inferred }]. */
+const reqsOf = id => state.snap.reqs?.[id] || [];
+/** An enabled mod with a requirement that is off or not installed. */
+const reqProblem = m => !!m.enabled && reqsOf(m.id).some(q => q.state === 'off' || q.state === 'missing');
+/** Which enabled mods need each mod: id → [their names]. */
+function neededByMap(all = allMods()) {
+  const out = new Map();
+  for (const m of all) {
+    if (!m.enabled) continue;
+    for (const q of reqsOf(m.id)) if (q.id) { if (!out.has(q.id)) out.set(q.id, []); out.get(q.id).push(m.name); }
+  }
+  return out;
+}
+
+/** The inset copies of a mod's requirements, under its row (or one summary line when collapsed). */
+function reqRows(m, neededBy) {
+  const list = reqsOf(m.id);
+  if (!list.length) return [];
+  const collapsed = state.settings?.reqView === 'collapsed';
+  const open = !collapsed || state.reqOpen.has(m.id);
+  const rows = [];
+  if (collapsed) {
+    const off = list.filter(q => q.state === 'off').length;
+    const missing = list.filter(q => q.state === 'missing').length;
+    const label = [`Needs ${plural(list.length, 'mod')}`, off ? `${off} off` : '', missing ? `${missing} missing` : ''].filter(Boolean).join(' · ');
+    rows.push(h('tr', { class: `req-row req-sum${open ? '' : ' last'}` }, h('td'), h('td'),
+      h('td', { colspan: '3' }, h('button', {
+        class: 'req-toggle', 'aria-expanded': String(open), dataset: { key: `${m.id}:reqs` },
+        onclick: ev => { ev.stopPropagation(); if (open) state.reqOpen.delete(m.id); else state.reqOpen.add(m.id); renderMods(); },
+      }, icon('chevron-right', open ? 'turn' : ''), h('span', {}, open ? `${label} · hide` : label)))));
+    if (!open) return rows;
+  }
+  list.forEach((q, i) => {
+    const others = q.id ? (neededBy.get(q.id) || []).filter(n => n !== m.name).length : 0;
+    const own = q.id ? reqsOf(q.id).map(r => r.name) : [];
+    const notes = [others ? `also needed by ${others}` : '', own.length ? `needs ${own.join(', ')}` : '', q.inferred ? 'found from its files' : ''].filter(Boolean).join(' · ');
+    const nexusPage = q.modId ? `https://www.nexusmods.com/cyberpunk2077/mods/${q.modId}` : '';
+    const sw = q.id ? h('button', {
+      class: `switch sm${q.state === 'on' ? ' on' : ''}`, role: 'switch', 'aria-checked': String(q.state === 'on'),
+      'aria-label': `${q.name}, needed by ${m.name}`, title: q.state === 'on' ? 'On: click to switch it off (asks first if mods need it)' : 'Off: click to switch it on',
+      dataset: { key: `${m.id}:req:${q.id}` },
+      onclick: async ev => {
+        ev.stopPropagation();
+        if (ev.currentTarget.getAttribute('aria-disabled') === 'true') return;
+        const btn = ev.currentTarget;
+        btn.setAttribute('aria-disabled', 'true');
+        const ok = await setModsEnabled([q.id], q.state !== 'on');
+        if (ok === null && document.contains(btn)) btn.removeAttribute('aria-disabled');
+      },
+    }) : h('span', { class: 'req-noswitch', 'aria-hidden': 'true' });
+    const tags = {
+      on: [],
+      off: [h('span', { class: 'tag tag-warn' }, 'Off')],
+      missing: [h('span', { class: 'tag tag-err' }, 'Missing'),
+        h('button', { class: 'btn btn-sm', dataset: { key: `${m.id}:req:${q.modId}:dl` }, onclick: ev => { ev.stopPropagation(); downloadLinks(nexusPage); } }, icon('download'), h('span', {}, 'Download'))],
+      outside: [h('span', { class: 'tag tag-off', title: 'Installed by hand or by another tool: this app cannot switch it' }, 'In the game folder, not managed here')],
+      external: [h('span', { class: 'tag tag-off' }, 'Not on Nexus'),
+        q.url ? h('button', { class: 'btn btn-sm btn-ghost', onclick: ev => { ev.stopPropagation(); api.openLink(q.url); } }, h('span', {}, 'Open page')) : null],
+    }[q.state] || [];
+    rows.push(h('tr', { class: `req-row req-${q.state}${i === list.length - 1 ? ' last' : ''}` },
+      h('td'), h('td'),
+      h('td', {}, h('div', { class: 'req-cell' },
+        h('span', { class: 'req-line', 'aria-hidden': 'true' }), sw,
+        h('button', {
+          class: 'req-name', title: [q.id ? `${q.name}: open its details` : `${q.name}: open its Nexus page`, notes, q.notes].filter(Boolean).join('\n'),
+          onclick: ev => { ev.stopPropagation(); if (q.id) openDrawer(q.id); else if (nexusPage) api.openLink(nexusPage); },
+        }, q.name),
+        notes ? h('span', { class: 'req-note' }, notes) : null)),
+      h('td', { class: 'status-cell' }, h('div', { class: 'chips-row' }, ...tags)),
+      h('td', { class: 'num ver-cell' }, h('span', { class: 'ver-text req-ver' }, q.version || ''))));
+  });
+  return rows;
+}
+
+const hasProblem = m => !!(m.health || m.warnings?.length || state.modLogProblems[m.id] || reqProblem(m));
 
 function renderMods() {
   const all = allMods();
@@ -544,8 +621,9 @@ function renderMods() {
   for (const id of [...state.modSel]) if (!all.some(m => m.id === id)) state.modSel.delete(id);
   const byId = Object.fromEntries(all.map(m => [m.id, m]));
   const tbody = $('#mods-table tbody');
+  const neededBy = neededByMap(all);
 
-  keepFocus(tbody, () => tbody.replaceChildren(...mods.map(m => {
+  keepFocus(tbody, () => tbody.replaceChildren(...mods.flatMap(m => {
     const logIssues = state.modLogProblems[m.id];
     const upd = state.snap.updates?.[rowUpdateId(m) || m.id]; // the same update the Updates filter counts
     const tagBtn = (cls, title, section, text, extra = {}) => h('button', {
@@ -572,8 +650,10 @@ function renderMods() {
     const who = m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ');
     const kind = [m.vortex ? 'Vortex' : '', m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
     const sub = [who, kind, stamp].filter(Boolean).join(' · ');
-    return h('tr', {
-      class: 'row', tabindex: '0', dataset: { id: m.id, key: `${m.id}:row` }, 'aria-selected': 'false',
+    const needers = neededBy.get(m.id) || [];
+    const reqIssue = reqProblem(m) ? reqsOf(m.id).find(q => q.state === 'missing') ? 'missing' : 'off' : '';
+    return [h('tr', {
+      class: `row${reqsOf(m.id).length ? ' has-reqs' : ''}`, tabindex: '0', dataset: { id: m.id, key: `${m.id}:row` }, 'aria-selected': 'false',
       onclick: ev => {
         if (ev.target.closest('input,button,select')) return;
         // Ctrl or Shift picks several for the selection bar; a plain click shows the mod in the panel.
@@ -594,13 +674,15 @@ function renderMods() {
         h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name)),
       sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
     h('td', { class: 'status-cell' }, h('div', { class: 'chips-row' },
+        needers.length ? h('span', { class: 'tag tag-info', title: `Needed by ${needers.join(', ')}` }, `Needed by ${needers.length}`) : null,
+        reqIssue ? h('span', { class: `tag ${reqIssue === 'missing' ? 'tag-err' : 'tag-warn'}`, title: 'See its requirements below it' }, reqIssue === 'missing' ? 'Requirement missing' : 'Requirement off') : null,
         state.snap.vortex?.twins?.[m.id] ? h('span', { class: 'tag tag-vortex', title: `Also installed in Vortex. While it is enabled here, Vortex's copy is switched off${state.snap.vortex.twins[m.id].enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}.` }, 'Also in Vortex') : null,
         m.warnings?.length ? tagBtn('tag-warn tag-icon', `${plural(m.warnings.length, 'install warning')} — click to see`, 'warnings', icon('alert'), { 'aria-label': plural(m.warnings.length, 'install warning') }) : null,
         logIssues ? tagBtn('tag-err', 'Errors in this mod\'s game logs — click to see them', 'logs', `${logIssues} log error${logIssues === 1 ? '' : 's'}`) : null,
         m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
         upd ? tagBtn('tag-info', `Update available: ${upd.name}${upd.version ? ` v${upd.version}` : ''} — click for details`, 'update', upd.version ? `${upd.version} available` : 'Update', { 'aria-label': `Update to ${upd.version || 'a newer version'}` }) : null,
         conflictCell(m, byId))),
-    h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : h('span', { class: 'ver-text' }, m.version || '')));
+    h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : h('span', { class: 'ver-text' }, m.version || ''))), ...reqRows(m, neededBy)];
   })), null);
 
   markInspected();
@@ -717,11 +799,59 @@ async function confirmVortexClose(count) {
 }
 
 async function setModsEnabled(ids, enabled) {
+  if (!enabled) {
+    if (!(await confirmDependents(ids))) return null;
+  } else {
+    const more = await offerRequirements(ids);
+    if (more === null) return null;
+    ids = [...ids, ...more];
+  }
   const vx = ids.filter(isVx);
   // Enabling one of ours that Vortex also has switches Vortex's copy off: Vortex closes if open.
   const twins = enabled ? ids.filter(id => state.snap.vortex?.twins?.[id]?.enabled).length : 0;
   if (!(await confirmVortexClose(vx.length + twins))) return null;
   return run(enabled ? api.enable(ids) : api.disable(ids));
+}
+
+/** Switching mods off that enabled mods need: list those mods and ask first. */
+async function confirmDependents(ids) {
+  const off = new Set(ids);
+  const all = allMods();
+  const byId = Object.fromEntries(all.map(m => [m.id, m]));
+  const hit = all.filter(m => m.enabled && !off.has(m.id) && reqsOf(m.id).some(q => q.id && off.has(q.id)));
+  if (!hit.length) return true;
+  const what = ids.length === 1 ? byId[ids[0]]?.name || 'this mod' : plural(ids.length, 'mod');
+  const shown = hit.slice(0, 12);
+  return modal({
+    title: `Switch off ${what}?`,
+    body: h('div', {},
+      h('p', {}, `${plural(hit.length, 'enabled mod')} ${hit.length === 1 ? 'needs' : 'need'} ${ids.length === 1 ? 'it' : 'them'}, and will stop working until you switch ${ids.length === 1 ? 'it' : 'them'} back on:`),
+      h('ul', { class: 'plain-list' }, ...shown.map(m => h('li', {}, m.name)), hit.length > shown.length ? h('li', {}, `and ${hit.length - shown.length} more`) : null)),
+    buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Switch off', value: true, kind: 'btn-primary' }],
+  });
+}
+
+/** Switching mods on whose requirements are off: offer those too. Returns extra ids, or null to cancel. */
+async function offerRequirements(ids) {
+  const on = new Set(ids);
+  const want = new Map();
+  const missing = new Set();
+  for (const id of ids) for (const q of reqsOf(id)) {
+    if (q.state === 'off' && q.id && !on.has(q.id)) want.set(q.id, q.name);
+    if (q.state === 'missing') missing.add(q.name);
+  }
+  if (!want.size) return [];
+  const names = [...want.values()];
+  const v = await modal({
+    title: `Also switch on ${names.length === 1 ? names[0] : plural(names.length, 'requirement')}?`,
+    body: h('div', {},
+      h('p', {}, `${ids.length === 1 ? 'This mod needs' : 'These mods need'} ${names.length === 1 ? 'a mod that is' : 'mods that are'} switched off:`),
+      h('ul', { class: 'plain-list' }, ...names.map(n => h('li', {}, n))),
+      missing.size ? h('p', { class: 'hint' }, `Not installed: ${[...missing].join(', ')}. Its row below the mod has Download.`) : null),
+    buttons: [{ label: 'Cancel', value: null, safe: true }, { label: 'Only this', value: 'only' }, { label: 'Switch on all', value: 'all', kind: 'btn-primary' }],
+  });
+  if (v === null || v === undefined || v === false) return null;
+  return v === 'all' ? [...want.keys()] : [];
 }
 
 /** The version menu of a grouped row. */
@@ -1294,7 +1424,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1622,6 +1752,7 @@ async function loadSettings() {
   renderStatus();
   renderInstalls();
   updateDirty();
+  if (state.snap?.mods) renderMods(); // requirements open or collapsed
 }
 
 $('#settings-form').addEventListener('input', updateDirty);
