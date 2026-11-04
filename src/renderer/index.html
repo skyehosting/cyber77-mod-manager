@@ -816,6 +816,7 @@
                   <div class="theme-ed-main">
                     <div class="ed-body theme-ed-code">
                       <pre class="ed-gutter" id="theme-ed-gutter" aria-hidden="true"></pre>
+                      <div class="theme-ed-sw"><div class="theme-ed-sw-in" id="theme-ed-sw"></div></div>
                       <div class="ed-area">
                         <pre class="ed-hl" id="theme-ed-hl" aria-hidden="true"></pre>
                         <textarea class="ed-text" id="theme-ed-text" spellcheck="false" autocomplete="off" aria-label="Custom theme" aria-describedby="theme-ed-problems"></textarea>
@@ -863,6 +864,10 @@
             <section class="set-sec" data-sec="app" id="sec-app" aria-labelledby="sh-app">
               <h2 class="set-title" id="sh-app"><svg class="i"><use href="#i-wrench"/></svg>Advanced</h2>
               <div class="set-card">
+                <div class="set-row">
+                  <div class="set-label"><span class="set-name">Setup wizard</span><p class="set-desc">The welcome walk-through: the game folder, your Nexus key, the AI helper and a look, one step at a time</p></div>
+                  <div class="set-ctl set-ctl-auto"><button type="button" class="btn" id="s-setup-open"><svg class="i"><use href="#i-play"/></svg><span>Run it again</span></button></div>
+                </div>
                 <div class="set-row set-row-wide">
                   <div class="set-label"><label for="s-data">Data folder</label><p class="set-desc">Downloads, staging and backups. Takes effect after a restart; existing downloads are not moved.</p></div>
                   <div class="set-ctl"><div class="field-row"><input id="s-data" class="path mono" type="text" spellcheck="false"><button type="button" class="btn" id="s-data-browse">Change</button></div></div>
@@ -989,6 +994,7 @@
     <button class="btn btn-sm btn-primary" id="update-now">Restart now</button>
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="setup" id="setup" role="dialog" aria-modal="true" aria-label="Setup" hidden></div>
 
   <script src="../shared/fomod.js"></script>
   <script src="app.js"></script>
@@ -999,6 +1005,7 @@
   <script src="modconfig.js"></script>
   <script src="editor.js"></script>
   <script src="theme-editor.js"></script>
+  <script src="setup.js"></script>
   <script src="assistant.js"></script>
 </body>
 </html>

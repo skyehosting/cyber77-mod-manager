@@ -37,6 +37,10 @@ const THEME_TOKENS = [
     ['--err', 'errors'], ['--err-text', 'errors as text'], ['--err-code', 'error lines in logs'], ['--err-ink', 'text on red'],
     ['--violet', 'a profile colour'], ['--violet-text', 'that, as text'],
   ]],
+  ['Switches', [
+    ['--toggle-on', 'a switch that is on'], ['--toggle-on-knob', 'its knob'], ['--toggle-off', 'a switch that is off'],
+    ['--toggle-off-knob', 'its knob'], ['--toggle-edge', 'an outline for a switch that is off (transparent: none)'],
+  ]],
   ['Code (the file editor, this editor)', [
     ['--tk-str', 'strings'], ['--tk-num', 'numbers, true/false'], ['--tk-kw', 'keywords'], ['--tk-type', 'types'], ['--tk-fn', 'functions'],
   ]],
@@ -56,6 +60,7 @@ const THEME_CHECKS = [
   ['Play button', '--ok-ink', '--ok', 4.5], ['While the game runs', '--ok-text', '--running-bg', 4.5], ['Text on red', '--err-ink', '--err', 4.5],
   ['Green text', '--ok-text', '--surface', 4.5], ['Red text', '--err-text', '--surface', 4.5], ['Warning text', '--warn-text', '--surface', 4.5],
   ['Information text', '--info-text', '--surface', 4.5], ['Log error lines', '--err-code', '--console-bg', 4.5], ['Text field edges', '--field-line', '--surface', 2.2], ['Open page in the sidebar', '--nav-active', '--side-bg', 1.15],
+  ['A switch that is on', '--toggle-on', '--surface', 3], ['The knob of a switch that is off', '--toggle-off-knob', '--toggle-off', 3],
 ];
 const SHADOW_KEYS = new Set(['--shadow', '--shadow-sm']);
 // Mixed from the base colours in styles.css; a custom theme may set them too, to fine-tune.
@@ -78,6 +83,7 @@ const THEMES = {
       '--violet': '#a78bfa', '--violet-text': '#b9a6fb',
       '--tk-str': '#a8d8a0', '--tk-num': '#f0b479', '--tk-kw': '#c7a0f5', '--tk-type': '#79c0ff', '--tk-fn': '#e8d48b',
       '--scrim': 'rgb(5 6 8 / 0.72)', '--shadow': '0 1.1rem 2.7rem rgb(0 0 0 / 0.55)', '--shadow-sm': '0 1px 2px rgb(0 0 0 / 0.3)',
+      '--toggle-on': '#4cc98a', '--toggle-on-knob': '#0a0c0f', '--toggle-off': '#2a2f37', '--toggle-off-knob': '#7a808b', '--toggle-edge': 'transparent',
     },
   },
   david: {
@@ -94,6 +100,7 @@ const THEMES = {
       '--violet': '#a04fbf', '--violet-text': '#86389f',
       '--tk-str': '#2c7a33', '--tk-num': '#ad5a00', '--tk-kw': '#7a3dbf', '--tk-type': '#1d5fae', '--tk-fn': '#86660a',
       '--scrim': 'rgb(28 33 45 / 0.38)', '--shadow': '0 1.1rem 2.7rem rgb(22 28 40 / 0.24)', '--shadow-sm': '0 1px 2px rgb(22 28 40 / 0.1)',
+      '--toggle-on': '#147a49', '--toggle-on-knob': '#ffffff', '--toggle-off': '#d6dae1', '--toggle-off-knob': '#5f6879', '--toggle-edge': 'transparent',
       '--nav-active': '#ffffff',
     },
   },
@@ -111,6 +118,7 @@ const THEMES = {
       '--violet': '#c6a6dc', '--violet-text': '#d7bfe8',
       '--tk-str': '#bcdb9e', '--tk-num': '#f1b683', '--tk-kw': '#d9ade3', '--tk-type': '#a0cbea', '--tk-fn': '#eed596',
       '--scrim': 'rgb(22 13 8 / 0.66)', '--shadow': '0 1.1rem 2.7rem rgb(16 9 5 / 0.5)', '--shadow-sm': '0 1px 2px rgb(16 9 5 / 0.32)',
+      '--toggle-on': '#a3cc9d', '--toggle-on-knob': '#31251e', '--toggle-off': '#6c5747', '--toggle-off-knob': '#ccb69e', '--toggle-edge': 'transparent',
     },
   },
   sakura: {
@@ -127,7 +135,60 @@ const THEMES = {
       '--violet': '#9666d2', '--violet-text': '#7a49bc',
       '--tk-str': '#36824a', '--tk-num': '#b85a18', '--tk-kw': '#9c3e96', '--tk-type': '#3567ad', '--tk-fn': '#94680f',
       '--scrim': 'rgb(48 20 36 / 0.42)', '--shadow': '0 1.1rem 2.7rem rgb(110 35 75 / 0.15)', '--shadow-sm': '0 1px 2px rgb(110 35 75 / 0.09)',
+      '--toggle-on': '#c2456f', '--toggle-on-knob': '#ffffff', '--toggle-off': '#ffffff', '--toggle-off-knob': '#c27d99', '--toggle-edge': '#d495ae',
       '--nav-active': '#ffffff',
+    },
+  },
+  samurai: {
+    name: 'Samurai', desc: 'Netrunner\'s dark, with Johnny\'s red', scheme: 'dark',
+    tokens: {
+      '--side-bg': '#0a0c0f', '--bg': '#0d0f12', '--panel': '#0f1215', '--surface': '#111418', '--surface-2': '#13161b', '--hover-bg': '#15181d',
+      '--surface-3': '#1a1e24', '--nav-active': '#241c20', '--seg-on': '#22262d', '--menu-bg': '#1f232a', '--console-bg': '#0a0c0f',
+      '--line-soft': '#1a1d22', '--line': '#1e2228', '--line-side': '#1c2026', '--line-strong': '#2a2f37', '--line-menu': '#2f343d', '--field-line': '#4a505a',
+      '--text': '#e6e8eb', '--text-body': '#d5d8dd', '--text-2': '#a3a9b3', '--muted': '#8a909b', '--faint': '#7c828d', '--disabled': '#4a505a',
+      '--accent': '#f5505c', '--accent-hover': '#f86b75', '--accent-ink': '#14050a',
+      '--select': '#66b8ea', '--info': '#66b8ea', '--info-text': '#7cc4f0',
+      '--ok': '#4cc98a', '--ok-hover': '#5cd59a', '--ok-ink': '#07140d', '--ok-text': '#8ee0b5', '--running-bg': '#1b3a2a', '--running-hover': '#214532',
+      '--warn': '#e9cf52', '--warn-text': '#f0dc86', '--err': '#ff8a3d', '--err-text': '#ffa463', '--err-code': '#ffb47c', '--err-ink': '#1d0d03',
+      '--violet': '#a78bfa', '--violet-text': '#b9a6fb',
+      '--tk-str': '#a8d8a0', '--tk-num': '#f0b479', '--tk-kw': '#c7a0f5', '--tk-type': '#79c0ff', '--tk-fn': '#e8d48b',
+      '--scrim': 'rgb(5 6 8 / 0.72)', '--shadow': '0 1.1rem 2.7rem rgb(0 0 0 / 0.55)', '--shadow-sm': '0 1px 2px rgb(0 0 0 / 0.3)',
+      '--accent-off-text': '#c87580',
+      '--toggle-on': '#f5505c', '--toggle-on-knob': '#14050a', '--toggle-off': '#2a2f37', '--toggle-off-knob': '#8a909b', '--toggle-edge': 'transparent',
+    },
+  },
+  ncpd: {
+    name: 'NCPD', desc: 'Deep navy with a badge-gold yellow', scheme: 'dark',
+    tokens: {
+      '--side-bg': '#0b1324', '--bg': '#0e172b', '--panel': '#111b31', '--surface': '#132036', '--surface-2': '#16243c', '--hover-bg': '#1a2942',
+      '--surface-3': '#1f304d', '--nav-active': '#1f304d', '--seg-on': '#273a5a', '--menu-bg': '#1c2c47', '--console-bg': '#0b1324',
+      '--line-soft': '#1b2943', '--line': '#213150', '--line-side': '#1d2c47', '--line-strong': '#2f4366', '--line-menu': '#344a70', '--field-line': '#5a6f93',
+      '--text': '#e8edf6', '--text-body': '#d6deeb', '--text-2': '#aebbd0', '--muted': '#97a7c1', '--faint': '#8a9ab4', '--disabled': '#4a5a78',
+      '--accent': '#f5c518', '--accent-hover': '#f8d23f', '--accent-ink': '#141005',
+      '--select': '#6cb2f0', '--info': '#6cb2f0', '--info-text': '#8cc5f5',
+      '--ok': '#4cc98a', '--ok-hover': '#5cd59a', '--ok-ink': '#07140d', '--ok-text': '#8ee0b5', '--running-bg': '#173a33', '--running-hover': '#1d463d',
+      '--warn': '#f59e4c', '--warn-text': '#f8b878', '--err': '#f0675c', '--err-text': '#f58a80', '--err-code': '#f5a39b', '--err-ink': '#1a0705',
+      '--violet': '#a78bfa', '--violet-text': '#b9a6fb',
+      '--tk-str': '#a8d8a0', '--tk-num': '#f0b479', '--tk-kw': '#c7a0f5', '--tk-type': '#79c0ff', '--tk-fn': '#e8d48b',
+      '--scrim': 'rgb(4 8 18 / 0.72)', '--shadow': '0 1.1rem 2.7rem rgb(0 4 14 / 0.55)', '--shadow-sm': '0 1px 2px rgb(0 4 14 / 0.3)',
+      '--toggle-on': '#4cc98a', '--toggle-on-knob': '#0b1324', '--toggle-off': '#2f4366', '--toggle-off-knob': '#97a7c1', '--toggle-edge': 'transparent',
+    },
+  },
+  corpo: {
+    name: 'Corpo', desc: 'Light: crisp white with corporate navy', scheme: 'light',
+    tokens: {
+      '--side-bg': '#e4e9f2', '--bg': '#f2f5fa', '--panel': '#edf1f7', '--surface': '#ffffff', '--surface-2': '#f7f9fc', '--hover-bg': '#eef2f8',
+      '--surface-3': '#e3e9f3', '--nav-active': '#ffffff', '--seg-on': '#d9e1ee', '--menu-bg': '#ffffff', '--console-bg': '#eef2f8',
+      '--line-soft': '#e3e8f0', '--line': '#d3dbe7', '--line-side': '#ccd5e3', '--line-strong': '#bfc9d9', '--line-menu': '#ccd5e3', '--field-line': '#8592a8',
+      '--text': '#0f1d3a', '--text-body': '#1c2a47', '--text-2': '#3c4a66', '--muted': '#4f5d79', '--faint': '#5c6984', '--disabled': '#a3adbf',
+      '--accent': '#1f3f86', '--accent-hover': '#18336e', '--accent-ink': '#ffffff',
+      '--select': '#2f6fd0', '--info': '#2a6cc4', '--info-text': '#1d5aa8',
+      '--ok': '#157a48', '--ok-hover': '#198a52', '--ok-ink': '#ffffff', '--ok-text': '#126b3f', '--running-bg': '#d8efe3', '--running-hover': '#c9e8d8',
+      '--warn': '#8a5800', '--warn-text': '#774c00', '--err': '#b3261e', '--err-text': '#a0221b', '--err-code': '#971f18', '--err-ink': '#ffffff',
+      '--violet': '#a04fbf', '--violet-text': '#86389f',
+      '--tk-str': '#2c7a33', '--tk-num': '#ad5a00', '--tk-kw': '#7a3dbf', '--tk-type': '#1d5fae', '--tk-fn': '#86660a',
+      '--scrim': 'rgb(15 29 58 / 0.38)', '--shadow': '0 1.1rem 2.7rem rgb(15 29 58 / 0.2)', '--shadow-sm': '0 1px 2px rgb(15 29 58 / 0.1)',
+      '--toggle-on': '#1f3f86', '--toggle-on-knob': '#ffffff', '--toggle-off': '#dfe5ef', '--toggle-off-knob': '#5c6984', '--toggle-edge': '#bfc9d9',
     },
   },
 };
@@ -232,3 +293,5 @@ function applyTheme(id, customText = themeStore.get('theme.custom', '')) {
 }
 
 applyTheme(themeStore.get('theme', 'netrunner'));
+// The first run opens on the setup wizard: the app stays hidden until setup.js decides (no flash of it).
+if (!themeStore.get('setup.done', false)) document.documentElement.dataset.setup = 'pending';

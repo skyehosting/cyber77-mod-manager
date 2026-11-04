@@ -108,6 +108,7 @@ const state = {
 const pageHooks = {};
 
 function goTo(page) {
+  if (typeof closeColourPicker === 'function') closeColourPicker(); // theme-editor.js: a picker belongs to its page
   $$('.nav-item').forEach(b => {
     const on = b.dataset.page === page;
     b.classList.toggle('active', on);

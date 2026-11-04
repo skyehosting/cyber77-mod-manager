@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, toast, store, debounce, highlight, confirmBox, THEMES, THEME_KEYS, THEME_CHECKS, THEME_APART, looksApart, themeState, themeTemplate, parseTheme, applyTheme */
+/* global api, $, $$, h, icon, toast, store, debounce, highlight, confirmBox, THEMES, THEME_KEYS, THEME_CHECKS, THEME_APART, SHADOW_KEYS, looksApart, themeState, themeTemplate, parseTheme, applyTheme */
 
 // ---------------------------------------------------------------- Settings > Interface: themes
 
@@ -9,7 +9,7 @@
  * colours the app puts on top of each other is measured against the usual contrast minimums.
  */
 
-const THEME_ORDER = ['netrunner', 'david', 'coyote', 'sakura', 'custom'];
+const THEME_ORDER = ['netrunner', 'samurai', 'ncpd', 'david', 'corpo', 'coyote', 'sakura', 'custom'];
 const customText = () => store.get('theme.custom', '') || themeTemplate('netrunner');
 
 /** A colour as [r, g, b, a] (0-255, alpha 0-1), read by the browser itself; null if it is not one. */
@@ -100,6 +100,7 @@ const ted = { shown: false };
 
 function showThemeEditor(on) {
   $('#theme-ed').hidden = !on;
+  if (!on) closeColourPicker();
   if (!on || ted.shown) { ted.shown = on; return; }
   ted.shown = true;
   const ta = $('#theme-ed-text');
@@ -112,6 +113,7 @@ function paintThemeEditor() {
   const text = ta.value;
   $('#theme-ed-hl').innerHTML = highlight(text, 'theme'); // highlight() escapes every piece of the text
   $('#theme-ed-gutter').textContent = Array.from({ length: text.split('\n').length }, (_, i) => i + 1).join('\n');
+  paintSwatches(text);
   syncThemeScroll();
   const parsed = parseTheme(text);
   $('#theme-ed-checks').replaceChildren(...THEME_CHECKS.map(([label, fgK, bgK, min]) => {
@@ -160,7 +162,162 @@ function syncThemeScroll() {
   $('#theme-ed-hl').scrollTop = ta.scrollTop;
   $('#theme-ed-hl').scrollLeft = ta.scrollLeft;
   $('#theme-ed-gutter').scrollTop = ta.scrollTop;
+  $('#theme-ed-sw').style.transform = `translateY(${-ta.scrollTop}px)`;
 }
+
+// ---------------------------------------------------------------- the colour picker
+
+/*
+ * Beside each colour line, a swatch of that colour. Clicking it opens a small picker (a
+ * saturation/brightness square, a hue slider, R G B and hex boxes) that writes the colour into
+ * that line as you go, so the app changes with it.
+ */
+
+const COLOUR_LINE = /^(\s*)(--[\w-]+)(\s*:\s*)([^;]*?)(\s*;.*)?$/;
+
+function paintSwatches(text) {
+  const ta = $('#theme-ed-text');
+  const cs = getComputedStyle(ta);
+  const lh = parseFloat(cs.lineHeight) || 20;
+  const top = parseFloat(cs.paddingTop) || 0;
+  const known = new Set(THEME_KEYS);
+  // Comments are blanked (same length) so a line inside one is not offered.
+  const clean = text.replace(/\/\*[\s\S]*?(\*\/|$)/g, m => m.replace(/[^\n]/g, ' ')).split('\n');
+  $('#theme-ed-sw').replaceChildren(...clean.flatMap((line, i) => {
+    const m = line.match(COLOUR_LINE);
+    if (!m || !known.has(m[2]) || SHADOW_KEYS.has(m[2]) || !rgbaOf(m[4].trim())) return [];
+    const b = h('button', {
+      type: 'button', class: 'theme-sw', title: `Pick a colour for ${m[2]}`, 'aria-label': `Pick a colour for ${m[2]}`, dataset: { line: String(i) },
+      onclick: ev => openColourPicker(i, m[2], ev.currentTarget),
+    });
+    b.style.top = `${top + i * lh + (lh - 14) / 2}px`;
+    b.style.background = m[4].trim();
+    return [b];
+  }));
+}
+
+/** Put a colour into one line of the theme text, keeping the rest of the line (its comment) as it was. */
+function setThemeLine(i, value) {
+  const ta = $('#theme-ed-text');
+  const lines = ta.value.split('\n');
+  const m = lines[i]?.match(COLOUR_LINE);
+  if (!m) return;
+  lines[i] = `${m[1]}${m[2]}${m[3]}${value}${m[5] ?? ';'}`;
+  const keep = ta.scrollTop;
+  ta.value = lines.join('\n');
+  ta.scrollTop = keep;
+  paintThemeEditor();
+  saveCustomTheme();
+}
+
+const toHsv = ([r, g, b]) => {
+  const [x, y, z] = [r / 255, g / 255, b / 255];
+  const max = Math.max(x, y, z);
+  const d = max - Math.min(x, y, z);
+  const hue = !d ? 0 : max === x ? ((y - z) / d) % 6 : max === y ? (z - x) / d + 2 : (x - y) / d + 4;
+  return [(hue * 60 + 360) % 360, max ? d / max : 0, max];
+};
+const fromHsv = (hh, s, v) => {
+  const f = n => { const k = (n + hh / 60) % 6; return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1)))); };
+  return [f(5), f(3), f(1)];
+};
+
+const cp = { el: null, line: -1, hsv: [0, 0, 0], alpha: 1, opener: null };
+
+function openColourPicker(line, token, opener) {
+  closeColourPicker();
+  const value = $('#theme-ed-text').value.split('\n')[line].match(COLOUR_LINE)?.[4].trim();
+  const c = rgbaOf(value);
+  if (!c) return;
+  Object.assign(cp, { line, hsv: toHsv(c), alpha: c[3], opener, before: value });
+  const num = (label, i) => h('label', { class: 'cp-num' }, h('span', {}, label),
+    h('input', { type: 'number', min: '0', max: '255', step: '1', 'aria-label': label === 'R' ? 'Red' : label === 'G' ? 'Green' : 'Blue', dataset: { ch: String(i) } }));
+  const el = h('div', { class: 'cpick', role: 'dialog', 'aria-label': `Colour for ${token}` },
+    h('div', { class: 'cp-head' }, h('code', {}, token), h('span', { class: 'cp-pair' }, h('span', { class: 'cp-old', title: 'Before' }), h('span', { class: 'cp-new', title: 'Now' }))),
+    h('div', { class: 'cp-sv', tabindex: '0', 'aria-label': 'Saturation and brightness: arrow keys move', role: 'slider' }, h('span', { class: 'cp-dot' })),
+    h('input', { class: 'cp-hue', type: 'range', min: '0', max: '360', step: '1', 'aria-label': 'Hue' }),
+    h('div', { class: 'cp-row' }, num('R', 0), num('G', 1), num('B', 2),
+      h('label', { class: 'cp-num cp-hex' }, h('span', {}, 'Hex'), h('input', { type: 'text', maxlength: '7', spellcheck: 'false', 'aria-label': 'Hex' }))),
+    h('div', { class: 'cp-foot' },
+      h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: () => { setThemeLine(cp.line, cp.before); closeColourPicker(true); } }, 'Undo'),
+      h('button', { type: 'button', class: 'btn btn-sm btn-primary', onclick: () => closeColourPicker(true) }, 'Done')));
+  el.querySelector('.cp-old').style.background = value;
+  document.body.append(el);
+  cp.el = el;
+  // Beside the swatch, inside the window.
+  const r = opener.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const hgt = el.offsetHeight;
+  el.style.left = `${Math.max(8, Math.min(r.right + 10, innerWidth - w - 8))}px`;
+  el.style.top = `${Math.max(8, Math.min(r.top - 20, innerHeight - hgt - 8))}px`;
+
+  const sv = el.querySelector('.cp-sv');
+  const pickAt = ev => {
+    const b = sv.getBoundingClientRect();
+    cp.hsv[1] = Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width));
+    cp.hsv[2] = 1 - Math.min(1, Math.max(0, (ev.clientY - b.top) / b.height));
+    commitColour();
+  };
+  sv.addEventListener('pointerdown', ev => { sv.setPointerCapture(ev.pointerId); pickAt(ev); });
+  sv.addEventListener('pointermove', ev => { if (sv.hasPointerCapture(ev.pointerId)) pickAt(ev); });
+  sv.addEventListener('keydown', ev => {
+    const step = ev.shiftKey ? 0.1 : 0.02;
+    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[ev.key];
+    if (!d) return;
+    ev.preventDefault();
+    cp.hsv[1] = Math.min(1, Math.max(0, cp.hsv[1] + d[0]));
+    cp.hsv[2] = Math.min(1, Math.max(0, cp.hsv[2] + d[1]));
+    commitColour();
+  });
+  el.querySelector('.cp-hue').addEventListener('input', ev => { cp.hsv[0] = Number(ev.target.value); commitColour(); });
+  el.querySelectorAll('.cp-num input[type=number]').forEach(inp => inp.addEventListener('input', () => {
+    const rgb = [...el.querySelectorAll('.cp-num input[type=number]')].map(x => Math.min(255, Math.max(0, Math.round(Number(x.value) || 0))));
+    cp.hsv = toHsv(rgb);
+    commitColour(true);
+  }));
+  el.querySelector('.cp-hex input').addEventListener('input', ev => {
+    const v = ev.target.value.trim();
+    if (!/^#?[0-9a-f]{6}$/i.test(v)) return;
+    cp.hsv = toHsv(rgbaOf(v.startsWith('#') ? v : `#${v}`));
+    commitColour(false, true);
+  });
+  el.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeColourPicker(true); } });
+  paintPicker();
+  sv.focus();
+}
+
+/** The picker's controls from its colour; `fromNums`/`fromHex` leave the box being typed in alone. */
+function paintPicker(fromNums = false, fromHex = false) {
+  const el = cp.el;
+  const rgb = fromHsv(...cp.hsv);
+  el.querySelector('.cp-sv').style.background = `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${cp.hsv[0]} 100% 50%))`;
+  const dot = el.querySelector('.cp-dot');
+  dot.style.left = `${cp.hsv[1] * 100}%`;
+  dot.style.top = `${(1 - cp.hsv[2]) * 100}%`;
+  el.querySelector('.cp-sv').setAttribute('aria-valuetext', `saturation ${Math.round(cp.hsv[1] * 100)}%, brightness ${Math.round(cp.hsv[2] * 100)}%`);
+  el.querySelector('.cp-hue').value = String(Math.round(cp.hsv[0]));
+  if (!fromNums) el.querySelectorAll('.cp-num input[type=number]').forEach((x, i) => { x.value = String(rgb[i]); });
+  if (!fromHex) el.querySelector('.cp-hex input').value = hexOf(rgb);
+  el.querySelector('.cp-new').style.background = hexOf(rgb);
+}
+
+function commitColour(fromNums = false, fromHex = false) {
+  paintPicker(fromNums, fromHex);
+  const rgb = fromHsv(...cp.hsv);
+  // A see-through colour stays see-through (only its colour changes).
+  setThemeLine(cp.line, cp.alpha < 1 ? `rgb(${rgb.join(' ')} / ${Math.round(cp.alpha * 100) / 100})` : hexOf(rgb));
+}
+
+function closeColourPicker(refocus = false) {
+  if (!cp.el) return;
+  cp.el.remove();
+  cp.el = null;
+  if (refocus) $(`#theme-ed-sw [data-line="${cp.line}"]`)?.focus();
+}
+document.addEventListener('pointerdown', ev => { if (cp.el && !ev.target.closest('.cpick, .theme-sw')) closeColourPicker(); });
+addEventListener('resize', () => closeColourPicker());
+// Leaving the page (the sidebar, Ctrl+B, a link) closes it too.
+$$('.nav-item, [data-goto]').forEach(b => b.addEventListener('click', () => closeColourPicker()));
 
 function goToThemeLine(n) {
   const ta = $('#theme-ed-text');
