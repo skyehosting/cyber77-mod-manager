@@ -47,6 +47,7 @@
     <button role="tab" id="t-features" aria-controls="features" aria-selected="false" tabindex="-1">Features</button>
     <button role="tab" id="t-themes" aria-controls="themes" aria-selected="false" tabindex="-1">Themes</button>
     <button role="tab" id="t-download" aria-controls="download" aria-selected="false" tabindex="-1">Download</button>
+    <button role="tab" id="t-source" aria-controls="source" aria-selected="false" tabindex="-1">Source &amp; build</button>
     <button role="tab" id="t-license" aria-controls="license" aria-selected="false" tabindex="-1">License</button>
   </nav>
 
@@ -141,6 +142,34 @@
         <div class="note"><h3>You'll need</h3><p>Windows 10 or 11, Cyberpunk 2077 (Steam, GOG or Epic), and a free Nexus Mods account. Premium makes downloads direct.</p></div>
         <div class="note"><h3>Updates</h3><p>The app updates itself in the background and installs the new version when you restart it.</p></div>
         <div class="note"><h3>Your keys stay yours</h3><p>Your Nexus and AI keys are encrypted on your PC and never leave it except to talk to those services.</p></div>
+      </div>
+    </section>
+
+    <!-- SOURCE & BUILD -->
+    <section class="panel" id="source" role="tabpanel" aria-labelledby="t-source" tabindex="0" hidden>
+      <h2>Open source, built in the open</h2>
+      <p class="lede">All of the app's code is on <a href="https://github.com/skyehosting/edgerunners-mod-manager">GitHub</a>. Every release is built from it by <a href="https://github.com/skyehosting/edgerunners-mod-manager/actions/workflows/release.yml">GitHub Actions</a> on GitHub's own Windows machines: the tests run, the code and then the built app are scanned for keys, and only then is the installer published. The <a href="https://github.com/skyehosting/edgerunners-mod-manager/blob/main/.github/workflows/release.yml">workflow file</a> is in the repository, and each run's log shows every step.</p>
+      <div class="split build">
+        <ol class="steps">
+          <li><b>Install the tools:</b> <a href="https://git-scm.com/download/win">Git</a>, <a href="https://nodejs.org/">Node.js 24</a> and <a href="https://www.7-zip.org/">7-Zip</a> (the app ships 7-Zip's own program, unchanged, to unpack mods).</li>
+          <li><b>Get the code</b> and its packages:
+            <pre><code>git clone https://github.com/skyehosting/edgerunners-mod-manager.git
+cd edgerunners-mod-manager
+npm ci</code></pre>
+            To build one exact release, check out its tag before <code>npm ci</code>, e.g. <code>git checkout v1.1.61</code>.</li>
+          <li><b>Run the tests</b> (optional): <code>npm test</code></li>
+          <li><b>Add 7-Zip</b> to the build (PowerShell):
+            <pre><code>New-Item -ItemType Directory -Force build\7zip
+$7z = "C:\Program Files\7-Zip"
+Copy-Item "$7z\7z.exe","$7z\7z.dll","$7z\License.txt" build\7zip</code></pre></li>
+          <li><b>Build the installer:</b> <code>npm run dist</code>. It lands in <code>dist\</code> as <code>Edgerunners-Mod-Manager-Setup-&lt;version&gt;.exe</code> (GitHub's builds stamp the release number in first; a local build keeps the version in <code>package.json</code>).</li>
+        </ol>
+        <div class="note">
+          <h3>Just want to run it?</h3>
+          <p>After step 2, <code>npm start</code> opens the app straight from the code, with nothing installed.</p>
+          <h3 class="gap">What's inside</h3>
+          <p>JavaScript on Electron, no closed parts. The installer is made by electron-builder; 7-Zip is the only program bundled with it, with its license.</p>
+        </div>
       </div>
     </section>
 

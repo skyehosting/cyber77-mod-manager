@@ -196,7 +196,28 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 
 Every push to `main` publishes a new version (`.github/workflows/release.yml`, on GitHub's Windows runners): the tests run, the app is built with electron-builder, and a GitHub release `v1.1.<build number>` is published with the installer and `latest.yml`, which installed copies check. A push never ships a key: `tools/check-secrets.js` scans every tracked file, and then everything inside the built app, for API keys and tokens, and stops the release on any hit. The app's own settings (where your API key is kept, encrypted) live in `%APPDATA%\Cyber Mod Manager` and are never part of the repository or the build.
 
-From source: `npm install`, then `npm start` (or `Start Cyber Mod Manager.cmd`). `npm run dist` builds the installer locally into `dist/`.
+## Build it yourself
+
+What GitHub's release build does, on your own PC (Windows 10/11):
+
+1. Install [Git](https://git-scm.com/download/win), [Node.js 24](https://nodejs.org/) and [7-Zip](https://www.7-zip.org/) (the app ships 7-Zip's own program, unchanged, to unpack mods).
+2. Get the code and its packages:
+   ```
+   git clone https://github.com/skyehosting/edgerunners-mod-manager.git
+   cd edgerunners-mod-manager
+   npm ci
+   ```
+   To build one exact release, check out its tag first, e.g. `git checkout v1.1.61`.
+3. Run the tests (optional): `npm test`
+4. Add 7-Zip to the build (PowerShell):
+   ```
+   New-Item -ItemType Directory -Force build\7zip
+   $7z = "C:\Program Files\7-Zip"
+   Copy-Item "$7z\7z.exe","$7z\7z.dll","$7z\License.txt" build\7zip
+   ```
+5. Build the installer: `npm run dist`. It lands in `dist\Edgerunners-Mod-Manager-Setup-<version>.exe` (GitHub's builds stamp the release number in first; a local build keeps the version in `package.json`).
+
+To run the app straight from the code instead, `npm start` after step 2.
 
 ## Tests
 

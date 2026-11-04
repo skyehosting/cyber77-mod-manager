@@ -137,6 +137,13 @@ main { max-width: var(--max); margin: 0 auto; padding: 3.5rem clamp(1rem, 4vw, 2
 .steps li { position: relative; padding-left: 3.4rem; color: var(--text-2); min-height: 2.4rem; }
 .steps li::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: -0.1rem; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border: 1px solid var(--yellow); color: var(--yellow); font: 700 1.2rem var(--display); }
 .steps b { color: var(--text); }
+/* Source & build: commands to copy, and the steps beside a note. */
+#source .lede { max-width: 52rem; }
+.split.build { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); align-items: start; margin-top: 1.5rem; }
+code { font: 0.88em/1.5 "Cascadia Mono", Consolas, monospace; color: var(--text); background: rgb(110 220 230 / 0.08); padding: 0.1em 0.35em; }
+pre { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card-solid); border: 1px solid var(--line); border-left: 3px solid var(--yellow); overflow-x: auto; }
+pre code { padding: 0; background: none; white-space: pre; }
+.note h3.gap { margin-top: 1.2rem; }
 .dl-box { justify-self: center; text-align: center; }
 .notes { margin-top: 2.5rem; }
 
@@ -150,7 +157,7 @@ main { max-width: var(--max); margin: 0 auto; padding: 3.5rem clamp(1rem, 4vw, 2
   .hero-shot { transform: none; max-width: 100%; }
   .four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .features, .three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .split { grid-template-columns: 1fr; }
+  .split, .split.build { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 620px) {
   .top-links a:not(.btn) { display: none; }
