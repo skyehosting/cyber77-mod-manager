@@ -11,7 +11,7 @@
  * (themes.js marks the page in <head>, so nothing flashes).
  */
 
-const SETUP_STEPS = ['welcome', 'game', 'nexus', 'ai', 'look', 'done'];
+const SETUP_STEPS = ['welcome', 'game', 'nexus', 'ai', 'look', 'saves', 'done'];
 const su = { step: 0, busy: false, result: { game: false, nexus: '', ai: '' }, prevFocus: null };
 
 async function maybeStartSetup() {
@@ -187,7 +187,7 @@ const SETUP_BUILD = {
       await paint();
     };
     return stepParts({
-      kicker: 'Step 1 of 4 · Your game', title: 'Where is Cyberpunk 2077?',
+      kicker: 'Step 1 of 5 · Your game', title: 'Where is Cyberpunk 2077?',
       text: 'Mods go into the game\'s folder. The app usually finds it by itself; check it here, or point to it.',
       body: h('div', { class: 'su-ctl' }, status, h('div', { class: 'su-row' }, find, pick)),
       art: ART.game(), primary: primaryBtn('Continue', next), skip: { label: 'Skip for now', fn: next },
@@ -217,7 +217,7 @@ const SETUP_BUILD = {
     const go = primaryBtn('Continue', async () => { if (key.value.trim() && !await check()) return; next(); });
     if (su.result.nexus) setStatus(status, 'ok', `Signed in as ${su.result.nexus}`);
     return stepParts({
-      kicker: 'Step 2 of 4 · Nexus Mods', title: 'Connect your Nexus account',
+      kicker: 'Step 2 of 5 · Nexus Mods', title: 'Connect your Nexus account',
       text: 'Your personal API key lets the app download mods, check them for updates, and fetch what they need. It is stored encrypted on this PC and never shown again.',
       body: h('div', { class: 'su-ctl' },
         h('button', { type: 'button', class: 'btn su-link', onclick: () => api.openLink('https://next.nexusmods.com/settings/api-keys') }, icon('external'), h('span', {}, 'Open my API key page on Nexus')),
@@ -271,7 +271,7 @@ const SETUP_BUILD = {
     };
     const field = (label, input) => h('label', { class: 'su-field' }, h('span', {}, label), input);
     return stepParts({
-      kicker: 'Step 3 of 4 · AI helper (optional)', title: 'Want a helper that reads your logs?',
+      kicker: 'Step 3 of 5 · AI helper (optional)', title: 'Want a helper that reads your logs?',
       text: 'The AI assistant reads your mods and game logs, explains crashes in plain words, and suggests fixes. It changes nothing without your OK. It uses your own AI provider, or a model running on this PC (Ollama: http://localhost:11434/v1).',
       body: h('div', { class: 'su-ctl su-grid' },
         field('Provider', provider), field('Endpoint', endpoint), field('Model', model), field('API key', aiKey),
@@ -307,9 +307,32 @@ const SETUP_BUILD = {
     }));
     paint();
     return stepParts({
-      kicker: 'Step 4 of 4 · The look', title: 'Pick a look',
+      kicker: 'Step 4 of 5 · The look', title: 'Pick a look',
       text: 'The whole app changes as you choose. Settings > Interface has these too, and a Custom theme you can write yourself.',
       body: grid, primary: primaryBtn('Continue', next),
+    });
+  },
+
+  saves() {
+    const toggle = (checked, label, note, onchange) => {
+      const box = h('input', { type: 'checkbox', class: 'toggle', checked, onchange: () => onchange(box.checked, box) });
+      return h('label', { class: 'su-option' }, h('span', { class: 'su-option-text' }, h('b', {}, label), h('span', {}, note)), box);
+    };
+    su.result.backups = state.settings?.saveAutoBackup !== false;
+    su.result.perProfile = !!state.settings?.perProfileSaves;
+    const body = h('div', { class: 'su-options' },
+      toggle(su.result.backups, 'Back up my saves automatically', 'Before you play, and right away when your mods changed. Kept outside the app: uninstalling never removes them.', async (on, box) => {
+        const s = await run(api.setSettings({ saveAutoBackup: on }));
+        if (s) { state.settings = s; su.result.backups = on; } else box.checked = !on;
+      }),
+      toggle(su.result.perProfile, 'Give each profile its own saves', 'Switching profiles swaps your saves too, so a modded playthrough never mixes with another. Works best with cloud saves off for Cyberpunk (Steam, GOG).', async (on, box) => {
+        const r = await run(api.setPerProfileSaves(on));
+        if (r) { su.result.perProfile = on; state.settings = { ...(state.settings || {}), perProfileSaves: on }; } else box.checked = !on;
+      }));
+    return stepParts({
+      kicker: 'Step 5 of 5 · Your saves', title: 'Keep your saves safe',
+      text: 'Mods can break a save. A backup before you play means you can always go back. Manage saves (in the sidebar) shows every save and backup.',
+      body, primary: primaryBtn('Continue', next),
     });
   },
 
@@ -323,7 +346,8 @@ const SETUP_BUILD = {
         item(r.game, 'Game folder', r.game ? 'Found' : 'Not set: Settings > Game'),
         item(!!r.nexus, 'Nexus Mods', r.nexus ? `Signed in as ${r.nexus}` : 'Skipped: Settings > Nexus Mods'),
         item(!!r.ai, 'AI helper', r.ai ? `Using ${r.ai}` : 'Skipped: Settings > AI Assistant'),
-        item(true, 'Look', THEMES[themeState.id]?.name || 'Custom')),
+        item(true, 'Look', THEMES[themeState.id]?.name || 'Custom'),
+        item(r.backups !== false, 'Save backups', r.backups !== false ? `Automatic${r.perProfile ? ', and each profile has its own saves' : ''}` : 'Off: Settings > Save manager')),
       h('p', { class: 'su-hello-text' }, 'Settings > Advanced can run this setup again any time.'),
       h('div', { class: 'su-hello-go' }, h('button', { type: 'button', class: 'btn btn-primary su-next', onclick: closeSetup }, h('span', {}, 'Open the app'), icon('chevron-right'))))];
   },

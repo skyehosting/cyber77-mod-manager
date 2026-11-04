@@ -541,7 +541,7 @@ function paintModSelection() {
 /** A mod's requirements, resolved by the app: [{ id, modId, name, state, version, url, notes, inferred }]. */
 const reqsOf = id => state.snap.reqs?.[id] || [];
 /** An enabled mod with a requirement that is off or not installed. */
-const reqProblem = m => !!m.enabled && reqsOf(m.id).some(q => q.state === 'off' || q.state === 'missing');
+const reqProblem = m => !!m.enabled && reqsOf(m.id).some(q => q.state === 'off' || q.state === 'missing' || q.state === 'official');
 /** Which enabled mods need each mod: id → [their names]. */
 function neededByMap(all = allMods()) {
   const out = new Map();
@@ -563,8 +563,8 @@ function reqRows(m, neededBy) {
     const off = list.filter(q => q.state === 'off').length;
     const missing = list.filter(q => q.state === 'missing').length;
     const label = [`Needs ${plural(list.length, 'mod')}`, off ? `${off} off` : '', missing ? `${missing} missing` : ''].filter(Boolean).join(' · ');
-    rows.push(h('tr', { class: `req-row req-sum${open ? '' : ' last'}` }, h('td'), h('td'),
-      h('td', { colspan: '3' }, h('button', {
+    rows.push(h('tr', { class: `req-row req-sum${open ? '' : ' last'}` }, h('td'),
+      h('td', { colspan: '4' }, h('button', {
         class: 'req-toggle', 'aria-expanded': String(open), dataset: { key: `${m.id}:reqs` },
         onclick: ev => { ev.stopPropagation(); if (open) state.reqOpen.delete(m.id); else state.reqOpen.add(m.id); renderMods(); },
       }, icon('chevron-right', open ? 'turn' : ''), h('span', {}, open ? `${label} · hide` : label)))));
@@ -573,7 +573,7 @@ function reqRows(m, neededBy) {
   list.forEach((q, i) => {
     const others = q.id ? (neededBy.get(q.id) || []).filter(n => n !== m.name).length : 0;
     const own = q.id ? reqsOf(q.id).map(r => r.name) : [];
-    const notes = [others ? `also needed by ${others}` : '', own.length ? `needs ${own.join(', ')}` : '', q.inferred ? 'found from its files' : ''].filter(Boolean).join(' · ');
+    const notes = [others ? `also needed by ${others}` : '', own.length ? `needs ${own.join(', ')}` : '', q.inferred ? 'found from its files' : '', q.byName ? 'matched on Nexus by its name' : ''].filter(Boolean).join(' · ');
     const nexusPage = q.modId ? `https://www.nexusmods.com/cyberpunk2077/mods/${q.modId}` : '';
     const sw = q.id ? h('button', {
       class: `switch sm${q.state === 'on' ? ' on' : ''}`, role: 'switch', 'aria-checked': String(q.state === 'on'),
@@ -594,12 +594,16 @@ function reqRows(m, neededBy) {
       missing: [h('span', { class: 'tag tag-err' }, 'Missing'),
         h('button', { class: 'btn btn-sm', dataset: { key: `${m.id}:req:${q.modId}:dl` }, onclick: ev => { ev.stopPropagation(); downloadLinks(nexusPage); } }, icon('download'), h('span', {}, 'Download'))],
       outside: [h('span', { class: 'tag tag-off', title: 'Installed by hand or by another tool: this app cannot switch it' }, 'In the game folder, not managed here')],
+      builtin: [h('span', { class: 'tag tag-ok', title: "CD PROJEKT RED's own modding support: its tools are in the game folder" }, 'Part of the game')],
+      official: [h('span', { class: 'tag tag-warn', title: "CD PROJEKT RED's free REDmod DLC: install it from Steam, GOG or Epic" }, 'Not installed'),
+        q.url ? h('button', { class: 'btn btn-sm btn-ghost', onclick: ev => { ev.stopPropagation(); api.openLink(q.url); } }, h('span', {}, 'Open page')) : null],
       external: [h('span', { class: 'tag tag-off' }, 'Not on Nexus'),
         q.url ? h('button', { class: 'btn btn-sm btn-ghost', onclick: ev => { ev.stopPropagation(); api.openLink(q.url); } }, h('span', {}, 'Open page')) : null],
     }[q.state] || [];
     rows.push(h('tr', { class: `req-row req-${q.state}${i === list.length - 1 ? ' last' : ''}` },
-      h('td'), h('td'),
-      h('td', {}, h('div', { class: 'req-cell' },
+      h('td'),
+      // Under the mod's switch: the tree starts there, one step in from the mod.
+      h('td', { colspan: '2' }, h('div', { class: 'req-cell' },
         h('span', { class: 'req-line', 'aria-hidden': 'true' }), sw,
         h('button', {
           class: 'req-name', title: [q.id ? `${q.name}: open its details` : `${q.name}: open its Nexus page`, notes, q.notes].filter(Boolean).join('\n'),
@@ -651,7 +655,7 @@ function renderMods() {
     const kind = [m.vortex ? 'Vortex' : '', m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
     const sub = [who, kind, stamp].filter(Boolean).join(' · ');
     const needers = neededBy.get(m.id) || [];
-    const reqIssue = reqProblem(m) ? reqsOf(m.id).find(q => q.state === 'missing') ? 'missing' : 'off' : '';
+    const reqIssue = reqProblem(m) ? reqsOf(m.id).find(q => q.state === 'missing' || q.state === 'official') ? 'missing' : 'off' : '';
     return [h('tr', {
       class: `row${reqsOf(m.id).length ? ' has-reqs' : ''}`, tabindex: '0', dataset: { id: m.id, key: `${m.id}:row` }, 'aria-selected': 'false',
       onclick: ev => {
@@ -1424,7 +1428,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1667,7 +1671,7 @@ $('#s-nxm').addEventListener('change', async ev => {
   }
 });
 
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock' };
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause' };
 
 const AI_EXAMPLES = {
   openai: { endpoint: 'https://api.openai.com/v1 (or http://localhost:11434/v1 for Ollama)', model: 'e.g. gpt-5.1, or the model your endpoint serves' },
@@ -1753,7 +1757,11 @@ async function loadSettings() {
   renderInstalls();
   updateDirty();
   if (state.snap?.mods) renderMods(); // requirements open or collapsed
+  $('#s-save-perprofile').checked = !!s.perProfileSaves;
+  $('#s-save-dir').textContent = s.saveBackupDir || 'Saved Games\\Edgerunners Mod Manager\\Save backups (default)';
 }
+$('#s-save-open').addEventListener('click', () => run(api.openSaves('backups')));
+$('#s-save-choose').addEventListener('click', async () => { const d = await run(api.chooseSaveBackupDir()); if (d) { $('#s-save-dir').textContent = d; toast('New backups go there; earlier ones stay where they are', 'success'); } });
 
 $('#settings-form').addEventListener('input', updateDirty);
 $('#settings-form').addEventListener('change', updateDirty);

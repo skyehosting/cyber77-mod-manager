@@ -5,7 +5,8 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { pathToFileURL } = require('url');
 const { JsonStore } = require('./jsonStore');
-const { NexusClient, parseModUrl, parseNxm } = require('./nexus');
+const { NexusClient, parseModUrl, parseNxm, requirementOnNexus } = require('./nexus');
+const { redmodToolsInstalled } = require('./launcher');
 const { Downloader } = require('./downloader');
 const { Installer, isSafeRel } = require('./installer');
 const { Deployer } = require('./deployer');
@@ -16,6 +17,10 @@ const { findUpdate } = require('./updates');
 const { VortexBridge, parseFolderName } = require('./vortex');
 const { listFiles } = require('./vortexDeploy');
 const { Mo2Bridge } = require('./mo2');
+const { ProfileSaves, defaultStoreDir, defaultHomeDir, ID: PROFILE_ID } = require('./profileSaves');
+
+const GAME_RUNNING_SAVES = 'Close Cyberpunk 2077 first: each profile has its own saves, and they change with the profile. (Just closed it? Give it a few seconds to finish syncing its saves.)';
+const { SaveBackups, scanSaves, groupPlaythroughs, savesFingerprint, defaultSavesDir, defaultBackupDir, REASONS, SLOT: SAVE_SLOT } = require('./saves');
 const loadOrder = require('./loadOrder');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
@@ -119,6 +124,18 @@ class ModManager extends EventEmitter {
     this.mo2 = new Mo2Bridge({
       log, localAppData: process.env.CMM_MO2_LOCALAPPDATA ?? process.env.LOCALAPPDATA,
       scan: process.env.CMM_MO2_SCAN !== 'off', extraFolders: () => settings.get('mo2Folders'),
+    });
+    // Save backups: outside the app and the game's save folder (Settings, Save manager can move them).
+    this.saves = new SaveBackups({ savesDir: defaultSavesDir, root: () => settings.get('saveBackupDir') || defaultBackupDir(), log });
+    // Per-profile saves (Settings, Save manager): other profiles' saves wait in folders of their own.
+    this.profileSaves = new ProfileSaves({ savesDir: () => this.saves.savesDir(), root: defaultStoreDir, log });
+    this.gameRunning = () => false; // main.js puts the real check here
+    // README.txt beside the backups and profile saves (what the uninstaller points to), kept current.
+    this.savesHome = defaultHomeDir;
+    this.on('saves', () => {
+      clearTimeout(this.readmeTimer);
+      this.readmeTimer = setTimeout(() => { try { this.writeSavesReadme(); } catch (err) { this.log.warn('Could not write README.txt beside your save backups', err.message); } }, 2000);
+      this.readmeTimer.unref?.();
     });
     this.chain = Promise.resolve();
 
@@ -1287,8 +1304,11 @@ class ModManager extends EventEmitter {
 
   switchProfile(id) {
     return this.op(async () => {
+      if (!this.isProfile(id)) throw new Error('That profile no longer exists.');
       const p = this.data.profiles.list[id];
-      if (!p) throw new Error('That profile no longer exists.');
+      const savesFrom = this.settings.get('perProfileSaves') ? this.savesOwner() : '';
+      if (savesFrom && savesFrom !== id && await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES);
+      const swapped = savesFrom && savesFrom !== id ? await this.swapSavesTo(id) : null;
       const want = new Set(p.enabled);
       const before = Object.values(this.data.mods).map(m => [m, m.enabled, m.priority]);
       for (const m of Object.values(this.data.mods)) m.enabled = want.has(m.id);
@@ -1302,9 +1322,10 @@ class ModManager extends EventEmitter {
         for (const [m, en, prio] of before) { m.enabled = en; m.priority = prio; }
         this.data.profiles.active = prevActive;
         this.library.save();
+        if (swapped) await this.swapSavesTo(savesFrom).catch(e => this.log.error('Could not put the saves back after the failed switch (they are in the backup made before it)', e.message));
         throw err;
       }
-      this.log.success(`Switched to profile "${p.name}" (${plural(want.size, 'mod')} enabled)`);
+      this.log.success(`Switched to profile "${p.name}" (${plural(want.size, 'mod')} enabled)${swapped ? `, with its saves (${plural(swapped.count, 'save')})` : ''}`);
     });
   }
 
@@ -1324,7 +1345,7 @@ class ModManager extends EventEmitter {
 
   renameProfile(id, name) {
     return this.op(async () => {
-      const p = this.data.profiles.list[id];
+      const p = this.isProfile(id) ? this.data.profiles.list[id] : null;
       const clean = String(name || '').trim().slice(0, 60);
       if (!p || !clean) throw new Error('Give the profile a name.');
       if (Object.values(this.data.profiles.list).some(o => o.id !== id && o.name.toLowerCase() === clean.toLowerCase())) throw new Error(`A profile called "${clean}" already exists.`);
@@ -1336,13 +1357,24 @@ class ModManager extends EventEmitter {
   deleteProfile(id) {
     return this.op(async () => {
       const list = this.data.profiles.list;
-      if (!list[id]) return;
+      if (!this.isProfile(id)) return;
       if (Object.keys(list).length === 1) throw new Error('You need at least one profile.');
       if (this.data.profiles.active === id) throw new Error('Switch to another profile before deleting this one.');
       const name = list[id].name;
+      const ownsGameSaves = this.data.profileSaves?.owner === id;
+      if (ownsGameSaves && this.settings.get('perProfileSaves')) throw new Error(`The saves in the game's folder are "${name}"'s: switch to it and back first.`);
+      // Its saves (per-profile saves) are kept, in a folder of deleted profiles.
+      let savesKeptIn = '';
+      try {
+        savesKeptIn = await this.saves.exclusive(() => this.profileSaves.retire(id, name));
+      } catch (err) {
+        throw new Error(`Could not set the profile's saves aside, so it was not deleted: ${err.message}`);
+      }
+      if (ownsGameSaves) delete this.data.profileSaves.owner;
       delete list[id];
       this.library.save();
-      this.log.success(`Deleted profile "${name}"`);
+      this.log.success(`Deleted profile "${name}"${savesKeptIn ? ` (its saves are kept in ${savesKeptIn})` : ''}`);
+      return { savesKeptIn };
     });
   }
 
@@ -1384,6 +1416,7 @@ class ModManager extends EventEmitter {
    */
   async useVortexProfile(vxId, { switchOffOthers = true } = {}) {
     if (!this.vortex.installed) throw new Error('Vortex is not installed.');
+    if (this.settings.get('perProfileSaves') && await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES); // before anything changes
     const first = this.vortexProfileParts(vxId);
     if (first.move.length) await this.adoptFromVortex(first.move.map(id => `vx:${id}`));
     const now = this.vortexProfileParts(vxId);
@@ -1410,6 +1443,305 @@ class ModManager extends EventEmitter {
     });
     await this.switchProfile(id);
     return { id, name: this.data.profiles.list[id].name, enabled: enabled.length, moved: first.move.length };
+  }
+
+  // ---------------------------------------------------------------- save backups
+
+  /** The mod setup right now, as one string: which mods are on, their versions and order. */
+  modsFingerprint() {
+    const parts = Object.values(this.data.mods).filter(m => m.enabled).map(m => `${m.id}@${m.version || ''}#${m.priority}`).sort();
+    try { for (const v of this.vortex.read().mods || []) if (v.enabled) parts.push(`vx:${v.vortexId}`); } catch { /* no Vortex */ }
+    return crypto.createHash('sha1').update(parts.join('|')).digest('hex');
+  }
+
+  /** Who a backup is made for: the active profile, and how many mods are on. */
+  backupInfo() {
+    const p = this.data.profiles?.list?.[this.data.profiles.active];
+    return { profile: p?.id || '', profileName: p?.name || '', mods: Object.values(this.data.mods).filter(m => m.enabled).length };
+  }
+
+  /**
+   * The automatic backup (Play, or the game starting from elsewhere), by the Save manager settings:
+   *   - off: nothing
+   *   - mods changed since the last backup: back up (whatever the cooldown)
+   *   - otherwise: back up when the cooldown has passed
+   *   - "pause when not played": no backup while the saves are exactly as in the last one
+   * Returns { made, skipped: why }.
+   */
+  async autoBackupSaves(trigger = 'play') {
+    if (!this.settings.get('saveAutoBackup')) return { skipped: 'off' };
+    const saves = scanSaves(this.saves.savesDir());
+    if (!saves.length) return { skipped: 'no saves' };
+    // The last automatic backup's record counts only while that backup still exists (deleted, or a new
+    // backup folder: start over).
+    const newest = this.saves.list().find(b => !['restore', 'switch', 'delete'].includes(b.reason));
+    const last = newest && this.data.saveBackup?.at === newest.at ? this.data.saveBackup : {};
+    const savesFp = savesFingerprint(saves);
+    const modsFp = this.modsFingerprint();
+    const modsChanged = !!last.modsFp && last.modsFp !== modsFp;
+    if (this.settings.get('savePauseUnchanged') !== false && last.savesFp === savesFp) {
+      // Nothing played since the last backup: that backup already holds these exact saves (made
+      // with whatever mods were on then; from now on the current setup is the one to compare with).
+      if (this.data.saveBackup && last.modsFp !== modsFp) { this.data.saveBackup.modsFp = modsFp; this.library.save(); }
+      return { skipped: 'not played since the last backup' };
+    }
+    const cooldown = Math.max(0, Number(this.settings.get('saveCooldown')) || 0) * 60000;
+    if (!modsChanged && last.at && Date.now() - last.at < cooldown) return { skipped: 'cooldown' };
+    const reason = trigger === 'game-start' ? 'game-start' : modsChanged ? 'play-mods' : 'play';
+    return { made: await this.backupSavesNow({ reason }) };
+  }
+
+  /** Back up the saves now (manual, or for a reason), then keep the backups within the limit. */
+  async backupSavesNow({ reason = 'manual', label = '' } = {}) {
+    const record = await this.saves.create({ ...this.backupInfo(), reason, label });
+    if (!record) throw new Error('There are no Cyberpunk 2077 saves to back up yet.');
+    // What this backup holds (not a second look at the folder: the game may have saved since).
+    this.data.saveBackup = { at: record.at, savesFp: savesFingerprint(record.saves), modsFp: this.modsFingerprint() };
+    this.library.save();
+    const removed = this.saves.prune(this.settings.get('saveMaxPerProfile'));
+    this.log.success(`Backed up ${plural(record.saves.length, 'save')} (${REASONS[record.reason]})${removed.length ? `; removed ${plural(removed.length, 'older backup')}` : ''}`);
+    this.emit('saves');
+    return record;
+  }
+
+  /** Everything the Saves page shows: playthroughs and their saves, backups, where they are. */
+  savesView() {
+    const dir = this.saves.savesDir();
+    const saves = scanSaves(dir);
+    const backups = this.saves.list();
+    return {
+      savesDir: dir, found: fs.existsSync(dir), backupDir: this.saves.root(),
+      steamCloud: fs.existsSync(path.join(dir, 'steam_autocloud.vdf')),
+      playthroughs: groupPlaythroughs(saves),
+      saves: saves.map(({ files, screenshot, ...s }) => s),
+      backups,
+      diskSize: this.saves.diskSize(),
+      last: this.data.saveBackup?.at || 0,
+      profiles: Object.values(this.data.profiles.list).map(p => ({ id: p.id, name: p.name })),
+      // Off, after switching profiles: whose the saves in the game's folder were (turning it on again asks).
+      perProfileWas: !this.settings.get('perProfileSaves') && this.isProfile(this.data.profileSaves?.owner) && this.data.profileSaves.owner !== this.data.profiles.active ? this.data.profileSaves.owner : '',
+      perProfile: this.settings.get('perProfileSaves') ? {
+        owner: this.savesOwner(), active: this.data.profiles.active, store: this.profileSaves.root(),
+        playthroughs: this.profileSaves.overview(Object.keys(this.data.profiles.list), this.savesOwner()),
+      } : null,
+    };
+  }
+
+  /** A save's screenshot as a data URL (the page cannot read the save folder itself). */
+  saveScreenshot(folder) {
+    const s = String(folder);
+    if (!SAVE_SLOT.test(s)) throw new Error('No such save.');
+    const file = path.join(this.saves.savesDir(), s, 'screenshot.png');
+    try {
+      const st = fs.lstatSync(file);
+      if (!st.isFile() || st.size > 4 << 20) return '';
+      const data = fs.readFileSync(file);
+      if (data.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') return '';
+      return `data:image/png;base64,${data.toString('base64')}`;
+    } catch {
+      return ''; // no screenshot
+    }
+  }
+
+  /**
+   * README.txt in Saved Games\Edgerunners Mod Manager: where every kept save is, whose, and how to use
+   * them without the app (it outlives an uninstall). Only once there is something kept. Returns its path.
+   */
+  writeSavesReadme() {
+    const home = this.savesHome();
+    if (!home) return '';
+    const backups = this.saves.root();
+    const store = this.profileSaves.root();
+    const entries = dir => { try { return fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.')); } catch { return []; } };
+    const profileDirs = entries(store).filter(e => PROFILE_ID.test(e.name)).map(e => {
+      const dir = path.join(store, e.name);
+      let label = '';
+      try { label = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8')).profile; } catch { /* unnamed */ }
+      const name = (this.isProfile(e.name) && this.data.profiles.list[e.name].name) || (typeof label === 'string' && label) || e.name;
+      return { dir, name: String(name).slice(0, 60), count: scanSaves(dir).length };
+    }).filter(p => p.count);
+    const deleted = entries(path.join(store, 'Deleted profiles')).filter(e => scanSaves(path.join(store, 'Deleted profiles', e.name)).length);
+    if (!entries(backups).length && !profileDirs.length && !deleted.length) return '';
+    const on = this.settings.get('perProfileSaves');
+    const oneLine = t => String(t || '').replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim(); // \s: line and paragraph separators too
+    const owner = oneLine(this.data.profiles.list[this.savesOwner()]?.name);
+    const lines = [
+      'Edgerunners Mod Manager: your Cyberpunk 2077 saves',
+      `Written by the app (last updated ${new Date().toLocaleString()}). Uninstalling the app never removes this folder.`,
+      '',
+      'THE GAME\'S SAVE FOLDER (the saves the game loads now)',
+      `  ${this.saves.savesDir()}`,
+      ...(on && owner ? [`  Each profile has its own saves: these are the saves of the profile "${owner}".`] : []),
+      '',
+      'SAVE BACKUPS',
+      `  ${backups}`,
+      '  One folder per day, and in it one per backup, by time ("14-05-12 Before play": made at 14:05:12, before playing).',
+      '  Each save folder in a backup (ManualSave-3, AutoSave-0, ...) is a complete save.',
+      ...(profileDirs.length ? ['', 'SAVES OF YOUR OTHER PROFILES (each profile had its own saves)', ...profileDirs.map(p => `  "${oneLine(p.name)}" (${p.count} save${p.count === 1 ? '' : 's'}): ${p.dir}`)] : []),
+      ...(deleted.length ? ['', 'SAVES OF DELETED PROFILES', ...deleted.map(e => `  ${oneLine(path.join(store, 'Deleted profiles', e.name))}`)] : []),
+      '',
+      'TO USE A SAVE WITHOUT THE APP',
+      '  1. Close the game.',
+      '  2. Copy the save folder (for example ManualSave-3, with everything in it) into the game\'s save folder above.',
+      '     A folder of that name already there? Give the copy an unused number (ManualSave-90): the game loads it all the same.',
+      '  3. Files copied out of a backup are read-only: right-click the copied folder, Properties, untick Read-only, OK (apply to all).',
+      '  4. Start the game and load it.',
+      '  Never copy user.gls or the other files beside the save folders: they are the game\'s own settings and your sign-in.',
+      '',
+    ];
+    fs.mkdirSync(home, { recursive: true });
+    const file = path.join(home, 'README.txt');
+    fs.writeFileSync(`${file}.tmp`, lines.join('\r\n'));
+    fs.renameSync(`${file}.tmp`, file);
+    return file;
+  }
+
+  // ---------------------------------------------------------------- per-profile saves
+
+  /** Whose saves are in the game's folder now (with per-profile saves): the profile that last had them. */
+  savesOwner() {
+    const owner = this.data.profileSaves?.owner;
+    return owner && Object.hasOwn(this.data.profiles.list, owner) ? owner : this.data.profiles.active;
+  }
+
+  /** The folder a profile's saves are in right now: the game's for the owner, its own for the others. */
+  savesDirOf(profileId) {
+    return profileId === this.savesOwner() ? this.saves.savesDir() : this.profileSaves.dirOf(profileId);
+  }
+
+  /** Is this one of the profiles (not an Object built-in like "constructor")? */
+  isProfile(id) { return typeof id === 'string' && Object.hasOwn(this.data.profiles.list, id); }
+
+  /** Name every profile's saves folder, for people browsing it without the app. */
+  labelProfileSaves() {
+    for (const [pid, p] of Object.entries(this.data.profiles.list)) { try { this.profileSaves.label(pid, p.name); } catch { /* named next time */ } }
+  }
+
+  /**
+   * Turn per-profile saves on or off. On: the saves in the game's folder belong to `owner` when given
+   * (the profile that had them before it was turned off), else to the profile in use; when that is
+   * another profile, they are swapped for the profile in use's. Off: everything stays where it is;
+   * switching profiles no longer moves saves (other profiles' saves wait in their folders).
+   */
+  setPerProfileSaves(on, { owner } = {}) {
+    return this.op(async () => {
+      const active = this.data.profiles.active;
+      if (on) {
+        const was = this.isProfile(owner) ? owner : active;
+        if (was !== active && await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES);
+        await this.saves.exclusive(() => this.recoverSwap()); // a switch cut off earlier is sorted out against the old owner first
+        this.data.profileSaves = { owner: was };
+        this.labelProfileSaves();
+        this.settings.update({ perProfileSaves: true });
+        this.library.save();
+        if (was !== active) {
+          try {
+            await this.swapSavesTo(active);
+          } catch (err) {
+            this.settings.update({ perProfileSaves: false });
+            throw err;
+          }
+        }
+      } else {
+        this.settings.update({ perProfileSaves: false });
+        this.library.save();
+      }
+      this.log.success(on ? 'Each profile now has its own saves' : 'Profiles share one set of saves again (other profiles\' saves stay in their folders)');
+      this.emit('saves');
+      return { on: !!on, owner: this.savesOwner() };
+    });
+  }
+
+  /**
+   * A switch of saves left behind (the app was stopped in the middle of one): kept when its new owner
+   * is the recorded one, undone otherwise. Also clears half-made copies. Inside saves.exclusive.
+   * Returns 'kept', 'undone' or ''.
+   */
+  async recoverSwap() {
+    const ps = this.profileSaves;
+    const dirs = [this.saves.savesDir(), ...Object.keys(this.data.profiles.list).filter(id => PROFILE_ID.test(id)).map(id => ps.dirOf(id))];
+    const j = ps.readJournal();
+    if (!j) { ps.sweep(dirs); return ''; }
+    const owner = this.data.profileSaves?.owner;
+    const to = j.head.to;
+    if (to && owner === to) { ps.clear(); return 'kept'; } // it went through: only the clean-up was cut off
+    if (await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES);
+    const r = await ps.undo();
+    ps.sweep(dirs);
+    const name = this.data.profiles.list[this.savesOwner()]?.name || 'the profile that had them';
+    if (r.left.length) this.log.error(`A switch of saves was cut off last time; most saves are back with "${name}", these could not be moved back (the backup made before the switch has them): ${r.left.join('; ')}`);
+    else this.log.warn(`A switch of saves was cut off last time and has been undone: the saves are back with "${name}"`);
+    this.emit('saves');
+    return 'undone';
+  }
+
+  /** At start: sort out a switch of saves the app was stopped in the middle of. */
+  recoverProfileSaves() {
+    return this.saves.exclusive(() => this.recoverSwap());
+  }
+
+  /** Move the saves: the game's go to their owner's folder, `id`'s come in. A safety backup first. */
+  async swapSavesTo(id) {
+    if (this.savesOwner() === id) return null;
+    return this.saves.exclusive(async () => {
+      await this.recoverSwap();
+      const from = this.savesOwner();
+      if (from === id) return null;
+      const ownerName = this.data.profiles.list[from]?.name || '';
+      await this.saves.createNow({ profile: from, profileName: ownerName, mods: Object.values(this.data.mods).filter(m => m.enabled).length, reason: 'switch' });
+      // Again, right before anything moves: the game may have started during the backup.
+      if (await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES);
+      const r = await this.profileSaves.swap(from, id);
+      this.data.profileSaves = { owner: id };
+      this.library.save({ durable: true });
+      this.profileSaves.clear(); // only once the new owner is surely on disk (recoverSwap reads the journal against it)
+      this.labelProfileSaves();
+      this.emit('saves');
+      return { count: r.count };
+    });
+  }
+
+  /** How many saves a profile has (for "this profile has no saves yet"). */
+  profileSaveCount(id, { stored = false } = {}) {
+    if (!this.isProfile(id)) throw new Error('That profile no longer exists.');
+    // stored: only the saves in its own folder (what deleting the profile sets aside), not the game's.
+    return scanSaves(stored ? this.profileSaves.dirOf(id) : this.savesDirOf(id)).length;
+  }
+
+  /**
+   * Copy a playthrough from one profile to others (a save already there is skipped; a slot name taken
+   * there gets the next free ManualSave number). Never into the game's folder while the game runs.
+   */
+  async copyPlaythrough(playthroughId, sourceId, targetIds) {
+    const pt = String(playthroughId).slice(0, 80);
+    const list = this.data.profiles.list;
+    if (!this.isProfile(sourceId)) throw new Error('That profile no longer exists.');
+    const targets = [...new Set((Array.isArray(targetIds) ? targetIds : []).map(String))].filter(t => this.isProfile(t) && t !== sourceId);
+    if (!targets.length) return { copied: 0, renamed: 0, profiles: 0 };
+    return this.saves.exclusive(async () => {
+      await this.recoverSwap();
+      if (targets.includes(this.savesOwner()) && await this.gameRunning()) throw new Error('Close Cyberpunk 2077 first: saves cannot be added to the game while it runs.');
+      let copied = 0;
+      let renamed = 0;
+      for (const t of targets) {
+        const r = await this.profileSaves.copyPlaythrough(this.savesDirOf(sourceId), pt, this.savesDirOf(t));
+        copied += r.copied;
+        renamed += r.renamed;
+        try { this.profileSaves.label(t, list[t].name); } catch { /* named next time */ }
+      }
+      this.log.success(`Copied ${plural(copied, 'save')} to ${plural(targets.length, 'profile')}${renamed ? ` (${renamed} under a new slot name)` : ''}`);
+      this.emit('saves');
+      return { copied, renamed, profiles: targets.length };
+    });
+  }
+
+  /** Every save of one profile into another (the first switch to a profile with no saves). */
+  async copyAllSaves(sourceId, targetId) {
+    if (!this.isProfile(sourceId)) throw new Error('That profile no longer exists.');
+    const pts = new Set(scanSaves(this.savesDirOf(sourceId)).map(s => s.playthrough));
+    let copied = 0;
+    for (const pt of pts) copied += (await this.copyPlaythrough(pt, sourceId, [targetId])).copied;
+    return { copied };
   }
 
   // ---------------------------------------------------------------- requirements (the Mods page)
@@ -1446,12 +1778,15 @@ class ModManager extends EventEmitter {
     };
     const out = {};
     const unknown = [];
+    let lookup = false;
     for (const r of rows) {
       const list = [];
       const seen = new Set(r.modId ? [r.modId] : []);
       const entry = r.modId ? cache[r.modId] : null;
       if (r.modId && !entry) unknown.push(r.modId);
-      for (const q of entry?.list || []) {
+      for (const raw of entry?.list || []) {
+        const q = this.reqOnNexus(raw);
+        if (q.external && !q.official && !this.reqNameLooked(q.name)) lookup = true;
         if (q.modId && seen.has(q.modId)) continue;
         if (q.modId) seen.add(q.modId);
         list.push(q);
@@ -1463,16 +1798,86 @@ class ModManager extends EventEmitter {
       }
       if (!list.length) continue;
       out[r.id] = list.map(q => {
-        const base = { modId: q.modId || 0, notes: q.notes || '', inferred: !!q.inferred };
+        const base = { modId: q.modId || 0, notes: q.notes || '', inferred: !!q.inferred, byName: !!q.byName };
+        // REDmod: CD PROJEKT RED's own (a free DLC), there or not.
+        if (q.official) return { ...base, name: q.name || 'REDmod', state: game && redmodToolsInstalled(game) ? 'builtin' : 'official', url: q.url || '' };
         if (q.external || !q.modId) return { ...base, name: q.name || 'A mod not on Nexus', state: 'external', url: q.url || '' };
         const hit = byModId.get(q.modId);
         if (hit) return { ...base, id: hit.id, name: hit.name, state: hit.enabled ? 'on' : 'off', version: hit.version };
         return { ...base, name: q.name || FRAMEWORK_NAMES[q.modId] || `Nexus mod ${q.modId}`, state: isOutside(q.modId, q.name) ? 'outside' : 'missing' };
       });
     }
-    // Mods never looked up (new here, or moved in): fetch their requirements in the background.
-    if (unknown.length) this.requirementsSoon();
+    // Mods never looked up (new here, or moved in), and requirements named but not linked: ask Nexus in the background.
+    if (unknown.length || lookup) this.requirementsSoon();
     return out;
+  }
+
+  /**
+   * A requirement listed as off-site that is a Nexus mod after all: linked to its Nexus page, a
+   * framework by name ("CET (No REDMOD version)"), or found by name on Nexus before. REDmod (CD
+   * PROJEKT RED's own) is marked official.
+   */
+  reqOnNexus(q) {
+    if (!q?.external) return q;
+    const linked = requirementOnNexus(q, 'cyberpunk2077');
+    if (!linked.external) return linked;
+    const key = reqNameKey(q.name);
+    // REDmod by name only; its "Open page" only ever goes to CD PROJEKT RED's own site.
+    if (key === 'redmod') return { ...q, official: true, url: /^https:\/\/(www\.)?cyberpunk\.net\//i.test(q.url || '') ? q.url : '' };
+    if (FRAMEWORK_ALIASES.has(key)) return { ...q, modId: FRAMEWORK_ALIASES.get(key), external: false };
+    const names = this.data.reqNames || {};
+    const modId = Object.hasOwn(names, key) ? Number(names[key].modId) || 0 : 0;
+    return modId ? { ...q, modId, external: false, byName: true } : q;
+  }
+
+  /** Was this requirement name looked up on Nexus in the last 30 days (found or not)? */
+  reqNameLooked(name) {
+    const key = reqNameKey(name);
+    const names = this.data.reqNames || {};
+    return key.length < 4 || (Object.hasOwn(names, key) && Date.now() - names[key].at < 30 * 86400000);
+  }
+
+  /**
+   * Off-site requirements that name a mod without linking it: looked up by name on Nexus. A match
+   * only when exactly one mod there has the same name (brackets and versions aside); two mods of
+   * that name is no match. Kept 30 days, misses too; at most 25 names a time, a moment apart. A name
+   * Nexus refuses counts as a miss; no network (or a limit reached) stops the round. Returns how many
+   * names were settled.
+   */
+  async matchRequirementNames() {
+    const names = this.data.reqNames ||= {};
+    const todo = new Map();
+    for (const e of Object.values(this.data.requirements || {})) {
+      for (const raw of e.list || []) {
+        const q = this.reqOnNexus(raw);
+        if (q.external && !q.official && !this.reqNameLooked(q.name)) todo.set(reqNameKey(q.name), q.name);
+      }
+    }
+    let n = 0;
+    for (const [key, name] of todo) {
+      if (n >= 25) break;
+      if (n) await new Promise(r => setTimeout(r, this.reqLookupGap ?? 300));
+      let hits;
+      try {
+        hits = await this.nexus.findModsByName('cyberpunk2077', String(name).replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').trim());
+      } catch (err) {
+        const s = Number(err.status) || 0;
+        if (!s || s === 401 || s === 403 || s === 429 || s >= 500) {
+          this.reqFailedAt = Date.now(); // not again for 5 minutes (requirementsSoon)
+          this.log.warn('Could not look up requirements by name on Nexus', err.message);
+          break;
+        }
+        // This name: Nexus will not search it. A 4xx is about the name (a month); any other answer may be Nexus's own trouble (a day).
+        names[key] = { modId: 0, at: s >= 400 && s < 500 ? Date.now() : Date.now() - 29 * 86400000 };
+        n++;
+        continue;
+      }
+      const same = hits.filter(x => reqNameKey(x.name) === key);
+      names[key] = { modId: same.length === 1 ? same[0].modId : 0, at: Date.now() };
+      if (same.length === 1) this.log.info(`Requirement "${name}" is on Nexus: ${same[0].name} (mod ${same[0].modId})`);
+      n++;
+    }
+    return n;
   }
 
   /** Read requirements from Nexus a moment from now (one request per 50 mods). */
@@ -1499,11 +1904,14 @@ class ModManager extends EventEmitter {
       try { vx = this.vortex.read().mods || []; } catch { /* no Vortex */ }
       const ids = [...new Set([...Object.values(this.data.mods), ...vx].map(m => Number(m.modId)).filter(n => n > 0))];
       const stale = ids.filter(id => force || !cache[id] || Date.now() - cache[id].at > 3 * 86400000);
-      if (!stale.length) return 0;
-      const got = await this.nexus.requirementsMany('cyberpunk2077', stale);
-      const at = Date.now();
-      // A mod Nexus no longer has gets an empty list, so it is not asked again for 3 days.
-      for (const id of stale) cache[id] = { at, list: got.get(id) || [] };
+      if (stale.length) {
+        const got = await this.nexus.requirementsMany('cyberpunk2077', stale);
+        const at = Date.now();
+        // A mod Nexus no longer has gets an empty list, so it is not asked again for 3 days.
+        for (const id of stale) cache[id] = { at, list: got.get(id) || [] };
+      }
+      const named = await this.matchRequirementNames(); // never throws: a failed round backs off by itself
+      if (!stale.length && !named) return 0;
       this.library.save();
       this.emit('changed');
       return stale.length;
@@ -1670,6 +2078,7 @@ class ModManager extends EventEmitter {
     const first = this.mo2Profile(profileId);
     if (!isGameDir(this.gameDir())) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
     if (!first.p.enabled.length) throw new Error(`"${first.p.name}" has no mods enabled in Mod Organizer 2.`);
+    if (this.settings.get('perProfileSaves') && await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES); // before anything changes
     const r = await this.adoptFromMo2(first.inst.id, first.p.enabled);
     const { inst, p } = this.mo2Profile(profileId);
     // Lowest priority first: the order the profile's mods get here.
@@ -1861,11 +2270,16 @@ class ModManager extends EventEmitter {
       const summary = { profile: id, name: clean, enabled: 0, installing: 0, downloading: 0, skipped: 0 };
 
       // Switch to the new profile (only its mods on), all or nothing.
+      const savesFrom = this.settings.get('perProfileSaves') ? this.savesOwner() : '';
+      if (savesFrom && await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES);
       const before = Object.values(this.data.mods).map(m => [m, m.enabled, m.priority]);
       const prevActive = this.data.profiles.active;
       this.syncActiveProfile(); // the profile being left keeps its exact state
       this.data.profiles.list[id] = { id, name: clean, enabled: [], priorities: {}, created: Date.now(), importOrder: order };
+      let swapped = false;
       try {
+        // Per-profile saves: the new profile starts with no saves (the page offers a copy).
+        if (savesFrom) swapped = !!(await this.swapSavesTo(id));
         for (const m of Object.values(this.data.mods)) m.enabled = false;
         this.data.profiles.active = id;
         for (const r of plan.rows) {
@@ -1879,7 +2293,9 @@ class ModManager extends EventEmitter {
       } catch (err) {
         for (const [m, en, prio] of before) { m.enabled = en; m.priority = prio; }
         this.data.profiles.active = prevActive;
-        delete this.data.profiles.list[id];
+        const savesBack = !swapped || await this.swapSavesTo(savesFrom).then(() => true, e => { this.log.error('Could not put the saves back after the failed import (they are in the backup made before it)', e.message); return false; });
+        // The new profile stays while the game's saves are recorded as its own (switching to the old profile brings them back).
+        if (savesBack) delete this.data.profiles.list[id];
         try { this.deploy(); } catch { /* the folder itself is unusable; data is restored either way */ }
         this.library.save();
         throw err;
@@ -2244,6 +2660,20 @@ function pickMainFiles(files, catOf) {
 
 /** The frameworks a mod's files show it needs, by Nexus mod id. */
 const FRAMEWORK_NAMES = { 107: 'Cyber Engine Tweaks', 1511: 'redscript', 2380: 'RED4ext', 4197: 'TweakXL', 4198: 'ArchiveXL' };
+/** Names authors give frameworks in off-site requirements ("CET (No REDMOD version)"), by name key. */
+const FRAMEWORK_ALIASES = new Map([['cet', 107], ['cyber engine tweaks', 107], ['redscript', 1511], ['red4ext', 2380], ['tweakxl', 4197], ['archivexl', 4198], ['codeware', 7780]]);
+/** A requirement's name for matching: no notes in brackets, no versions, lower-case letters and digits. */
+const reqKeys = new Map(); // names repeat on every snapshot: each worked out once
+function reqNameKey(s) {
+  const name = String(s || '');
+  let key = reqKeys.get(name);
+  if (key === undefined) {
+    key = name.toLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/\bv?\d+(\.\d+)+\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+    if (reqKeys.size > 5000) reqKeys.clear();
+    reqKeys.set(name, key);
+  }
+  return key;
+}
 
 /**
  * What a mod's files show it needs: redscript scripts (.reds) need redscript, ArchiveXL files (.xl)

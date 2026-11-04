@@ -347,8 +347,34 @@ const profFocus = key => $('#page-profiles').querySelector(`[data-key="${key}"]`
 const initialOf = name => (String(name).trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
 const fmtDay = t => (t ? new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
-function switchTo(x) {
-  if (state.gameRunning) toast('The game is running: the new profile takes effect when you restart it');
+/**
+ * Per-profile saves: a profile with no saves of its own yet starts fresh or gets a copy of `fromId`'s.
+ * Before a switch (Cancel stops it: false), or after one made elsewhere (import, "Use here").
+ */
+async function offerSavesCopy(fromId, x, { after = false } = {}) {
+  if (!state.settings?.perProfileSaves || !fromId || fromId === x.id) return true;
+  const [count, mine] = await Promise.all([run(api.profileSaveCount(x.id)), run(api.profileSaveCount(fromId))]);
+  if (!(count === 0 && mine > 0)) return true;
+  const v = await modal({
+    title: `"${x.name}" has no saves of its own yet`,
+    body: h('p', {}, after
+      ? `Start it fresh, or give it a copy of the saves of the profile you were using (${plural(mine, 'save')}). Those stay with that profile either way.`
+      : `Start it fresh, or give it a copy of your current saves (${plural(mine, 'save')}). Either way your current saves stay with the profile you are leaving.`),
+    buttons: [
+      after ? null : { label: 'Cancel', value: null, safe: true },
+      { label: 'Start with no saves', value: 'fresh', safe: after },
+      { label: 'Copy my saves', value: 'copy', kind: 'btn-primary' },
+    ].filter(Boolean),
+  });
+  if (v === 'copy') return !!(await run(api.copyAllSaves(fromId, x.id), after ? `Copied your saves to "${x.name}"` : '')) || after;
+  return after || !!v;
+}
+
+async function switchTo(x) {
+  if (state.settings?.perProfileSaves) {
+    if (state.gameRunning) { toast('Close Cyberpunk 2077 first: each profile has its own saves, and they change with the profile', 'warn'); return null; }
+    if (!await offerSavesCopy(state.snap.profiles.active, x)) return null;
+  } else if (state.gameRunning) toast('The game is running: the new profile takes effect when you restart it');
   return run(api.switchProfile(x.id), `Switched to "${x.name}"`);
 }
 
@@ -528,8 +554,10 @@ function profilePanel(x, p) {
       h('button', {
         class: 'btn btn-sm btn-danger', dataset: key('delete'), disabled: active, title: active ? 'Switch to another profile before deleting this one' : 'Delete this profile',
         onclick: profGuard(async () => {
-          if (!await confirmBox(`Delete "${x.name}"?`, 'Its list of enabled mods and its conflict order are lost. The mods themselves are not touched.', 'Delete', true)) return;
-          await run(api.deleteProfile(x.id), `Deleted "${x.name}"`);
+          const saves = await run(api.profileSaveCount(x.id, true));
+          const savesNote = saves ? ` Its ${plural(saves, 'save')} are kept, in Saved Games\\Edgerunners Mod Manager\\Profile saves\\Deleted profiles.` : '';
+          if (!await confirmBox(`Delete "${x.name}"?`, `Its list of enabled mods and its conflict order are lost. The mods themselves are not touched.${savesNote}`, 'Delete', true)) return;
+          await run(api.deleteProfile(x.id), `Deleted "${x.name}"${saves ? '; its saves are kept' : ''}`);
           prof.selected = null;
           renderProfilesPage(true);
         }),
@@ -632,9 +660,11 @@ function useVortexProfile(x) {
     });
     if (!ok) return;
     if (state.gameRunning) toast('The game is running: the new setup takes effect when you restart it');
+    const was = state.snap.profiles.active;
     const r = await run(api.useVortexProfile(x.id, { switchOffOthers: offBox.checked }));
     if (!r) return;
     prof.selected = r.id;
+    await offerSavesCopy(was, r, { after: true });
     toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} moved from Vortex` : ''})`, 'success');
   }, 'Setting up…');
 }
@@ -692,9 +722,11 @@ function useMo2Profile(x) {
     });
     if (!ok) return;
     if (state.gameRunning) toast('The game is running: the new setup takes effect when you restart it');
+    const was = state.snap.profiles.active;
     const r = await run(api.useMo2Profile(x.id));
     if (!r) return;
     prof.selected = r.id;
+    await offerSavesCopy(was, r, { after: true });
     toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} brought over from MO2` : ''}${r.failed ? `; ${r.failed} could not be read, details in Activity` : ''})`, r.failed ? 'warn' : 'success');
   }, 'Setting up…');
 }
@@ -763,12 +795,14 @@ function importReview(plan) {
       applyBtn.disabled = true;
       applyBtn.setAttribute('aria-busy', 'true');
       label.textContent = 'Importing…';
+      const was = state.snap.profiles.active;
       const r = await run(api.importProfileApply(plan.token, nameBox.value.trim() || plan.name));
       busy = false;
       if (!r) { applyBtn.disabled = false; applyBtn.removeAttribute('aria-busy'); label.textContent = 'Import and activate'; return; }
       finished = true;
       toast(`Profile "${r.name}" created and active${r.downloading ? ` — downloading ${plural(r.downloading, 'mod')}` : ''}`, 'success');
       close(r);
+      offerSavesCopy(was, { id: r.profile, name: r.name }, { after: true });
     });
     // Problems first: the rows the receiver has to act on are never below the fold.
     const rank = x => (IMPORT_STATUS[x.status]?.ok ? (x.status === 'newer' ? 1 : 2) : 0);

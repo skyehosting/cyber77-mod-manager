@@ -37,10 +37,12 @@ class JsonStore {
     }
   }
 
-  save() {
+  /** durable: on disk before this returns (flushed), for writes that others depend on surviving a power cut. */
+  save({ durable = false } = {}) {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+    if (durable) { const fd = fs.openSync(tmp, 'r+'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
     // The version being replaced becomes the backup, if it is readable (a damaged one never
     // replaces a good backup).
     try {

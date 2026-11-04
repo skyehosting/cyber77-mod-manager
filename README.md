@@ -133,6 +133,7 @@ The app keeps itself up to date: while it is open it checks for a new version ev
 - **Versions** of one mod share one row, as in Vortex (for example ArchiveXL 1.28.3 and 1.28.6). The Version column becomes a menu: picking another version switches to it in one step.
 - **Requirements under each mod.** Beneath every mod, the mods it needs are listed as smaller inset rows on a tree line, each with its own switch, status and version. Switching one switches the real mod, and every copy of it follows.
   - Where they come from: the mod's Nexus requirements (read in the background, no API key needed, refreshed every few days), plus what its files show (`.reds` scripts need redscript, `.xl` files ArchiveXL, `r6/tweaks` TweakXL, CET mod folders CET, RED4ext plugins RED4ext).
+  - Authors often list Nexus mods as "off-site" requirements ("CET (No REDMOD version)"). Those are matched to the Nexus mod: by the link they give, by a framework's name, or by an exact name search on Nexus. REDmod shows as **Part of the game** when its tools are installed, **Not installed** otherwise.
   - A requirement that is off shows **Off**; one not installed shows **Missing** with **Download**; one installed by hand or by another tool shows "In the game folder, not managed here" (no switch); one hosted off Nexus links to its page. Each row notes who else needs it and what it needs itself.
   - A required mod's own row says **Needed by N**. A mod whose requirement is off or missing gets a **Requirement off / missing** tag and counts under **Problems**.
   - Switching off a mod that enabled mods need (from its row, a requirement row, a bulk action or the menu) first lists them and asks. Switching on a mod whose requirement is off offers to switch that on too.
@@ -194,6 +195,21 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 - **Move my Vortex mods here** (Settings → Vortex) moves every Vortex mod into this app in one go; **Move to this app** in a Vortex mod's details moves just that one. Each keeps its files (linked from Vortex's staging folder, so no extra disk space), name, version, Nexus IDs and on/off state, and its archive when Vortex still has it (so Reinstall works). A mod that won a shared file in Vortex gets the higher priority here, so the game ends up with the same files. In Vortex the moved mods stay installed but switched off: enable them there to go back. Moved mods are no longer listed as Vortex mods. Vortex is not opened (if it is open, it closes for a moment).
 - Reinstall, uninstall and delete for Vortex mods stay in Vortex.
 - A mod of this app that writes the same file as a Vortex mod gets a **Vortex N** tag in the Conflicts column. Whichever tool deploys last wins that file, so don't enable the same mod in both. If this app has to overwrite a file that Vortex deployed, it backs that file up first.
+
+## Saves: backups and separate saves per profile
+
+**Saves** (in the sidebar, the page "Manage saves") shows your Cyberpunk 2077 saves grouped by playthrough (one character's run, with its latest screenshot, life path, level, play time and game version), and every backup of them, by day.
+
+- **Automatic backups**, before you play from this app, and when the game starts from Steam or elsewhere: always right away when your mods changed since the last backup; otherwise once the time set in Settings has passed (an hour by default). No backup while nothing was played (the saves are exactly as in the last one). **Back up now** makes one any time.
+- **Restore** a backup: the saves you choose (all ticked: every save in it comes back, saves in other slots stay), or replace all your saves with the backup's. Your saves as they are now are always backed up first, so a restore can be undone. Never while the game runs.
+- Backups can be **named** and **pinned**. Settings → Save manager sets how many are kept per profile (20 by default; pinned ones, and the ones made before a restore in the last 7 days, are always kept), the time between automatic backups, and where they go.
+- Backups are plain folders, by day, in `%USERPROFILE%\Saved Games\Edgerunners Mod Manager\Save backups` (outside the app and outside the game's save folder, which cloud saves sync). Each file is stored once and shared between backups (hard links), so a new backup costs only the saves that changed. The game's own settings files beside the saves (`user.gls`, which holds your CD PROJEKT RED sign-in, and the others) are never copied.
+- **Separate saves for each profile** (Settings → Save manager, or the setup wizard; off by default): switching profiles swaps your saves too. The profile in use keeps its saves in the game's folder; the others wait in `Saved Games\Edgerunners Mod Manager\Profile saves`. Every switch makes a backup first and only happens with the game closed. Switching to a profile with no saves asks: start fresh, or copy your current saves. On the Saves page, **Copy to profile…** gives a playthrough to other profiles, and **In other profiles** lists theirs (with **Copy here**).
+- A switch never deletes or overwrites a save: a slot name already taken where a save goes gets the next free manual save number. A switch the app is stopped in the middle of (a crash, a power cut) is undone the next time it starts. Deleting a profile keeps its saves, in `Profile saves\Deleted profiles`.
+- Cloud saves (Steam, GOG) can bring a save that was swapped out back into the game's folder; it then also shows up in the profile in use (a duplicate, nothing lost). Separate saves work best with cloud saves off for Cyberpunk.
+- **Uninstalling** never removes backups or profile saves. The uninstaller says where they are and offers to open the folder; `README.txt` there lists every folder and how to use the saves without the app.
+
+Research and rules: `notes/saves.md`.
 
 ## Coming from Mod Organizer 2
 

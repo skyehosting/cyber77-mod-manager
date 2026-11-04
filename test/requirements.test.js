@@ -44,6 +44,7 @@ function setup() {
   };
   // Nexus: never really asked in tests.
   mgr.nexus.requirementsMany = async () => { throw new Error('Nexus must not be asked'); };
+  mgr.nexus.findModsByName = async () => { throw new Error('Nexus must not be asked'); };
   return { mgr, game };
 }
 
@@ -95,4 +96,78 @@ test('the snapshot carries requirements for the Mods page', () => {
   const { mgr } = setup();
   const snap = mgr.snapshot();
   assert.ok(snap.reqs && snap.reqs.hair && snap.reqs.rain);
+});
+
+test('"off-site" requirements that are Nexus mods: by their link, by a framework name, or found by name on Nexus', async () => {
+  const { mgr, game } = setup();
+  // As Night City Alive lists them: every one "off-site", most linking to the Nexus page.
+  mgr.data.requirements[700] = { at: Date.now(), list: [
+    { modId: 0, name: 'REDmod', url: 'https://www.cyberpunk.net/fr/modding-support', external: true },
+    { modId: 0, name: 'ArchiveXL (No REDMOD version)', url: 'https://www.nexusmods.com/cyberpunk2077/mods/4198?tab=files', external: true },
+    { modId: 0, name: 'TweakXL (No REDMOD version)', url: '', external: true },
+    { modId: 0, name: 'Virtual Atelier', url: '', external: true },
+    { modId: 0, name: 'Some Tool', url: 'https://example.com/tool', external: true },
+    { modId: 0, name: 'Linked elsewhere', url: 'https://www.nexusmods.com/skyrimspecialedition/mods/12604', external: true },
+  ] };
+  let reqs = mgr.requirementsView();
+  assert.deepStrictEqual(states(reqs.ext), {
+    REDmod: 'official', ArchiveXL: 'on', TweakXL: 'off', 'Virtual Atelier': 'external', 'Some Tool': 'external', 'Linked elsewhere': 'external',
+  });
+  // REDmod's tools in the game folder: part of the game.
+  fs.mkdirSync(path.join(game, 'tools', 'redmod', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(game, 'tools', 'redmod', 'bin', 'redMod.exe'), 'exe');
+  assert.strictEqual(states(mgr.requirementsView().ext).REDmod, 'builtin');
+  // Names looked up on Nexus: only an exact name counts, misses are remembered too.
+  const asked = [];
+  mgr.nexus.findModsByName = async (g, name) => {
+    asked.push(name);
+    return name === 'Virtual Atelier' ? [{ modId: 2987, name: 'Virtual Atelier' }, { modId: 9, name: 'Virtual Atelier Addon' }] : [{ modId: 5, name: 'Some Tools Pack' }];
+  };
+  await mgr.matchRequirementNames();
+  assert.deepStrictEqual(asked.sort(), ['Linked elsewhere', 'Some Tool', 'Virtual Atelier']);
+  reqs = mgr.requirementsView();
+  assert.strictEqual(states(reqs.ext)['Virtual Atelier'], 'missing');
+  assert.strictEqual(reqs.ext.find(q => q.name === 'Virtual Atelier').modId, 2987, 'Download gets its Nexus id');
+  assert.strictEqual(states(reqs.ext)['Some Tool'], 'external', 'a near name is no match');
+  asked.length = 0;
+  await mgr.matchRequirementNames();
+  assert.deepStrictEqual(asked, [], 'not asked again for 30 days');
+  // Object built-ins are no names: nothing breaks.
+  mgr.data.requirements[700].list.push({ modId: 0, name: 'constructor', url: '', external: true });
+  assert.strictEqual(states(mgr.requirementsView().ext).constructor, 'external');
+});
+
+test('name matches are careful: one mod of that exact name only, a refused name never blocks the rest, links must be on Nexus', async () => {
+  const { mgr } = setup();
+  mgr.reqLookupGap = 0;
+  mgr.data.requirements[700] = { at: Date.now(), list: [
+    { modId: 0, name: 'Bad Name Here', url: '', external: true },
+    { modId: 0, name: 'Photo Mode Plus', url: '', external: true },
+    { modId: 0, name: 'Good Mod Name', url: '', external: true },
+    { modId: 0, name: 'Phantom Liberty', url: 'https://www.cyberpunk.net/en/phantom-liberty', external: true },
+    { modId: 0, name: 'Sneaky', url: 'https://example.com/?r=nexusmods.com/cyberpunk2077/mods/5', external: true },
+    { modId: 0, name: 'REDmod', url: 'https://example.com/lookalike', external: true },
+  ] };
+  mgr.nexus.findModsByName = async (g, name) => {
+    if (name === 'Bad Name Here') throw Object.assign(new Error('refused'), { status: 400 });
+    if (name === 'Photo Mode Plus') return [{ modId: 11, name: 'Photo Mode Plus' }, { modId: 12, name: 'Photo Mode Plus' }];
+    return [{ modId: 33, name: 'Good Mod Name' }];
+  };
+  await mgr.matchRequirementNames();
+  const reqs = mgr.requirementsView();
+  const by = Object.fromEntries(reqs.ext.map(q => [q.name, q]));
+  assert.strictEqual(by['Good Mod Name'].modId, 33, 'looked up although the name before it was refused');
+  assert.ok(by['Good Mod Name'].byName, 'the row says it is a match by name');
+  assert.strictEqual(by['Photo Mode Plus'].state, 'external', 'two mods of that name: no guess');
+  assert.strictEqual(by['Phantom Liberty'].state, 'external', 'only REDmod is CD PROJEKT RED\'s own');
+  assert.strictEqual(by.Sneaky.state, 'external', 'a link that only mentions Nexus is not a Nexus link');
+  assert.strictEqual(by.REDmod.state, 'official');
+  assert.strictEqual(by.REDmod.url, '', 'REDmod never links anywhere but cyberpunk.net');
+  // No network: the round stops and backs off.
+  mgr.data.reqNames = {};
+  let calls = 0;
+  mgr.nexus.findModsByName = async () => { calls++; throw Object.assign(new Error('offline'), { status: 0 }); };
+  await mgr.matchRequirementNames();
+  assert.strictEqual(calls, 1);
+  assert.ok(Date.now() - mgr.reqFailedAt < 1000);
 });

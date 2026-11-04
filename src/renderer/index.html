@@ -56,6 +56,7 @@
       <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z"/></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
       <symbol id="i-file-code" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M10 13l-2 2 2 2M14 13l2 2-2 2"/></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
       <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
       <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
@@ -106,6 +107,9 @@
           </button>
           <button class="nav-item" data-page="config" title="Mod files" data-short="Files">
             <svg class="i"><use href="#i-folder"/></svg><span class="nav-label">Mod files</span>
+          </button>
+          <button class="nav-item" data-page="saves" title="Manage saves" data-short="Saves">
+            <svg class="i"><use href="#i-save"/></svg><span class="nav-label">Saves</span>
           </button>
         </div>
         <div class="nav-group" role="group" aria-labelledby="ng-get">
@@ -583,6 +587,25 @@
       </section>
 
       <!-- PROFILES -->
+      <section class="page" id="page-saves" aria-labelledby="h-saves">
+        <header class="page-head">
+          <div class="page-title">
+            <h1 id="h-saves" tabindex="-1">Manage saves</h1>
+            <p class="page-sub" id="saves-sub">Your Cyberpunk 2077 saves and their backups</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost collapsible" id="saves-open" title="Open the game's save folder" aria-label="Open the game's save folder"><svg class="i"><use href="#i-folder"/></svg><span>Save folder</span></button>
+            <button class="btn btn-primary collapsible" id="saves-backup" title="Back up every save now" aria-label="Back up now"><svg class="i"><use href="#i-save"/></svg><span>Back up now</span></button>
+          </div>
+        </header>
+        <div id="saves-cloud"></div>
+        <div class="seg" id="saves-tabs" role="group" aria-label="Show">
+          <button class="seg-btn active" data-t="playthroughs" aria-pressed="true">Playthroughs <span class="seg-count seg-count-neutral" id="saves-pt-count"></span></button>
+          <button class="seg-btn" data-t="backups" aria-pressed="false">Backups <span class="seg-count seg-count-neutral" id="saves-bk-count"></span></button>
+        </div>
+        <div id="saves-body"></div>
+      </section>
+
       <section class="page" id="page-profiles" aria-labelledby="h-prof">
         <header class="page-head">
           <div class="page-title">
@@ -627,6 +650,7 @@
             <button type="button" class="set-nav-item" data-sec="nexus"><svg class="i"><use href="#i-globe"/></svg><span>Nexus Mods</span></button>
             <button type="button" class="set-nav-item" data-sec="downloads"><svg class="i"><use href="#i-download"/></svg><span>Downloads</span></button>
             <button type="button" class="set-nav-item" data-sec="vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span>Vortex</span></button>
+            <button type="button" class="set-nav-item" data-sec="saves"><svg class="i"><use href="#i-save"/></svg><span>Save manager</span></button>
             <button type="button" class="set-nav-item" data-sec="mo2"><svg class="i"><use href="#i-mo2"/></svg><span>Mod Organizer 2</span></button>
             <button type="button" class="set-nav-item" data-sec="ai"><svg class="i"><use href="#i-sparkle"/></svg><span>AI Assistant</span></button>
             <button type="button" class="set-nav-item" data-sec="display"><svg class="i"><use href="#i-eye"/></svg><span>Interface</span></button>
@@ -754,6 +778,39 @@
                       <option value="ask">Ask me</option>
                       <option value="off">Leave them in Vortex</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="set-sec" data-sec="saves" id="sec-saves" aria-labelledby="sh-saves">
+              <h2 class="set-title" id="sh-saves"><svg class="i"><use href="#i-save"/></svg>Save manager</h2>
+              <div class="set-card">
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Back up saves automatically</span><span class="set-desc">Before you play from this app, and when the game starts from Steam or elsewhere. Always right away when your mods changed since the last backup.</span></span>
+                  <input type="checkbox" class="toggle" id="s-save-auto">
+                </label>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-save-cooldown">Time between automatic backups</label><p class="set-desc">When the mods did not change, the next automatic backup waits at least this long (0 to 1440 minutes)</p></div>
+                  <div class="set-ctl set-ctl-sm"><div class="field-row unit-row"><input id="s-save-cooldown" type="number" min="0" max="1440"><span class="unit">minutes</span></div></div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Pause backups when nothing was played</span><span class="set-desc">No automatic backup while your saves are exactly as in the last one</span></span>
+                  <input type="checkbox" class="toggle" id="s-save-pause">
+                </label>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-save-max">Backups kept per profile</label><p class="set-desc">Older ones are removed (3 to 500). Pinned backups, and the ones taken before a restore in the last 7 days, are always kept.</p></div>
+                  <div class="set-ctl set-ctl-sm"><input id="s-save-max" type="number" min="3" max="500"></div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Separate saves for each profile</span><span class="set-desc" id="s-save-perprofile-desc">Switching profiles swaps your saves too: each profile keeps its own playthroughs. Applies at once. Works best with cloud saves off for Cyberpunk (Steam, GOG).</span></span>
+                  <input type="checkbox" class="toggle" id="s-save-perprofile">
+                </label>
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><span class="set-name">Backup folder</span><p class="set-desc">Outside this app: uninstalling it never removes your backups. Each backup is a plain folder you can open and copy.</p><p class="hint mono" id="s-save-dir"></p></div>
+                  <div class="set-ctl set-ctl-auto">
+                    <button type="button" class="btn" id="s-save-open"><svg class="i"><use href="#i-folder"/></svg><span>Open</span></button>
+                    <button type="button" class="btn" id="s-save-choose"><span>Change…</span></button>
                   </div>
                 </div>
               </div>
@@ -1032,5 +1089,6 @@
   <script src="theme-editor.js"></script>
   <script src="setup.js"></script>
   <script src="assistant.js"></script>
+  <script src="savespage.js"></script>
 </body>
 </html>

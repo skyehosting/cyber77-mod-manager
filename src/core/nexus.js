@@ -30,6 +30,19 @@ function parseModUrl(input) {
 }
 
 /**
+ * A requirement listed as "off-site" whose link is a mod page on Nexus for the same game is that
+ * Nexus mod: authors do this ("CET (No REDMOD version)" linking to mods/107). Takes and returns
+ * { modId, url, external, … }.
+ */
+function requirementOnNexus(req, game) {
+  if (!req?.external) return req;
+  // A link that IS on Nexus (not one that only mentions a Nexus address somewhere in it).
+  if (!/^https?:\/\/(www\.|next\.)?nexusmods\.com\//i.test(req.url || '')) return req;
+  const p = parseModUrl(req.url);
+  return p && p.game === game && p.modId ? { ...req, modId: p.modId, external: false } : req;
+}
+
+/**
  * A Nexus "Mod Manager Download" link:
  *   nxm://cyberpunk2077/mods/107/files/123456?key=…&expires=…&user_id=…
  * The key and expiry let any account (Premium or not) get that one file's download link.
@@ -99,10 +112,12 @@ class NexusClient {
     const ids = [...new Set(modIds.map(Number).filter(n => n > 0))];
     for (let i = 0; i < ids.length; i += 50) {
       const data = await this.graphql(`query($ids: [CompositeDomainWithIdInput!]!) {
-        legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId externalRequirement } } } } } }`,
+        legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId url externalRequirement } } } } } }`,
       { ids: ids.slice(i, i + 50).map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
       for (const n of data.legacyModsByDomain?.nodes || []) {
-        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).filter(r => !r.externalRequirement).map(r => Number(r.modId)).filter(Boolean));
+        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || [])
+          .map(r => requirementOnNexus({ modId: Number(r.modId) || 0, url: r.url || '', external: !!r.externalRequirement }, game))
+          .filter(r => !r.external).map(r => r.modId).filter(Boolean));
       }
     }
     return out;
@@ -120,10 +135,10 @@ class NexusClient {
         legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId modName url notes externalRequirement } } } } } }`,
       { ids: ids.slice(i, i + 50).map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
       for (const n of data.legacyModsByDomain?.nodes || []) {
-        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).map(r => ({
+        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).map(r => requirementOnNexus({
           modId: Number(r.modId) || 0, name: String(r.modName || '').slice(0, 200), url: /^https?:\/\//i.test(r.url || '') ? r.url : '',
           notes: String(r.notes || '').slice(0, 300), external: !!r.externalRequirement,
-        })));
+        }, game)));
       }
     }
     return out;
@@ -152,11 +167,22 @@ class NexusClient {
     const reqs = node.modRequirements?.nexusRequirements?.nodes || [];
     return {
       gameId: String(node.gameId),
-      requirements: reqs.map(r => ({
-        modId: Number(r.modId), modName: r.modName, gameId: String(r.gameId),
-        url: r.url || '', notes: r.notes || '', external: !!r.externalRequirement,
-      })),
+      requirements: reqs.map(r => {
+        const q = requirementOnNexus({
+          modId: Number(r.modId), modName: r.modName, gameId: String(r.gameId),
+          url: r.url || '', notes: r.notes || '', external: !!r.externalRequirement,
+        }, game);
+        return q.external || !r.externalRequirement ? q : { ...q, gameId: String(node.gameId) }; // linked to a mod page of this game
+      }),
     };
+  }
+
+  /** Mods of a game whose name matches (Nexus's own name search): [{ modId, name }], at most 10. */
+  async findModsByName(game, name) {
+    const data = await this.graphql(`query($game: String!, $name: String!) {
+      mods(filter: { gameDomainName: [{ value: $game }], nameStemmed: [{ value: $name, op: MATCHES }] }, count: 10) { nodes { modId name } } }`,
+    { game, name: String(name).slice(0, 100) }, 'search mods');
+    return (data.mods?.nodes || []).map(n => ({ modId: Number(n.modId) || 0, name: String(n.name || '') })).filter(n => n.modId);
   }
 
   /** A v2 GraphQL query. Public data needs no key; the key is sent when there is one. */
@@ -248,4 +274,4 @@ class NexusClient {
   }
 }
 
-module.exports = { ADULT_ONLY, NexusClient, NexusError, parseModUrl, parseNxm };
+module.exports = { ADULT_ONLY, NexusClient, NexusError, parseModUrl, parseNxm, requirementOnNexus };

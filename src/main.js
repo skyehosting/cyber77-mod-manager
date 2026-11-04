@@ -6,6 +6,7 @@ const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
+const { backupDirProblem } = require('./core/saves');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { PlayHistory } = require('./core/plays');
@@ -42,6 +43,25 @@ function send(channel, payload) {
 }
 
 let snapshotTimer = null;
+// When this app last pressed Play, and whether the game was running at the last check (save backups).
+let launchedFromApp = 0;
+let gameWasRunning = false;
+let gameExitedAt = 0;
+const appStartedAt = Date.now(); // a game already running when the app opens is not "just started"
+
+/**
+ * Is the game running, asked right now (per-profile saves never move while it runs)? Also yes for a
+ * few seconds after it exits, while cloud sync uploads what it saved; and yes when the check fails.
+ */
+function gameRunningNow() {
+  if (Date.now() - gameExitedAt < 20000) return Promise.resolve(true);
+  return new Promise(resolve => {
+    require('child_process').execFile('tasklist', ['/FI', 'IMAGENAME eq Cyberpunk2077.exe', '/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 15000 }, (err, stdout) => {
+      resolve(err ? true : /"Cyberpunk2077\.exe"/i.test(String(stdout)));
+    });
+  });
+}
+
 function pushSnapshot() {
   clearTimeout(snapshotTimer);
   snapshotTimer = setTimeout(() => send('snapshot', { ...manager.snapshot(), gameStatus: gameLogs?.status() }), 50);
@@ -184,6 +204,12 @@ async function boot() {
 
   manager = new ModManager({ settings, log: logger });
   manager.on('changed', pushSnapshot);
+  manager.on('saves', () => send('saves-changed'));
+  // Per-profile saves never move while the game runs, or for a minute after Play (before it shows up).
+  manager.gameRunning = async () => !!gameLogs?.status().running || Date.now() - launchedFromApp < 60000 || gameRunningNow();
+  manager.recoverProfileSaves()
+    .catch(err => logger.error('Could not sort out a switch of saves that was cut off last time (your saves are in the backup made before it)', err.message))
+    .finally(() => { try { manager.writeSavesReadme(); } catch (err) { logger.warn('Could not write README.txt beside your save backups', err.message); } });
   manager.on('job', job => send('job', job));
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
@@ -219,7 +245,17 @@ async function boot() {
   logger.on('entry', e => {
     if (e.level === 'warn' || e.level === 'error') gameLogs.report(e.level, e.detail ? `${e.message}: ${e.detail.split('\n')[0]}` : e.message);
   });
-  gameLogs.on('game', status => { send('gamestatus', status); pushSnapshot(); updater?.gameChanged(!!status.running); });
+  gameLogs.on('game', status => {
+    send('gamestatus', status);
+    pushSnapshot();
+    updater?.gameChanged(!!status.running);
+    // Started from Steam or elsewhere (not this app's Play): back up the saves now if a backup is due.
+    if (status.running && !gameWasRunning && Date.now() - launchedFromApp > 120000 && Date.now() - appStartedAt > 15000) {
+      manager.autoBackupSaves('game-start').catch(err => logger.warn('Could not back up your saves when the game started', err.message));
+    }
+    if (gameWasRunning && !status.running) gameExitedAt = Date.now();
+    gameWasRunning = !!status.running;
+  });
   gameLogs.on('reset', () => send('gamelog-reset'));
   // Each play's logs as their own set (before start: the first news can be that the game runs).
   plays = new PlayHistory({ dir: path.join(app.getPath('userData'), 'logs', 'plays'), logs: gameLogs, log: logger, keep: () => settings.get('playsKeep'), profile: () => {
@@ -291,6 +327,12 @@ async function boot() {
   });
   handle('settings:get', () => settings.publicView());
   handle('settings:set', patch => {
+    // Per-profile saves are turned on and off through saves:perProfile only (it records whose saves are where).
+    if (patch && typeof patch === 'object') delete patch.perProfileSaves;
+    if (patch && typeof patch.saveBackupDir === 'string' && patch.saveBackupDir !== '') {
+      const problem = backupDirProblem(patch.saveBackupDir);
+      if (problem) throw new Error(problem);
+    }
     const before = settings.get('dataDir');
     const gameBefore = settings.get('gamePath');
     settings.update(patch);
@@ -346,7 +388,27 @@ async function boot() {
       const missing = missingLaunchOptions(found?.options, true);
       if (missing.length) return { steamOptions: { current: found?.options || '', missing, suggested: [found?.options, ...missing].filter(Boolean).join(' ') } };
     }
-    const r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp, mode: settings.get('launchMode') }, url => shell.openExternal(url));
+    // Never start the game while saves are being restored (or backed up by hand).
+    if (manager.saves.busy) throw new Error('Your saves are being backed up or restored. Press Play again in a moment.');
+    launchedFromApp = Date.now();
+    // A restore point of the saves before playing (Settings, Save manager decides when). A failure is
+    // reported but does not stop the game; a slow first backup goes on after 20 seconds while the game starts.
+    const backup = manager.autoBackupSaves('play').then(b => {
+      if (b.made) send('toast', { text: `Saves backed up before playing (${b.made.saves.length})`, kind: 'success' });
+    }).catch(err => {
+      logger.warn('Could not back up your saves before playing', err.message);
+      send('toast', { text: `Could not back up your saves before playing: ${err.message}`, kind: 'warn' });
+    });
+    const slow = setTimeout(() => send('toast', { text: 'Backing up your saves before playing…', kind: 'info' }), 1500);
+    await Promise.race([backup, new Promise(r => setTimeout(r, 20000))]);
+    clearTimeout(slow);
+    let r;
+    try {
+      r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp, mode: settings.get('launchMode') }, url => shell.openExternal(url));
+    } catch (err) {
+      launchedFromApp = 0; // it did not start: restores are not held back
+      throw err;
+    }
     logger.success(`Launching Cyberpunk 2077 through ${r.via}${r.args.length ? ` (${r.args.join(' ')}, for REDmod)` : ''}`);
     return r;
   });
@@ -468,6 +530,52 @@ async function boot() {
   handle('profiles:delete', id => manager.deleteProfile(id));
   handle('vortex:profilePlan', id => manager.vortexProfilePlan(String(id)));
   handle('vortex:useProfile', (id, opts) => manager.useVortexProfile(String(id), { switchOffOthers: opts?.switchOffOthers !== false }));
+  // ---- Save manager
+  const gameIsRunning = () => !!gameLogs?.status().running;
+  handle('saves:view', () => manager.savesView());
+  handle('saves:backup', label => manager.backupSavesNow({ reason: 'manual', label: typeof label === 'string' ? label.slice(0, 80) : '' }));
+  handle('saves:restore', async (id, folders) => {
+    if (gameIsRunning() || Date.now() - launchedFromApp < 60000) throw new Error('Close Cyberpunk 2077 first: saves cannot be restored while the game is running or starting.');
+    const which = folders === 'all' ? 'all' : (Array.isArray(folders) ? folders.map(String).slice(0, 1000) : []);
+    const done = await manager.saves.restore(String(id), which, manager.backupInfo());
+    logger.success(`Restored ${done.length === 1 ? done[0] : `${done.length} saves`} from the backup of ${String(id).replace('/', ' ')}`);
+    manager.emit('saves');
+    return done;
+  });
+  handle('saves:remove', id => { const freed = manager.saves.remove(String(id)); manager.emit('saves'); return freed; });
+  handle('saves:update', (id, patch) => {
+    const p = {};
+    if (patch && typeof patch === 'object') {
+      if ('pinned' in patch) p.pinned = patch.pinned === true;
+      if ('label' in patch) p.label = typeof patch.label === 'string' ? patch.label : '';
+    }
+    const r = manager.saves.update(String(id), p);
+    manager.emit('saves');
+    return r;
+  });
+  handle('saves:screenshot', folder => manager.saveScreenshot(String(folder)));
+  handle('saves:perProfile', (on, owner) => manager.setPerProfileSaves(on === true, { owner: typeof owner === 'string' ? owner : '' }));
+  handle('saves:profileCount', (id, stored) => manager.profileSaveCount(String(id), { stored: stored === true }));
+  handle('saves:copyPlaythrough', (pt, source, targets) => manager.copyPlaythrough(String(pt), String(source), Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
+  handle('saves:copyAll', (source, target) => manager.copyAllSaves(String(source), String(target)));
+  handle('saves:open', async which => {
+    let dir;
+    if (which === 'saves') dir = manager.saves.savesDir();
+    else if (which === 'backups') { dir = manager.saves.root(); fs.mkdirSync(dir, { recursive: true }); } else dir = manager.saves.dirOf(String(which)); // one backup (checked to be inside the backup folder)
+    const failed = await shell.openPath(dir); // '' when it opened
+    if (failed) throw new Error(`Could not open the folder: ${failed}`);
+  });
+  handle('saves:chooseDir', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose where save backups go', properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    // A folder of their own inside the one chosen: cleaning up old backups never touches anything else there.
+    const dir = /save backups$/i.test(path.basename(r.filePaths[0])) ? r.filePaths[0] : path.join(r.filePaths[0], 'Edgerunners save backups');
+    const problem = backupDirProblem(dir);
+    if (problem) throw new Error(problem);
+    settings.update({ saveBackupDir: dir });
+    manager.emit('saves');
+    return settings.get('saveBackupDir');
+  });
   handle('mo2:adopt', id => manager.adoptFromMo2(String(id), 'all'));
   handle('mo2:profilePlan', id => manager.mo2ProfilePlan(String(id)));
   handle('mo2:profileMods', id => manager.mo2ProfileMods(String(id)));

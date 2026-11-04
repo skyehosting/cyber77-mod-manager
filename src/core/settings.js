@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const { JsonStore } = require('./jsonStore');
+const { backupDirProblem } = require('./saves');
 
 const DEFAULT_SEVEN_ZIP = 'C:\\Program Files\\7-Zip\\7z.exe';
 
@@ -31,6 +32,13 @@ class Settings {
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       redmodLast: null, // the last REDmod deploy this app ran: { ok, at, reason }
       vortexAutoMove: 'ask', // Vortex's mods: 'on' move into this app automatically | 'ask' once | 'off' leave them
+      // Save manager: automatic backups of the game's saves (before Play, or when the game starts).
+      saveAutoBackup: true,
+      saveCooldown: 60, // minutes between automatic backups when the mods did not change
+      savePauseUnchanged: true, // no automatic backup while the saves are exactly as in the last one
+      saveMaxPerProfile: 20, // backups kept per profile (pinned and recent safety backups are extra)
+      perProfileSaves: false, // each profile has its own saves (moved in and out at a profile switch)
+      saveBackupDir: '', // '' = Saved Games\Edgerunners Mod Manager\Save backups
       reqView: 'open', // the Mods page's requirements under each mod: 'open' always | 'collapsed' (click to open)
       mo2Folders: [], // Mod Organizer 2 folders the user added (instances in places this app does not look)
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
@@ -146,6 +154,13 @@ class Settings {
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
     if (['open', 'collapsed'].includes(patch.reqView)) d.reqView = patch.reqView;
+    if ('saveAutoBackup' in patch) d.saveAutoBackup = !!patch.saveAutoBackup;
+    if ('perProfileSaves' in patch) d.perProfileSaves = !!patch.perProfileSaves;
+    if ('savePauseUnchanged' in patch) d.savePauseUnchanged = !!patch.savePauseUnchanged;
+    if ('saveCooldown' in patch) { const c = parseInt(patch.saveCooldown, 10); if (Number.isFinite(c)) d.saveCooldown = Math.min(1440, Math.max(0, c)); }
+    if ('saveMaxPerProfile' in patch) d.saveMaxPerProfile = Math.min(500, Math.max(3, parseInt(patch.saveMaxPerProfile, 10) || 20));
+    // '' is the default folder; anything else must be a safe place (not in the synced save folder, not a drive root…).
+    if ('saveBackupDir' in patch && (patch.saveBackupDir === '' || !backupDirProblem(patch.saveBackupDir))) d.saveBackupDir = patch.saveBackupDir;
     if (Array.isArray(patch.mo2Folders)) d.mo2Folders = [...new Set(patch.mo2Folders.filter(f => typeof f === 'string' && path.isAbsolute(f)).map(f => f.slice(0, 500)))].slice(0, 20);
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
     if ('windowBg' in patch) d.windowBg = /^#[0-9a-f]{6}$/i.test(String(patch.windowBg)) ? String(patch.windowBg) : '';
