@@ -115,7 +115,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 580,
     backgroundColor: settings?.get('windowBg') || '#0d0f12',
-    title: 'Cyber Mod Manager',
+    title: 'Edgerunners Mod Manager',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -170,7 +170,7 @@ async function boot() {
   logger.setHistory(path.join(userData, 'logs', 'manager-history.jsonl'));
   logger.on('entry', e => send('log', e));
   // One line per start: which version, and whether the saved settings and API key were there.
-  logger.info(`Cyber Mod Manager ${app.getVersion()} started${process.argv.includes('--updated') ? ' after an update' : ''}: settings ${settings.store.restored ? 'restored from their backup' : 'loaded'}, API key ${settings.apiKey ? 'found' : settings.get('apiKeyEnc') ? 'saved but could not be read' : 'not set'}`);
+  logger.info(`Edgerunners Mod Manager ${app.getVersion()} started${process.argv.includes('--updated') ? ' after an update' : ''}: settings ${settings.store.restored ? 'restored from their backup' : 'loaded'}, API key ${settings.apiKey ? 'found' : settings.get('apiKeyEnc') ? 'saved but could not be read' : 'not set'}`);
 
   if (!isGameDir(settings.get('gamePath'))) {
     const found = await findCyberpunk();
@@ -495,13 +495,13 @@ async function boot() {
   handle('profiles:importPlan', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Import profile', properties: ['openFile'],
-      filters: [{ name: 'Cyber Mod Manager profile', extensions: ['zip', 'json'] }],
+      filters: [{ name: 'Mod manager profile', extensions: ['zip', 'json'] }],
     });
     if (r.canceled || !r.filePaths[0]) return null;
     const file = r.filePaths[0];
     if (/\.zip$/i.test(file)) {
       const plan = await manager.planProfileZip(file);
-      if (!plan) throw new Error('That .zip is not a profile exported by Cyber Mod Manager (it has no profile.json).');
+      if (!plan) throw new Error('That .zip is not a profile exported by this app (it has no profile.json).');
       return plan;
     }
     if (fs.statSync(file).size > 5 * 1024 * 1024) throw new Error('That file is too large to be a profile.');

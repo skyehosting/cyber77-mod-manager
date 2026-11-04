@@ -60,11 +60,13 @@ jobs:
           # Passed as a variable: a commit message with quotes must not break the command.
           NOTES: ${{ github.event.head_commit.message }}
         run: |
-          $exe = "dist/Cyber-Mod-Manager-Setup-$env:VERSION.exe"
-          # The same installer under a fixed name: .../releases/latest/download/Cyber-Mod-Manager-Setup.exe
-          # always downloads the newest version (the README's Download link).
+          $exe = "dist/Edgerunners-Mod-Manager-Setup-$env:VERSION.exe"
+          # The same installer under fixed names: .../releases/latest/download/Edgerunners-Mod-Manager-Setup.exe
+          # always downloads the newest version (the site's and the README's Download link); the old
+          # Cyber-Mod-Manager-Setup.exe name keeps working for links made before the rename.
+          Copy-Item $exe dist/Edgerunners-Mod-Manager-Setup.exe
           Copy-Item $exe dist/Cyber-Mod-Manager-Setup.exe
-          gh release create "v$env:VERSION" $exe "$exe.blockmap" dist/latest.yml dist/Cyber-Mod-Manager-Setup.exe `
-            --title "Cyber Mod Manager $env:VERSION" `
+          gh release create "v$env:VERSION" $exe "$exe.blockmap" dist/latest.yml dist/Edgerunners-Mod-Manager-Setup.exe dist/Cyber-Mod-Manager-Setup.exe `
+            --title "Edgerunners Mod Manager $env:VERSION" `
             --notes "$env:NOTES" `
             --latest

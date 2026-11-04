@@ -66,9 +66,9 @@ function buildReport({ snap, vortex, gameLog, gameStatus, sources, app }) {
   const errors = logProblems.filter(e => e.level === 'error').length;
   const warnings = logProblems.length - errors;
   return {
-    report: 'Cyber Mod Manager diagnostics',
+    report: 'Edgerunners Mod Manager diagnostics',
     exportedAt: new Date().toISOString(),
-    app: { name: 'Cyber Mod Manager', version: app?.version || '', electron: process.versions.electron || null },
+    app: { name: 'Edgerunners Mod Manager', version: app?.version || '', electron: process.versions.electron || null },
     system: { os: `${os.type()} ${os.release()}`, arch: os.arch() },
     game: { folder: snap.game?.path || null, found: !!snap.game?.valid, running: !!gameStatus?.running, since: iso(gameStatus?.since) },
     summary: {

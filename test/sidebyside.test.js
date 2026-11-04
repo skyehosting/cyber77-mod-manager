@@ -181,7 +181,7 @@ test('the nxm handler is named from its registered command', () => {
   const { describe } = require('../src/core/nxmHandler');
   const own = String.raw`C:\Apps\Cyber Mod Manager\electron.exe`;
   assert.strictEqual(describe(String.raw`"C:\Program Files\Black Tree Gaming Ltd\Vortex\Vortex.exe" -d "%1"`, own), 'Vortex');
-  assert.strictEqual(describe(`"${own}" "C:\\app" "%1"`, own), 'Cyber Mod Manager');
+  assert.strictEqual(describe(`"${own}" "C:\\app" "%1"`, own), 'Edgerunners Mod Manager');
   assert.strictEqual(describe(String.raw`C:\Users\x\Desktop\DMM.exe "%1"`, own), 'DMM');
   assert.strictEqual(describe('', own), '');
 });

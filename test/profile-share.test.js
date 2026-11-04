@@ -117,7 +117,7 @@ test('importing a profile plans, creates it, and installs downloads into it in t
 
 test('import rejects files that are not profiles', async () => {
   const { mgr } = makeManager();
-  await assert.rejects(mgr.planProfileImport({ hello: 1 }), /not a Cyber Mod Manager profile/);
+  await assert.rejects(mgr.planProfileImport({ hello: 1 }), /not a profile from this app/);
   await assert.rejects(mgr.planProfileImport({ format: 'cyber-mod-manager-profile', version: 9, mods: [] }), /newer version/);
 });
 
@@ -229,7 +229,7 @@ test('profile codes: damaged, foreign and pasted-JSON input', async () => {
   assert.throws(() => profileCode.decode(code.slice(0, -12)), /damaged or incomplete/);
   assert.throws(() => profileCode.decode('hello'), /start with CMM1-/);
   const { mgr } = makeManager();
-  await assert.rejects(mgr.planProfileCode('{"format":"something-else","mods":[]}'), /not a Cyber Mod Manager profile/);
+  await assert.rejects(mgr.planProfileCode('{"format":"something-else","mods":[]}'), /not a profile from this app/);
   await assert.rejects(mgr.planProfileCode('   '), /Paste a profile code/);
 });
 

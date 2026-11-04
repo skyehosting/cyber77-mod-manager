@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, h, icon, run, store, state, THEMES, THEME_ORDER, themeMini, chooseTheme, themeState, loadSettings, renderStatus */
+/* global appName, api, $, h, icon, run, store, state, THEMES, THEME_ORDER, themeMini, chooseTheme, themeState, loadSettings, renderStatus */
 
 // ---------------------------------------------------------------- the setup wizard
 
@@ -81,7 +81,7 @@ function showSetupStep(i, dir = 1) {
 function setupFrame(box) {
   const frame = h('div', { class: 'su-frame' },
     h('header', { class: 'su-top' },
-      h('span', { class: 'su-brand' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, icon('brand')), 'Cyber Mod Manager'),
+      h('span', { class: 'su-brand' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, icon('brand')), h('span', { class: 'app-name' }, appName())),
       h('ol', { class: 'su-dots', 'aria-label': 'Setup steps' }),
       h('button', { type: 'button', class: 'btn btn-sm su-skip-all', onclick: closeSetup }, 'Skip setup')),
     h('div', { class: 'su-stage' }));
@@ -159,7 +159,7 @@ const SETUP_BUILD = {
   welcome() {
     return [h('div', { class: 'su-hello' },
       h('span', { class: 'su-hello-mark brand-mark', 'aria-hidden': 'true' }, icon('brand')),
-      h('h1', { class: 'su-title su-hello-title', id: 'su-title-welcome', tabindex: '-1' }, 'Welcome to Cyber Mod Manager'),
+      h('h1', { class: 'su-title su-hello-title', id: 'su-title-welcome', tabindex: '-1' }, `Welcome to ${appName()}`),
       h('p', { class: 'su-hello-text' }, 'Mods for Cyberpunk 2077: found, installed, kept in order, and fixed when something breaks. Let\'s get you set up. It takes about a minute, and every step can be skipped.'),
       h('div', { class: 'su-hello-go' },
         h('button', { type: 'button', class: 'btn btn-primary su-next', onclick: next }, h('span', {}, 'Get started'), icon('chevron-right')),

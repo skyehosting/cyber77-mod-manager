@@ -32,8 +32,8 @@
     "url": "https://github.com/skyehosting/cyber77-mod-manager.git"
   },
   "author": "skyehosting",
-  "license": "MIT",
-  "homepage": "https://github.com/skyehosting/cyber77-mod-manager",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "homepage": "https://skyehosting.github.io/cyber77-mod-manager/",
   "build": {
     "appId": "io.github.skyehosting.cybermodmanager",
     "productName": "Cyber Mod Manager",
@@ -44,6 +44,7 @@
     "files": [
       "src/**/*",
       "package.json",
+      "LICENSE.md",
       "!**/*.map"
     ],
     "extraResources": [
@@ -67,7 +68,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "Cyber-Mod-Manager-Setup-${version}.${ext}"
+      "artifactName": "Edgerunners-Mod-Manager-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,

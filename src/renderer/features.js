@@ -521,7 +521,7 @@ function profilePanel(x, p) {
       plays.length ? h('button', { class: 'btn btn-sm', dataset: key('logs'), onclick: () => showProfileLogs(x) }, icon('activity'), h('span', {}, 'See its game logs')) : null),
     sec('Share',
       h('div', { class: 'pshare' }, h('code', { class: 'pcode', title: 'The fingerprint of its share code: two PCs with the same fingerprint have the same profile' }, x.codeTag ? `CMM-${x.codeTag}` : '—'), ...shareButtons(x, key)),
-      h('p', { class: 'hint' }, 'Anyone with Cyber Mod Manager can paste the code under Import to get the same mods and order. Mods from local files travel in an exported .zip.')),
+      h('p', { class: 'hint' }, 'Anyone with this app (Edgerunners Mod Manager, once Cyber Mod Manager) can paste the code under Import to get the same mods and order. Mods from local files travel in an exported .zip.')),
     h('div', { class: 'ppanel-foot' },
       h('button', {
         class: 'btn btn-sm btn-danger', dataset: key('delete'), disabled: active, title: active ? 'Switch to another profile before deleting this one' : 'Delete this profile',

@@ -222,7 +222,7 @@ function themeTemplate(from = 'netrunner') {
   const t = THEMES[from] || THEMES.netrunner;
   const pad = Math.max(...THEME_KEYS.map(k => k.length)) + 1;
   const out = [
-    '/* Cyber Mod Manager theme. Every line: --token: colour;',
+    '/* Edgerunners Mod Manager theme. Every line: --token: colour;',
     '   Colours: #rgb, #rrggbb, rgb(…), hsl(…), oklch(…) or a colour name. --scheme is light or dark',
     '   (scrollbars and built-in controls follow it). Changes show at once in the whole app. */',
     '',
@@ -293,5 +293,18 @@ function applyTheme(id, customText = themeStore.get('theme.custom', '')) {
 }
 
 applyTheme(themeStore.get('theme', 'netrunner'));
+
+// ---------------------------------------------------------------- the app's name
+
+/** The names the app can go by (Settings > Interface). The first is the default. */
+const APP_NAMES = ['Edgerunners Mod Manager', "Lucy's Mod Manager", "David's Mod Manager", "Netrunner's Mod Manager", 'Cyber Mod Manager'];
+const appName = () => { const n = themeStore.get('app.name', APP_NAMES[0]); return APP_NAMES.includes(n) ? n : APP_NAMES[0]; };
+/** Show the name: the window title and every element marked with the class app-name. */
+function applyAppName() {
+  document.title = appName();
+  for (const el of document.querySelectorAll('.app-name')) el.textContent = appName();
+}
+document.title = appName();
+document.addEventListener('DOMContentLoaded', applyAppName);
 // The first run opens on the setup wizard: the app stays hidden until setup.js decides (no flash of it).
 if (!themeStore.get('setup.done', false)) document.documentElement.dataset.setup = 'pending';

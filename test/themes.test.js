@@ -11,7 +11,7 @@ function load() {
   const ctx = {
     CSS: { supports: (prop, v) => (prop === 'box-shadow' ? /^[\d.\s\-a-z]*(rgb\([\d\s./]+\))?$/i.test(v) : /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,/%]+\)|[a-z]+)$/i.test(v)) },
     localStorage: { getItem: () => null, setItem() {} },
-    document: { documentElement: { style: { setProperty: (k, v) => { set[k] = v; }, removeProperty: k => { delete set[k]; } }, dataset: {} } },
+    document: { addEventListener() {}, querySelectorAll: () => [], title: '', documentElement: { style: { setProperty: (k, v) => { set[k] = v; }, removeProperty: k => { delete set[k]; } }, dataset: {} } },
   };
   vm.createContext(ctx);
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'themes.js'), 'utf8');

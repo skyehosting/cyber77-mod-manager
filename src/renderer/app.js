@@ -199,6 +199,8 @@ function setActivityLine(show) {
 $('#s-activity-line').checked = store.get('activity.show', true) !== false;
 setActivityLine($('#s-activity-line').checked);
 $('#s-activity-line').addEventListener('change', ev => setActivityLine(ev.target.checked));
+$('#s-app-name').replaceChildren(...APP_NAMES.map(n => h('option', { value: n, selected: n === appName() }, n)));
+$('#s-app-name').addEventListener('change', ev => { store.set('app.name', ev.target.value); applyAppName(); });
 
 // ---------------------------------------------------------------- dialogs
 
@@ -1441,7 +1443,7 @@ function showNxmState(st) {
   $('#s-nxm').checked = st.on;
   const el = $('#s-nxm-state');
   el.className = `check-sub nxm-state ${st.on && !st.ours ? 'bad' : st.ours ? 'ok' : ''}`;
-  el.textContent = st.ours ? 'Now: these links open Cyber Mod Manager.'
+  el.textContent = st.ours ? `Now: these links open ${appName()}.`
     : st.on ? `Now: ${st.handler || 'nothing'} has these links (it took them back). Turn this off and on again to take them over.`
       : `Now: ${st.handler ? `these links open ${st.handler}` : 'no program handles these links'}.`;
 }
@@ -1453,7 +1455,7 @@ $('#s-nxm').addEventListener('change', async ev => {
   const st = await run(api.nxmStatus());
   if (!st) return;
   if (on) {
-    const ok = await confirmBox('Handle Nexus downloads here?', `"Mod Manager Download" buttons on nexusmods.com will open Cyber Mod Manager and download here${st.handler && st.handler !== 'Cyber Mod Manager' ? `, instead of ${st.handler}` : ''}. The current setting is saved, and turning this off puts it back. The first time, your browser asks whether to open Cyber Mod Manager: allow it.${st.handler === 'Vortex' ? ' Vortex takes these links back when it starts, unless "Handle Nexus links" is off in Vortex\'s settings.' : ''}`, 'Handle them here');
+    const ok = await confirmBox('Handle Nexus downloads here?', `"Mod Manager Download" buttons on nexusmods.com will open ${appName()}er and download here${st.handler && st.handler !== 'Cyber Mod Manager' ? `, instead of ${st.handler}` : ''}. The current setting is saved, and turning this off puts it back. The first time, your browser asks whether to open Cyber Mod Manager: allow it.${st.handler === 'Vortex' ? ' Vortex takes these links back when it starts, unless "Handle Nexus links" is off in Vortex\'s settings.' : ''}`, 'Handle them here');
     if (!ok) return;
   }
   const res = await run(api.setNxm(on));

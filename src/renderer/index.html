@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; frame-src https://*.nexusmods.com;">
-  <title>Cyber Mod Manager</title>
+  <title>Edgerunners Mod Manager</title>
   <link rel="stylesheet" href="styles.css">
   <script src="themes.js"></script>
 </head>
@@ -79,7 +79,7 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><svg class="i"><use href="#i-brand"/></svg></span>
         <span class="brand-text">
-          <span class="brand-name">Cyber Mod Manager</span>
+          <span class="brand-name app-name">Edgerunners Mod Manager</span>
           <span class="brand-sub" id="brand-sub">Cyberpunk 2077</span>
         </span>
         <button class="side-toggle" id="side-toggle" title="Collapse the sidebar" aria-label="Collapse the sidebar" aria-expanded="true" aria-controls="sidebar"><svg class="i"><use href="#i-panel"/></svg></button>
@@ -849,6 +849,10 @@
                       <option value="250">250%</option>
                     </select>
                   </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-app-name">The app's name</label><p class="set-desc">What the app calls itself: in its title bar, the sidebar and the welcome</p></div>
+                  <div class="set-ctl"><select id="s-app-name"></select></div>
                 </div>
                 <label class="set-row set-toggle">
                   <span class="set-label"><span class="set-name">Start with the sidebar collapsed</span><span class="set-desc">The button next to the app name, or Ctrl+B, folds it at any time</span></span>

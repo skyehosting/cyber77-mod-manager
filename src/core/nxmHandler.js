@@ -27,7 +27,7 @@ async function readCommand() {
 function describe(command, ownExe) {
   if (!command) return '';
   const exe = (command.match(/^"([^"]+)"/) || command.match(/^(\S+)/) || [])[1] || command;
-  if (ownExe && path.resolve(exe).toLowerCase() === path.resolve(ownExe).toLowerCase()) return 'Cyber Mod Manager';
+  if (ownExe && path.resolve(exe).toLowerCase() === path.resolve(ownExe).toLowerCase()) return 'Edgerunners Mod Manager';
   const base = path.basename(exe).replace(/\.exe$/i, '');
   return /^vortex$/i.test(base) ? 'Vortex' : base;
 }

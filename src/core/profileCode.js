@@ -60,7 +60,7 @@ function encode(doc) {
 /** A share code back into the export format the importer reads. Throws on anything malformed. */
 function decode(code) {
   const text = String(code || '').trim().replace(/\s+/g, '');
-  if (!text.startsWith(PREFIX)) throw new Error('That is not a Cyber Mod Manager profile code (they start with CMM1-).');
+  if (!text.startsWith(PREFIX)) throw new Error('That is not a profile code from this app (they start with CMM1-).');
   if (text.length > MAX_CODE_CHARS) throw new Error('That code is too long to be a profile.');
   let buf;
   try {
@@ -89,7 +89,7 @@ function decode(code) {
     return s;
   };
   const version = varint();
-  if (version !== 1) throw new Error('This profile code was made by a newer version of Cyber Mod Manager. Update the app to read it.');
+  if (version !== 1) throw new Error('This profile code was made by a newer version of the app. Update it to read the code.');
   const name = textField();
   const count = varint();
   if (count > 5000) throw new Error('That code lists too many mods to be a profile.');

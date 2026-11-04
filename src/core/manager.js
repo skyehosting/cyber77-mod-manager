@@ -1429,9 +1429,9 @@ class ModManager extends EventEmitter {
    */
   async planProfileImport(doc, { bundleDir = '' } = {}) {
     if (!doc || doc.format !== PROFILE_FORMAT || !Array.isArray(doc.mods)) {
-      throw new Error('This file is not a Cyber Mod Manager profile.');
+      throw new Error('This file is not a profile from this app (Edgerunners Mod Manager, formerly Cyber Mod Manager).');
     }
-    if (doc.version > 1) throw new Error('This profile was made by a newer version of Cyber Mod Manager.');
+    if (doc.version > 1) throw new Error('This profile was made by a newer version of the app: update it to read this one.');
     if (doc.mods.length > MAX_PROFILE_MODS) throw new Error(`This profile lists ${doc.mods.length} mods; the most a profile can hold is ${MAX_PROFILE_MODS}.`);
     const rows = [];
     const byMod = new Map();
@@ -1661,9 +1661,9 @@ class ModManager extends EventEmitter {
       }
       fs.writeFileSync(path.join(tmp, 'profile.json'), JSON.stringify(doc, null, 2));
       fs.writeFileSync(path.join(tmp, 'share-code.txt'), [
-        `Cyber Mod Manager profile "${doc.name}"`,
+        `Edgerunners Mod Manager profile "${doc.name}"`,
         '',
-        'Drag this .zip onto Cyber Mod Manager (or Profiles → Import) to set the profile up, with the mods',
+        'Drag this .zip onto Edgerunners Mod Manager (or Profiles → Import) to set the profile up, with the mods',
         'from local files that are inside it. The code below sets up only its Nexus mods:',
         '',
         profileCode.encode(doc),

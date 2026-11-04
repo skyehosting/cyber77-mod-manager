@@ -53,12 +53,12 @@ class AppUpdater extends EventEmitter {
     this.up.on('update-not-available', () => this.set({ status: 'current', lastCheck: Date.now() }));
     this.up.on('update-available', info => {
       this.set({ status: 'downloading', available: info.version, progress: 0, lastCheck: Date.now() });
-      this.log.info(`Cyber Mod Manager ${info.version} is available; downloading it`);
+      this.log.info(`Edgerunners Mod Manager ${info.version} is available; downloading it`);
     });
     this.up.on('download-progress', p => this.set({ progress: Math.round(p.percent || 0) }));
     this.up.on('update-downloaded', info => {
       this.set({ status: 'ready', available: info.version, progress: 100 });
-      this.log.success(`Cyber Mod Manager ${info.version} is downloaded and installs with a restart`);
+      this.log.success(`Edgerunners Mod Manager ${info.version} is downloaded and installs with a restart`);
       this.scheduleRestart();
     });
     this.up.on('error', err => {
@@ -142,13 +142,13 @@ class AppUpdater extends EventEmitter {
   postpone() {
     clearTimeout(this.restartTimer);
     this.set({ postponed: true, restartAt: 0 });
-    this.log.info('The update installs when Cyber Mod Manager is closed');
+    this.log.info('The update installs when the app is closed');
   }
 
   installNow() {
     if (this.state.status !== 'ready') return;
     clearTimeout(this.restartTimer);
-    this.log.info(`Restarting to install Cyber Mod Manager ${this.state.available}`);
+    this.log.info(`Restarting to install Edgerunners Mod Manager ${this.state.available}`);
     this.emit('before-install');
     // Silent install, then start the app again.
     setImmediate(() => this.up.quitAndInstall(true, true));

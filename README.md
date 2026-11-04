@@ -1,8 +1,8 @@
-# Cyber Mod Manager
+# Edgerunners Mod Manager
 
-A Nexus Mods downloader and mod manager for Cyberpunk 2077, for Windows.
+The all-in-one mod manager for Cyberpunk 2077 on Windows: Nexus downloads, profiles, load order, game logs, crash help and an optional AI helper, in one app. Formerly Cyber Mod Manager.
 
-### [⬇ Download the latest version](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Cyber-Mod-Manager-Setup.exe)
+### [⬇ Download the latest version](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe) · [Project page](https://skyehosting.github.io/cyber77-mod-manager/)
 
 [![Latest release](https://img.shields.io/github/v/release/skyehosting/cyber77-mod-manager?label=latest&style=flat-square)](https://github.com/skyehosting/cyber77-mod-manager/releases/latest) · [All releases](https://github.com/skyehosting/cyber77-mod-manager/releases)
 
@@ -182,7 +182,7 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 
 ## Data
 
-`%APPDATA%\Cyber Mod Manager\`: `settings.json` (the API key is encrypted with Windows DPAPI), and `data\` (downloads, staging, backups, `library.json`, `deployment.json`).
+`%APPDATA%\Cyber Mod Manager\` (the folder keeps its original name, so updating from Cyber Mod Manager keeps everything): `settings.json` (the API key is encrypted with Windows DPAPI), and `data\` (downloads, staging, backups, `library.json`, `deployment.json`).
 
 ## Releases
 
@@ -201,3 +201,7 @@ From source: `npm install`, then `npm start` (or `Start Cyber Mod Manager.cmd`).
 - a full import → install → enable → conflict → uninstall run against a fake game folder;
 - the app's update schedule and restart;
 - reading Vortex's state and deploying Vortex mods without Vortex, mod link and `nxm://` parsing, the file picker plan, store detection, Nexus mod search, and the diagnostics report.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md), with credit required. Free to use, change and share for any non-commercial purpose. Selling it, charging for it, or making money from it or from work based on it is not allowed, and every copy or fork must keep the notice crediting skyehosting and linking here. Releases up to v1.1.57 were published under MIT and stay under MIT. 7-Zip, which the installer bundles, keeps its own license.
