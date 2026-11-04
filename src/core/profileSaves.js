@@ -256,7 +256,11 @@ class ProfileSaves {
     const out = {};
     for (const id of profileIds) {
       if (!ID.test(id)) continue;
-      out[id] = groupPlaythroughs(id === activeId ? scanSaves(this.savesDir()) : this.savesOf(id)).map(p => ({ id: p.id, count: p.count, level: p.level, lifePath: p.lifePath, gender: p.gender, time: p.time }));
+      const saves = id === activeId ? scanSaves(this.savesDir()) : this.savesOf(id);
+      const size = new Map(saves.map(s => [s.folder, s.size]));
+      // shot: the newest save, for its picture (the page asks for it by profile and slot).
+      out[id] = groupPlaythroughs(saves).map(p => ({ id: p.id, count: p.count, level: p.level, lifePath: p.lifePath, gender: p.gender, time: p.time,
+        shot: { profile: id, folder: p.latest, time: p.time, size: size.get(p.latest) || 0 } }));
     }
     return out;
   }

@@ -46,9 +46,11 @@ async function loadSaves() {
 
 // ---- screenshots: read once per save as it is now (a slot the game reuses gets its new picture)
 
-const shotKey = s => `${s.folder}:${Math.round(s.time)}:${s.size}`;
+// A save in another profile's folder carries `profile`.
+const shotKey = s => `${s.profile ? `${s.profile}/` : ''}${s.folder}:${Math.round(s.time)}:${s.size}`;
 function pruneShots(v) {
   const keep = new Set(v.saves.map(shotKey));
+  for (const list of Object.values(v.perProfile?.playthroughs || {})) for (const p of list) if (p.shot) keep.add(shotKey(p.shot));
   for (const k of sv.shots.keys()) if (!keep.has(k)) sv.shots.delete(k);
 }
 function shotEl(save, cls) {
@@ -57,7 +59,7 @@ function shotEl(save, cls) {
   const key = shotKey(save);
   let p = sv.shots.get(key);
   if (!p) {
-    p = api.saveScreenshot(save.folder).then(r => r?.ok || '');
+    p = api.saveScreenshot(save.folder, save.profile || '').then(r => r?.ok || '');
     sv.shots.set(key, p);
     p.then(url => { if (!url) setTimeout(() => { if (sv.shots.get(key) === p) sv.shots.delete(key); }, 60000); }); // none yet: asked again in a minute
   }
@@ -152,6 +154,7 @@ function otherProfilesView(v) {
     for (const p of list) {
       const here = v.playthroughs.some(x => x.id === p.id);
       rows.push(h('div', { class: 'sv-bk', role: 'listitem' },
+        shotEl(p.shot, 'sv-thumb'),
         h('span', { class: 'sv-main' },
           h('span', { class: 'sv-title' }, ptTitle(p), h('span', { class: 'tag tag-off' }, name)),
           h('span', { class: 'sv-sub' }, [p.level ? `Level ${p.level}` : '', plural(p.count, 'save'), p.time ? `last saved ${ago(p.time)}` : '', here ? 'also here' : ''].filter(Boolean).join(' · '))),

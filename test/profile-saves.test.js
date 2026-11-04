@@ -281,3 +281,18 @@ test('half-made copies left by a cut-off copy are cleared', async () => {
   assert.ok(!fs.existsSync(path.join(saves, '.ManualSave-6.moving')));
   assert.deepStrictEqual(slots(saves), ['AutoSave-0', 'ManualSave-1', 'QuickSave-0']);
 });
+
+test('a playthrough kept in another profile\'s folder shows its picture, read from that folder', async () => {
+  const { mgr, saves, first } = setup();
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('picture')]);
+  for (const slot of ['ManualSave-1', 'AutoSave-0']) fs.writeFileSync(path.join(saves, slot, 'screenshot.png'), png);
+  await mgr.setPerProfileSaves(true);
+  await mgr.switchProfile('p2');
+  const pt = mgr.savesView().perProfile.playthroughs[first].find(p => p.id === 'aaaa');
+  assert.strictEqual(pt.shot.profile, first);
+  assert.ok(['ManualSave-1', 'AutoSave-0'].includes(pt.shot.folder));
+  assert.strictEqual(mgr.saveScreenshot(pt.shot.folder, first), `data:image/png;base64,${png.toString('base64')}`);
+  assert.strictEqual(mgr.saveScreenshot(pt.shot.folder), '', 'not in the game\'s folder now');
+  assert.throws(() => mgr.saveScreenshot('ManualSave-1', 'toString'), /Unknown profile/);
+  assert.throws(() => mgr.saveScreenshot('..\ManualSave-1', first), /No such save/);
+});

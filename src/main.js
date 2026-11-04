@@ -553,7 +553,7 @@ async function boot() {
     manager.emit('saves');
     return r;
   });
-  handle('saves:screenshot', folder => manager.saveScreenshot(String(folder)));
+  handle('saves:screenshot', (folder, profile) => manager.saveScreenshot(String(folder), typeof profile === 'string' ? profile : ''));
   handle('saves:perProfile', (on, owner) => manager.setPerProfileSaves(on === true, { owner: typeof owner === 'string' ? owner : '' }));
   handle('saves:profileCount', (id, stored) => manager.profileSaveCount(String(id), { stored: stored === true }));
   handle('saves:copyPlaythrough', (pt, source, targets) => manager.copyPlaythrough(String(pt), String(source), Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));

@@ -82,7 +82,7 @@ contextBridge.exposeInMainWorld('api', {
   restoreSaves: (id, folders) => call('saves:restore', id, folders),
   removeSaveBackup: id => call('saves:remove', id),
   updateSaveBackup: (id, patch) => call('saves:update', id, patch),
-  saveScreenshot: folder => call('saves:screenshot', folder),
+  saveScreenshot: (folder, profile) => call('saves:screenshot', folder, profile),
   setPerProfileSaves: (on, owner) => call('saves:perProfile', on, owner),
   profileSaveCount: (id, stored) => call('saves:profileCount', id, stored),
   copyPlaythrough: (pt, source, targets) => call('saves:copyPlaythrough', pt, source, targets),

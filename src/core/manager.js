@@ -1527,11 +1527,19 @@ class ModManager extends EventEmitter {
     };
   }
 
-  /** A save's screenshot as a data URL (the page cannot read the save folder itself). */
-  saveScreenshot(folder) {
+  /**
+   * A save's screenshot as a data URL (the page cannot read the save folder itself). With a profile
+   * (per-profile saves on): from that profile's own folder, unless its saves are the game's now.
+   */
+  saveScreenshot(folder, profileId = '') {
     const s = String(folder);
     if (!SAVE_SLOT.test(s)) throw new Error('No such save.');
-    const file = path.join(this.saves.savesDir(), s, 'screenshot.png');
+    let dir = this.saves.savesDir();
+    if (profileId && this.settings.get('perProfileSaves') && profileId !== this.savesOwner()) {
+      if (!this.isProfile(profileId)) throw new Error('Unknown profile.');
+      dir = this.profileSaves.dirOf(profileId);
+    }
+    const file = path.join(dir, s, 'screenshot.png');
     try {
       const st = fs.lstatSync(file);
       if (!st.isFile() || st.size > 4 << 20) return '';
