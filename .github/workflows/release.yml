@@ -5,6 +5,8 @@ name: Release
 on:
   push:
     branches: [main]
+    # The project page (docs/) is published by GitHub Pages; a change to it alone is not a new version.
+    paths-ignore: ['docs/**']
   workflow_dispatch:
 
 permissions:
@@ -21,6 +23,8 @@ jobs:
       VERSION: 1.1.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -51,7 +55,7 @@ jobs:
       # app.asar is where the app's code is packed: unpack it so the check reads every file.
       - name: Check for keys in the built app
         run: |
-          npx asar extract dist/win-unpacked/resources/app.asar dist/asar-check
+          npx @electron/asar extract dist/win-unpacked/resources/app.asar dist/asar-check
           node tools/check-secrets.js dist/asar-check dist/win-unpacked/resources
 
       - name: Publish the release

@@ -413,6 +413,7 @@ class Assistant extends EventEmitter {
       this.state.note = `${this.state.note}[request expired: the user did not answer "${p.title}"; nothing was changed]\n`;
     }
     this.show({ type: 'user', text: said });
+    this.tools?.noteUserText?.(said); // addresses the user gives may be read
     this.state.history.push({ role: 'user', text: `${this.state.note}${said}` });
     this.state.note = '';
     this.busy = true;

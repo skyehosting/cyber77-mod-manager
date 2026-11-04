@@ -9,6 +9,17 @@ const { JsonStore } = require('./jsonStore');
  * own files. A game file it would overwrite is moved to the backup folder first and put back
  * when no enabled mod provides that path any more.
  */
+/** Move a file, also across drives (rename cannot): copy, then delete the original. */
+function moveFile(from, to) {
+  try {
+    fs.renameSync(from, to);
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err;
+    fs.copyFileSync(from, to);
+    fs.rmSync(from, { force: true });
+  }
+}
+
 class Deployer {
   constructor({ manifestFile, backupDir, log }) {
     this.backupDir = backupDir;
@@ -149,7 +160,7 @@ class Deployer {
       return;
     }
     fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.renameSync(entry.backup, full);
+    moveFile(entry.backup, full);
     this.log.info(`Restored original ${entry.dest}`);
   }
 
@@ -159,28 +170,38 @@ class Deployer {
     this.makeParents(gameDir, path.dirname(want.dest));
 
     let backup = want.backup || null;
+    let movedAside = null;
     if (fs.existsSync(full)) {
-      // A file we do not manage: keep the original safe before overwriting it.
-      backup = path.join(this.backupDir, want.dest);
-      if (fs.existsSync(backup)) backup = `${backup}.${Date.now()}`;
-      fs.mkdirSync(path.dirname(backup), { recursive: true });
-      fs.renameSync(full, backup);
-      this.log.warn(`Backed up existing ${want.dest} before overwriting it`);
+      // A file we do not manage: keep it safe before overwriting it. The first original stays the
+      // one restored later; a file that replaced ours since is kept beside it.
+      let to = path.join(this.backupDir, want.dest);
+      if (fs.existsSync(to)) to = `${to}.${Date.now()}`;
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      moveFile(full, to);
+      movedAside = to;
+      if (backup) this.log.warn(`${want.dest} had been replaced outside this app; kept that file at ${to}`);
+      else { backup = to; this.log.warn(`Backed up existing ${want.dest} before overwriting it`); }
     }
 
     let kind = 'copy';
-    if (method === 'hardlink') {
-      try {
-        fs.linkSync(want.src, full);
-        kind = 'link';
-      } catch (err) {
-        if (!this.warnedLink) {
-          this.log.warn(`Hardlink failed (${err.code}); copying files instead. Put the data folder on the game's drive for hardlinks.`);
-          this.warnedLink = true;
+    try {
+      if (method === 'hardlink') {
+        try {
+          fs.linkSync(want.src, full);
+          kind = 'link';
+        } catch (err) {
+          if (!this.warnedLink) {
+            this.log.warn(`Hardlink failed (${err.code}); copying files instead. Put the data folder on the game's drive for hardlinks.`);
+            this.warnedLink = true;
+          }
         }
       }
+      if (kind === 'copy') fs.copyFileSync(want.src, full);
+    } catch (err) {
+      // The mod's file could not be placed: the file that was there goes back.
+      if (movedAside) { try { moveFile(movedAside, full); } catch { /* it stays in the backup folder */ } }
+      throw err;
     }
-    if (kind === 'copy') fs.copyFileSync(want.src, full);
     const st = fs.statSync(full, { bigint: true });
     return { dest: want.dest, owner: want.owner, kind, ino: st.ino.toString(), size: Number(st.size), backup };
   }

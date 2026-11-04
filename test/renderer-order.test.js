@@ -66,3 +66,25 @@ test('no replaceChildren(…) / append(…) gets a child that can be null (it sh
   }
   assert.deepStrictEqual(wrong, []);
 });
+
+/*
+ * The scripts share one scope: two top-level functions (or consts) with the same name do not
+ * fail, the later one silently replaces the earlier everywhere (Mod files' shown() once replaced
+ * the Activity filter's).
+ */
+test('no two window scripts declare the same top-level name', () => {
+  const dir = path.join(__dirname, '..', 'src', 'renderer');
+  const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+  const files = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  const seen = new Map();
+  const twice = [];
+  for (const f of files) {
+    fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/).forEach((text, i) => {
+      const m = text.match(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/) || text.match(/^(?:const|let|class)\s+([A-Za-z_$][\w$]*)\b/);
+      if (!m) return;
+      if (seen.has(m[1])) twice.push(`${m[1]}: ${seen.get(m[1])} and ${f}:${i + 1}`);
+      else seen.set(m[1], `${f}:${i + 1}`);
+    });
+  }
+  assert.deepStrictEqual(twice, []);
+});

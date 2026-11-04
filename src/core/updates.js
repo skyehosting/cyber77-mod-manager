@@ -30,9 +30,11 @@ function findUpdate(files, fileUpdates, installedId) {
     const installed = byId.get(Number(installedId));
     if (!installed || RETIRED.has(catOf(installed))) {
       const name = String(installed?.name || '').trim().toLowerCase();
+      // The installed file is not in the list at all: nothing tells which file follows it.
+      if (!name) return null;
       const same = files
         .filter(f => !RETIRED.has(catOf(f)) && Number(f.file_id) !== Number(installedId))
-        .filter(f => !name || String(f.name).trim().toLowerCase() === name)
+        .filter(f => String(f.name).trim().toLowerCase() === name)
         .sort((a, b) => (b.uploaded_timestamp || 0) - (a.uploaded_timestamp || 0));
       candidate = same[0] || null;
     }

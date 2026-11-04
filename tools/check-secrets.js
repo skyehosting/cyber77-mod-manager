@@ -19,6 +19,10 @@ const PATTERNS = [
   ['private key', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ['stored API key setting', /"(apiKey|aiKey)(Enc|Plain)"\s*:\s*"[^"]{8,}"/],
   ['AI provider key', /\b(sk-(proj-|ant-)?[A-Za-z0-9_-]{24,})\b/],
+  ['Groq key', /\bgsk_[A-Za-z0-9]{40,}\b/],
+  ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ['xAI key', /\bxai-[A-Za-z0-9]{40,}\b/],
+  ['Hugging Face token', /\bhf_[A-Za-z0-9]{30,}\b/],
   ['apikey header value', /apikey['"]?\s*[:=]\s*['"][A-Za-z0-9+/=-]{30,}['"]/i],
 ];
 const SKIP = /\.(png|jpe?g|gif|webp|ico|exe|dll|node|asar|pak|bin|dat|wasm|7z|zip|rar)$/i;

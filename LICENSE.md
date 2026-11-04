@@ -1,10 +1,3 @@
-Required Notice: Copyright (c) 2025-2026 skyehosting (https://github.com/skyehosting)
-Required Notice: Edgerunners Mod Manager (formerly Cyber Mod Manager) was created by skyehosting. Any copy, fork or work based on it must credit the original author and link to https://github.com/skyehosting/cyber77-mod-manager
-
-Edgerunners Mod Manager is free to use, change and share for any non-commercial purpose under the license below. Selling it, charging for it, or using it or work based on it to make money is not permitted. Parts it bundles (7-Zip, in build/7zip) keep their own licenses.
-
----
-
 # PolyForm Noncommercial License 1.0.0
 
 <https://polyformproject.org/licenses/noncommercial/1.0.0>

@@ -86,6 +86,15 @@ class VortexBridge extends EventEmitter {
     return g ? path.join(g, 'vortex.deployment.json') : '';
   }
 
+  /** Vortex's staging folder: the one its deployment record names (moved by the user), or its default. */
+  stagingDir() {
+    try {
+      const p = JSON.parse(fs.readFileSync(this.deploymentFile(), 'utf8')).stagingPath;
+      if (p && path.isAbsolute(p) && fs.existsSync(p)) return p;
+    } catch { /* not deployed */ }
+    return path.join(this.root, GAME, 'mods');
+  }
+
   /** Read everything; cached until one of the source files changes. */
   read() {
     if (!this.installed) return { installed: false, mods: [], profiles: [] };
@@ -93,7 +102,7 @@ class VortexBridge extends EventEmitter {
     const depFile = this.deploymentFile();
     let depMtime = 0;
     try { depMtime = fs.statSync(depFile).mtimeMs; } catch { /* not deployed */ }
-    const staging = path.join(this.root, GAME, 'mods');
+    const staging = this.stagingDir();
     let stagingMtime = 0;
     try { stagingMtime = fs.statSync(staging).mtimeMs; } catch { /* no staging */ }
     const sig = `${backup?.file}|${backup?.mtime}|${depMtime}|${stagingMtime}`;

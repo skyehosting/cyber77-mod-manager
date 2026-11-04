@@ -26,6 +26,8 @@ const stamp = t => {
 };
 const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
+const TIMELINE_MAX = 50 * 1024 * 1024;
+
 class PlayHistory extends EventEmitter {
   /**
    * dir: where plays are kept. logs: the GameLogMonitor (its 'game', 'entries' and 'crash' events, and
@@ -107,7 +109,15 @@ class PlayHistory extends EventEmitter {
       else if (e.level === 'warn') c.meta.warns++;
     }
     c.meta.lines += mine.length;
-    try { fs.appendFileSync(path.join(c.dir, 'timeline.jsonl'), `${mine.map(e => JSON.stringify(e)).join('\n')}\n`); } catch { /* the folder was deleted */ }
+    // A mod logging every frame can write gigabytes in a long session: a play keeps its first 50 MB.
+    const text = `${mine.map(e => JSON.stringify(e)).join('\n')}\n`;
+    c.bytes = (c.bytes || 0) + Buffer.byteLength(text);
+    if (c.bytes <= TIMELINE_MAX) {
+      try { fs.appendFileSync(path.join(c.dir, 'timeline.jsonl'), text); } catch { /* the folder was deleted */ }
+    } else if (!c.meta.truncated) {
+      c.meta.truncated = true;
+      this.writeMeta(c);
+    }
     if (c.meta.lines % 200 < mine.length) this.writeMeta(c);
   }
 

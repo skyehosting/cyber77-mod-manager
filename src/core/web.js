@@ -1,5 +1,7 @@
 'use strict';
 const { BrowserWindow, session } = require('electron');
+const dns = require('dns').promises;
+const net = require('net');
 
 /*
  * Web search and page reading for the AI assistant, whatever its provider. A hidden, sandboxed
@@ -27,16 +29,46 @@ function isPublicUrl(url) {
   let u;
   try { u = new URL(url); } catch { return false; }
   if (!/^https?:$/.test(u.protocol)) return false;
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  // "localhost." and "printer." are the same names with the root's dot: it does not make them public.
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
   if (!h.includes('.') && !h.includes(':')) return false; // localhost, intranet names
-  if (/\.(local|lan|home|internal|localhost|intranet|corp)$/.test(h)) return false;
+  if (/\.(local|lan|home|internal|localhost|intranet|corp|arpa)$/.test(h)) return false;
+  return !privateAddress(h);
+}
+
+/** An IP address of this PC, the local network, link-local or a reserved range. */
+function privateAddress(h) {
   const v4 = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
   if (v4) {
     const [a, b] = [Number(v4[1]), Number(v4[2])];
-    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224) return false;
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
   }
-  if (h.includes(':') && (h === '::1' || h === '::' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith('::ffff:'))) return false;
-  return true;
+  if (h.includes(':')) {
+    const mapped = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return privateAddress(mapped[1]);
+    return h === '::1' || h === '::' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith('::ffff:');
+  }
+  return false;
+}
+
+/**
+ * A public URL whose name also points at public addresses: a name like 127.0.0.1.nip.io is public
+ * text for a private place. Names are looked up once a minute at most.
+ */
+const looked = new Map();
+async function reachesPublic(url) {
+  if (!isPublicUrl(url)) return false;
+  const host = new URL(url).hostname.replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+  if (net.isIP(host)) return true; // already checked as an address
+  const hit = looked.get(host);
+  if (hit && Date.now() - hit.at < 60e3) return hit.ok;
+  let ok = false;
+  try {
+    const all = await dns.lookup(host, { all: true });
+    ok = all.length > 0 && all.every(a => !privateAddress(a.address.toLowerCase()));
+  } catch { ok = false; }
+  looked.set(host, { ok, at: Date.now() });
+  return ok;
 }
 
 class WebReader {
@@ -50,6 +82,12 @@ class WebReader {
     const ses = session.fromPartition(PARTITION);
     ses.on('will-download', ev => ev.preventDefault());
     ses.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
+    // Every request this window makes, for as long as it lives (pages, redirects, later navigations
+    // by a page's own scripts, images, frames, fetches), goes to the public web only.
+    ses.webRequest.onBeforeRequest((details, cb) => {
+      if (!/^https?:/i.test(details.url)) { cb({ cancel: !/^(about|data|blob|chrome-error):/i.test(details.url) }); return; }
+      reachesPublic(details.url).then(ok => cb({ cancel: !ok }), () => cb({ cancel: true }));
+    });
     this.win = new BrowserWindow({
       show: false, width: 1280, height: 900,
       webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: true },
@@ -107,12 +145,14 @@ class WebReader {
     if (!/^https?:\/\//i.test(u)) return Promise.reject(new Error('Only http(s) pages can be read.'));
     if (!isPublicUrl(u)) return Promise.reject(new Error('Only public web pages can be read, not this PC or the local network.'));
     return this.run(async win => {
+      if (!await reachesPublic(u)) throw new Error('Only public web pages can be read, not this PC or the local network.');
       await this.load(win, u, 2000);
       const r = await this.read(win, EXTRACT_TEXT);
+      win.webContents.loadURL('about:blank').catch(() => {}); // the page stops running once read
       const text = String(r?.text || '');
       return { url: u, title: r?.title || '', text: text.length > READ_LIMIT ? `${text.slice(0, READ_LIMIT)}\n[…page cut here]` : text };
     });
   }
 }
 
-module.exports = { WebReader, isPublicUrl };
+module.exports = { WebReader, isPublicUrl, reachesPublic };

@@ -883,7 +883,7 @@ let drawerSeq = 0;
 async function openDrawer(id, focusSection = '', takeFocus = true) {
   const m = allMods().find(x => x.id === id);
   if (!m) return;
-  if (m.vortex) { openVortexDrawer(m, takeFocus); return; }
+  if (m.vortex) { openVortexDrawer(m, takeFocus && !(!$('#drawer').hidden && state.drawerMod === id)); return; }
   const seq = ++drawerSeq;
   const wasOpen = !$('#drawer').hidden && state.drawerMod === id;
   if (!wasOpen && $('#drawer').hidden) {
@@ -1151,8 +1151,8 @@ function renderDownloads() {
         clickSelect(state.dlSel, keys, d.key, ev, 'lastDlClick');
         paintDlSelection();
       },
-      ondblclick: ev => { if (!ev.target.closest('input,button')) run(api.install([d.key])); },
-      onkeydown: ev => rowKeys(ev, state.dlSel, d.key, () => run(api.install([d.key])), paintDlSelection),
+      ondblclick: ev => { if (!ev.target.closest('input,button') && !d.installed && d.exists) run(api.install([d.key])); },
+      onkeydown: ev => rowKeys(ev, state.dlSel, d.key, () => { if (!d.installed && d.exists) run(api.install([d.key])); }, paintDlSelection),
     },
     h('td', {}, h('input', {
       type: 'checkbox', 'aria-label': `Select ${d.name}`, tabindex: '-1',
@@ -1403,7 +1403,7 @@ function renderVortexMove() {
     : `All Vortex mods are managed here${vx.adopted ? ` (${vx.adopted} moved)` : ''}`;
   $('#s-vx-move').disabled = !n;
   // "Vortex mods: ask": once per start, when Vortex has mods this app has not taken over.
-  if (state.settings?.vortexAutoMove === 'ask' && vx.pending && !vortexAsked) {
+  if (state.settings?.vortexAutoMove === 'ask' && vx.pending && !vortexAsked && !document.documentElement.dataset.setup) {
     vortexAsked = true;
     askVortexAutoMove(vx);
   }
@@ -1455,7 +1455,7 @@ $('#s-nxm').addEventListener('change', async ev => {
   const st = await run(api.nxmStatus());
   if (!st) return;
   if (on) {
-    const ok = await confirmBox('Handle Nexus downloads here?', `"Mod Manager Download" buttons on nexusmods.com will open ${appName()}er and download here${st.handler && st.handler !== 'Cyber Mod Manager' ? `, instead of ${st.handler}` : ''}. The current setting is saved, and turning this off puts it back. The first time, your browser asks whether to open Cyber Mod Manager: allow it.${st.handler === 'Vortex' ? ' Vortex takes these links back when it starts, unless "Handle Nexus links" is off in Vortex\'s settings.' : ''}`, 'Handle them here');
+    const ok = await confirmBox('Handle Nexus downloads here?', `"Mod Manager Download" buttons on nexusmods.com will open ${appName()} and download here${st.handler && !/Mod Manager$/.test(st.handler) || st.handler === 'Vortex' ? `, instead of ${st.handler}` : ''}. The current setting is saved, and turning this off puts it back. The first time, your browser asks whether to open Cyber Mod Manager: allow it.${st.handler === 'Vortex' ? ' Vortex takes these links back when it starts, unless "Handle Nexus links" is off in Vortex\'s settings.' : ''}`, 'Handle them here');
     if (!ok) return;
   }
   const res = await run(api.setNxm(on));
@@ -1484,14 +1484,25 @@ function aiPlaceholders() {
 $('#s-ai-provider').addEventListener('change', aiPlaceholders);
 $('#s-ai-test').addEventListener('click', async () => {
   const st = $('#s-ai-status');
-  if (isDirty()) await run(api.setSettings(readForm()));
+  if (isDirty() && !(await run(api.setSettings(readForm())))) return;
   st.className = 'hint';
   st.textContent = 'Asking the model to reply…';
   const r = await api.aiTest();
   st.className = r.error ? 'hint bad' : 'hint ok';
   st.textContent = r.error ? r.error : `Connected: ${r.ok}`;
+  if (plainHttpRemote($('#s-ai-endpoint').value)) st.textContent += ' Note: this address is plain http, so your key travels unencrypted. Use https:// unless the server is on your own network.';
   await loadSettings();
 });
+
+/** An endpoint on plain http that is not this PC or the home network: a key sent there is readable on the way. */
+function plainHttpRemote(url) {
+  let u;
+  try { u = new URL(String(url).trim()); } catch { return false; }
+  if (u.protocol !== 'http:') return false;
+  const h = u.hostname.replace(/^\[|\]$/g, '');
+  const local = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|fe80:)/i.test(h) || (!h.includes('.') && !h.includes(':')) || /\.(local|lan|home)$/i.test(h);
+  return !local;
+}
 
 function readForm() {
   const patch = {};
@@ -1642,7 +1653,7 @@ function renderProfileSwitch() {
   const active = p?.list.find(x => x.id === p.active);
   $('#prof-switch-name').textContent = active?.name || 'Default';
   $('#prof-switch').title = active ? `Profile: ${active.name} (${plural(active.count ?? 0, 'mod')} on). Click to switch.` : 'Switch profile';
-  if (!$('#prof-menu').hidden) paintProfileMenu();
+  if (!$('#prof-menu').hidden && !$('#prof-menu').contains(document.activeElement)) paintProfileMenu();
 }
 
 function paintProfileMenu() {

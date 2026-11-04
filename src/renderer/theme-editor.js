@@ -69,7 +69,7 @@ function renderThemeGrid() {
     const on = themeState.id === id;
     return h('button', {
       type: 'button', class: `theme-card${on ? ' on' : ''}`, role: 'radio', 'aria-checked': String(on), tabindex: on ? '0' : '-1', dataset: { theme: id },
-      onclick: () => chooseTheme(id),
+      onclick: () => { chooseTheme(id); $(`#theme-grid [data-theme="${id}"]`)?.focus(); },
       onkeydown: ev => {
         const i = THEME_ORDER.indexOf(id);
         const to = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
@@ -229,7 +229,8 @@ function openColourPicker(line, token, opener) {
   const value = $('#theme-ed-text').value.split('\n')[line].match(COLOUR_LINE)?.[4].trim();
   const c = rgbaOf(value);
   if (!c) return;
-  Object.assign(cp, { line, hsv: toHsv(c), alpha: c[3], opener, before: value });
+  // A fully transparent colour: what you pick should show, so it starts opaque.
+  Object.assign(cp, { line, hsv: toHsv(c), alpha: c[3] || 1, opener, before: value });
   const num = (label, i) => h('label', { class: 'cp-num' }, h('span', {}, label),
     h('input', { type: 'number', min: '0', max: '255', step: '1', 'aria-label': label === 'R' ? 'Red' : label === 'G' ? 'Green' : 'Blue', dataset: { ch: String(i) } }));
   const el = h('div', { class: 'cpick', role: 'dialog', 'aria-label': `Colour for ${token}` },

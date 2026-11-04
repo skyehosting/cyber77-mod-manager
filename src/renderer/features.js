@@ -417,7 +417,8 @@ function profTitle(x, active, key) {
     if (save && name && name !== x.name) await run(api.renameProfile(x.id, name));
     if (prof.editing) return; // another rename started meanwhile: leave its input alone
     renderProfilesPage(true);
-    profFocus(`${x.id}:rename`);
+    const back = $('#prof-panel .prof-rename');
+    if (back) back.focus(); else profFocus(`${x.id}:rename`);
   };
   input.addEventListener('keydown', ev => {
     if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }

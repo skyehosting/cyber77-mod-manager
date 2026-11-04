@@ -82,11 +82,32 @@ function autoSort(order, owner, needs) {
   return out;
 }
 
+/**
+ * The order to remember: the order just written, with the archives of the saved order that are
+ * not in the game right now (a disabled mod's, another profile's) kept after the archive they
+ * followed, so they come back to their place.
+ */
+function keepAbsent(saved, current) {
+  const out = [...current];
+  const have = new Set(out);
+  let prev = null;
+  for (const n of saved || []) {
+    if (!have.has(n)) {
+      const at = prev === null ? 0 : out.indexOf(prev) + 1;
+      out.splice(at, 0, n);
+      have.add(n);
+    }
+    prev = n;
+  }
+  return out;
+}
+
 /** Write modlist.txt naming every archive (the previous one is kept once as a backup). */
 function writeOrder(gameDir, order) {
   const file = modlistFile(gameDir);
   const names = listArchives(gameDir);
   const full = mergeOrder(order, names);
+  if (!full.length) { resetOrder(gameDir); return full; } // no archives: no list (not an empty one)
   if (fs.existsSync(file) && !fs.existsSync(`${file}.cmm-backup`)) fs.copyFileSync(file, `${file}.cmm-backup`);
   fs.writeFileSync(`${file}.tmp`, `${full.join('\r\n')}\r\n`);
   fs.renameSync(`${file}.tmp`, file);
@@ -98,4 +119,5 @@ function resetOrder(gameDir) {
   try { fs.unlinkSync(modlistFile(gameDir)); } catch (err) { if (err.code !== 'ENOENT') throw err; }
 }
 
-module.exports = { listArchives, currentOrder, mergeOrder, autoSort, writeOrder, resetOrder, modlistFile, ascii };
+module.exports = {
+  keepAbsent, listArchives, currentOrder, mergeOrder, autoSort, writeOrder, resetOrder, modlistFile, ascii };

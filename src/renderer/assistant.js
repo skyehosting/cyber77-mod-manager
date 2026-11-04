@@ -40,8 +40,12 @@ const INLINE = new RegExp([
   '(https?:\\/\\/[^\\s)<>]+[^\\s)<>.,;:!?])', // 10 bare link
 ].join('|'), 'g');
 
+/** A link in an answer: the site it really goes to shows beside its words (a label can say anything). */
 function link(label, url) {
-  return h('a', { href: '#', title: url, onclick: ev => { ev.preventDefault(); api.openLink(url); } }, label);
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { /* shown as text only */ }
+  const a = h('a', { href: '#', title: url, onclick: ev => { ev.preventDefault(); api.openLink(url); } }, label);
+  return host && label !== url ? h('span', { class: 'ai-link' }, a, h('span', { class: 'ai-link-host' }, ` (${host})`)) : a;
 }
 
 function inline(text) {

@@ -119,8 +119,14 @@ class GameFiles {
     if (!rel || inside.startsWith('..') || path.isAbsolute(inside)) throw new Error('Only files inside the game folder can be read (give the path relative to it).');
     // No alternate data streams ("file::$DATA") or trailing dots/spaces: they name a file another way.
     if (rel.includes(':') || /[. ]$/.test(rel)) throw new Error(`${rel} is not a plain file path.`);
+    // Nor Windows' short names (CONFIG~1.JSO is config.json, a settings file, under another name).
+    if (/~\d/.test(rel)) throw new Error(`${rel} is a short name: give the file's full name, as find_mod_files shows it.`);
     const st = await fs.promises.stat(full).catch(() => null);
     if (!st?.isFile()) throw new Error(`No file at ${rel}. Use find_mod_files to get its exact path.`);
+    // A link or junction in the game folder that leads out of it is not followed.
+    const [realDir, realFile] = await Promise.all([fs.promises.realpath(idx.dir), fs.promises.realpath(full)]);
+    const really = path.relative(realDir, realFile);
+    if (really.startsWith('..') || path.isAbsolute(really)) throw new Error(`${rel} leads out of the game folder; only files inside it can be read.`);
     if (st.size > MAX_TEXT_BYTES * 4) throw new Error(`${rel} is too large to read (${Math.round(st.size / 1048576)} MB).`);
     const buf = await fs.promises.readFile(full);
     if (!isText(rel) && buf.subarray(0, 8000).includes(0)) throw new Error(`${rel} is a binary file (an archive, a DLL…); only text files can be read.`);

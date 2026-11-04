@@ -80,7 +80,7 @@ function buildTree(files) {
   return squash(root);
 }
 
-function shown() {
+function cfgShown() {
   const q = cfg.q.trim().toLowerCase();
   return (cfg.list || []).filter(m => {
     if (cfg.filter === 'enabled' && (!m.enabled || m.source === 'hand')) return false;
@@ -140,7 +140,7 @@ function folderEl(row, part, node, depth) {
 }
 
 function renderConfig() {
-  const list = shown();
+  const list = cfgShown();
   const all = cfg.list || [];
   const loose = all.filter(m => m.source === 'hand').length;
   $('#cfg-sub').textContent = all.length

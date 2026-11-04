@@ -9,8 +9,7 @@
     "start": "electron .",
     "test": "node --require ./test/setup.cjs --test test/*.test.js",
     "check-secrets": "node tools/check-secrets.js",
-    "dist": "electron-builder --win --publish never",
-    "release": "electron-builder --win --publish always"
+    "dist": "electron-builder --win --publish never"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "2.20.1",
@@ -45,7 +44,12 @@
       "src/**/*",
       "package.json",
       "LICENSE.md",
+      "NOTICE.md",
       "!**/*.map"
+    ],
+    "extraFiles": [
+      { "from": "LICENSE.md", "to": "LICENSE.md" },
+      { "from": "NOTICE.md", "to": "NOTICE.md" }
     ],
     "extraResources": [
       {
@@ -75,7 +79,8 @@
       "perMachine": false,
       "allowElevation": false,
       "deleteAppDataOnUninstall": false,
-      "shortcutName": "Cyber Mod Manager"
+      "shortcutName": "Cyber Mod Manager",
+      "uninstallDisplayName": "Edgerunners Mod Manager"
     },
     "publish": [
       {

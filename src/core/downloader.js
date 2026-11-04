@@ -160,7 +160,9 @@ class Downloader extends EventEmitter {
     this.emit('update', publicJob(job));
 
     // nxm links carry a one-time key: it works without Premium, but only until it expires.
+    if (job.cancelled) throw new Error('Cancelled');
     const uri = await this.nexus.getDownloadLink(job.game, job.modId, job.fileId, job.nxm || {});
+    if (job.cancelled) throw new Error('Cancelled');
     job.abort = new AbortController();
     const res = await fetch(uri, { signal: job.abort.signal });
     if (!res.ok || !res.body) throw new Error(`CDN responded ${res.status} ${res.statusText}`);

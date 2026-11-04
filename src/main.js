@@ -266,7 +266,11 @@ async function boot() {
   handle('plays:list', () => plays.list());
   handle('plays:get', id => { const p = plays.get(String(id)); if (!p) throw new Error("That play's logs are no longer here."); return { ...p, entries: p.entries.slice(-8000) }; });
   handle('plays:delete', ids => plays.remove(Array.isArray(ids) ? ids.map(String) : [String(ids)]));
-  handle('plays:openFile', (id, rel) => shell.openPath(plays.filePath(String(id), String(rel))));
+  handle('plays:openFile', (id, rel) => {
+    const full = plays.filePath(String(id), String(rel));
+    if (!/\.(log|txt|json|ini|toml|yaml|yml|xml|cfg|csv|md)$/i.test(full)) throw new Error('Only log and text files open from here.');
+    return shell.openPath(full);
+  });
   handle('plays:revealFile', (id, rel) => shell.showItemInFolder(plays.filePath(String(id), String(rel))));
   handle('plays:openFolder', id => shell.openPath(plays.folder(String(id))));
   // A file inside the game folder (not a sibling folder named like it), by its path relative to it.
@@ -730,8 +734,8 @@ function guardWebviews() {
     });
     if (wc.getType() !== 'webview') return;
     const route = url => {
-      if (/^nxm:\/\//i.test(url)) { handleNxmArgs([url]); return; }
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      if (/^nxm:\/\//i.test(url)) { nxmFromPage(url); return; }
+      if (/^https?:\/\//i.test(url)) openFromPage(url);
     };
     wc.on('will-navigate', (ev, url) => { if (!NEXUS_PAGE.test(url)) { ev.preventDefault(); route(url); } });
     wc.on('will-frame-navigate', ev => { if (ev.isMainFrame && !NEXUS_PAGE.test(ev.url)) { ev.preventDefault(); route(ev.url); } });
@@ -767,8 +771,8 @@ function guardWebviews() {
   nexusSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
     if (permission === 'openExternal') {
       const url = String(details?.externalURL || '');
-      if (/^nxm:\/\//i.test(url)) handleNxmArgs([url]);
-      else if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      if (/^nxm:\/\//i.test(url)) nxmFromPage(url);
+      else if (/^https?:\/\//i.test(url)) openFromPage(url);
       callback(false);
       return;
     }
@@ -821,6 +825,39 @@ async function applyAdBlock() {
 }
 
 const pendingNxm = [];
+/*
+ * Links from the Nexus page shown in Browse. A script on that page (an ad, a tracker) could open
+ * them without a click, so: a download the user is waiting for (a free account's "Slow download"
+ * for a file waiting in Downloads) goes straight through; any other one is asked about first; and
+ * the page cannot open the browser more than once every two seconds.
+ */
+let lastPageNxm = 0;
+let lastPageOpen = 0;
+async function nxmFromPage(url) {
+  const m = String(url).match(/^nxm:\/\/([\w-]+)\/mods\/(\d+)\/files\/(\d+)/i);
+  if (!m) return;
+  const jobs = manager?.downloader?.jobs ? [...manager.downloader.jobs.values()] : [];
+  const expected = jobs.some(j => j.status === 'waiting' && Number(j.modId) === Number(m[2]) && Number(j.fileId) === Number(m[3]));
+  if (!expected) {
+    if (Date.now() - lastPageNxm < 3000) return; // a burst: the first one is asked about, the rest dropped
+    lastPageNxm = Date.now();
+    const known = manager?.data && Object.values(manager.data.mods).find(x => Number(x.modId) === Number(m[2]));
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question', buttons: ['Download', 'Cancel'], defaultId: 0, cancelId: 1, noLink: true,
+      title: 'Download from Nexus?',
+      message: `Download ${known ? `a file of ${known.modName || known.name}` : `Nexus mod ${m[2]}`} (file ${m[3]})?`,
+      detail: 'The Nexus page in Browse asked to download this file. If you did not click a download button just now, choose Cancel.',
+    });
+    if (response !== 0) return;
+  }
+  handleNxmArgs([url]);
+}
+function openFromPage(url) {
+  if (Date.now() - lastPageOpen < 2000) return;
+  lastPageOpen = Date.now();
+  shell.openExternal(url);
+}
+
 function handleNxmArgs(argv) {
   for (const a of argv) {
     if (!/^nxm:\/\//i.test(a)) continue;

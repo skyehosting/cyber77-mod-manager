@@ -8,75 +8,83 @@ The all-in-one mod manager for Cyberpunk 2077 on Windows: Nexus downloads, profi
 
 ## Screenshots
 
-The pages in the order of the sidebar (shown with demo mods). Click one to see it full size.
-
-### Browse
-
-Search and browse Cyberpunk 2077 mods on Nexus Mods; Download picks the files and installs them.
-
-[![Browse](docs/screenshots/01-browse.png)](docs/screenshots/01-browse.png)
-
-### Downloads
-
-Paste Nexus links, follow every download (with requirements) and install what finished.
-
-[![Downloads](docs/screenshots/02-downloads.png)](docs/screenshots/02-downloads.png)
+The pages in the order of the sidebar, with demo mods. Click one to see it full size. More on the [project page](https://skyehosting.github.io/cyber77-mod-manager/).
 
 ### Mods
 
-Every mod with its type, version, conflicts and updates: switch them on and off, update, repair.
+Every mod with its status, conflicts, updates and version. Click one for its details panel; right-click for its actions.
 
-[![Mods](docs/screenshots/03-mods.png)](docs/screenshots/03-mods.png)
-
-### Mod config
-
-Every mod's files as a tree, each copy (this app's, Vortex's) in its own section; edit text files in the built-in editor.
-
-[![Mod config](docs/screenshots/04-mod-config.png)](docs/screenshots/04-mod-config.png)
-
-### Mod config: the built-in editor
-
-Point at a text file and click the pencil: colours for Lua, redscript, JSON, YAML/ArchiveXL, TweakXL, INI and logs, find in the top right, and the original kept so it can be put back.
-
-[![Built-in editor](docs/screenshots/04b-config-editor.png)](docs/screenshots/04b-config-editor.png)
+[![Mods](docs/assets/shots/mods.webp)](docs/assets/shots/mods.webp)
 
 ### Load order
 
-Archive mods top to bottom: the higher one wins. Auto-sort by what each mod needs, or drag.
+Archives top to bottom: the higher one wins. Drag, type a new position, or Auto-sort by what each mod needs.
 
-[![Load order](docs/screenshots/05-load-order.png)](docs/screenshots/05-load-order.png)
+[![Load order](docs/assets/shots/loadorder.webp)](docs/assets/shots/loadorder.webp)
+
+### Mod files
+
+Every mod's files, each copy in its own section; edit text files in the built-in editor.
+
+[![Mod files](docs/assets/shots/config.webp)](docs/assets/shots/config.webp)
+
+### Browse Nexus
+
+Search, filter and sort Nexus mods; Download picks the files and installs them.
+
+[![Browse Nexus](docs/assets/shots/browse.webp)](docs/assets/shots/browse.webp)
+
+### Downloads
+
+Paste a link, choose its files, and follow each download in the In progress panel.
+
+[![Downloads](docs/assets/shots/downloads.webp)](docs/assets/shots/downloads.webp)
 
 ### Game log
 
-Every log the game and its mods write, merged live, with errors and warnings grouped.
+Every log the game and its mods write, in one live timeline; every play kept, filed under its profile.
 
-[![Game log](docs/screenshots/06-game-log.png)](docs/screenshots/06-game-log.png)
+[![Game log](docs/assets/shots/gamelog.webp)](docs/assets/shots/gamelog.webp)
 
 ### AI Assistant
 
-Your own AI model reads your mods and logs, explains errors and proposes fixes you approve.
+Optional: your own AI provider reads your mods and logs, explains errors and proposes fixes you approve.
 
-[![AI Assistant](docs/screenshots/07-ai-assistant.png)](docs/screenshots/07-ai-assistant.png)
+[![AI Assistant](docs/assets/shots/ai.webp)](docs/assets/shots/ai.webp)
 
 ### Profiles
 
-Sets of enabled mods to switch between and share as a code; what loads outside them too.
+Separate setups, a share code for friends, and a Vortex profile used here in one click.
 
-[![Profiles](docs/screenshots/08-profiles.png)](docs/screenshots/08-profiles.png)
+[![Profiles](docs/assets/shots/profiles.webp)](docs/assets/shots/profiles.webp)
+
+### Themes
+
+Seven built-in looks (Settings → Interface), or your own in the custom theme editor with a colour picker.
+
+[![Themes](docs/assets/shots/themes.webp)](docs/assets/shots/themes.webp)
+
+## What's in it
+
+- **Setup wizard.** The first time it opens, a short welcome finds the game, connects your Nexus account and, if you like, an AI helper. Every step can be skipped; Settings → Advanced → **Run it again**.
+- **Sidebar.** Grouped pages that fold to an icon rail (the button by the name, or Ctrl+B). **Play** sits on top with a **profile dropdown** under it, to switch profiles in one click.
+- **Themes.** Netrunner (the default), Samurai, NCPD, We made it David ~, Corpo, El Coyote Cojo and Cherry Blossom, each checked for readability on every page; or **Custom**: the whole theme as text, with a colour picker, live preview and readability checks. Settings → Interface also lets the app go by Lucy's, David's or Netrunner's Mod Manager.
+- **Per-profile game logs.** Each play remembers the profile it ran with; the Game log's play picker filters by profile.
+- **Vortex profiles.** Profiles → Vortex profiles → **Use here** sets this app up the way a Vortex profile is.
 
 ## Install
 
-Download [`Cyber-Mod-Manager-Setup.exe`](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Cyber-Mod-Manager-Setup.exe) (always the newest version; also on the [releases page](https://github.com/skyehosting/cyber77-mod-manager/releases/latest)) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
+Download [`Edgerunners-Mod-Manager-Setup.exe`](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe) (always the newest version; also on the [releases page](https://github.com/skyehosting/cyber77-mod-manager/releases/latest)) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
 
-The app keeps itself up to date: while it is open it checks for a new version every 2 minutes (Settings → App & folders → App updates: any number of minutes, hours or days), downloads it, and restarts to install it once nothing is downloading or installing. **Later** on the notice leaves the update for when you close the app. Your settings (API key included), Nexus login, mods and downloads are kept: they live in `%APPDATA%Cyber Mod Manager`, which updates never touch. Settings and the mod library also keep a backup of their last good version, used if the file is ever damaged or missing. New versions show at the top of the window from the moment one is found. Settings → App & folders → **New versions**: *Install automatically* restarts to install when nothing is in progress and the window is in view, after a 30-second notice (**Later** leaves it for when you close the app); *Download, then ask*; or *Off* (no checks by itself; **Check now** still works). While the game runs nothing is checked or restarted.
+The app keeps itself up to date: while it is open it checks for a new version every 2 minutes (Settings → Advanced → App updates: any number of minutes, hours or days), downloads it, and restarts to install it once nothing is downloading or installing. **Later** on the notice leaves the update for when you close the app. Your settings (API key included), Nexus login, mods and downloads are kept: they live in `%APPDATA%\Cyber Mod Manager`, which updates never touch. Settings and the mod library also keep a backup of their last good version, used if the file is ever damaged or missing. New versions show at the top of the window from the moment one is found. Settings → Advanced → **New versions**: *Install automatically* restarts to install when nothing is in progress and the window is in view, after a 30-second notice (**Later** leaves it for when you close the app); *Download, then ask*; or *Off* (no checks by itself; **Check now** still works). While the game runs nothing is checked or restarted.
 
 7-Zip ships with the app (used when 7-Zip is not installed). You need a Nexus Mods account and its personal API key. Premium and free accounts both work (see **Free accounts** below).
 
 ## Start
 
-1. **Settings** → paste your Nexus API key → **Validate** → **Save**. The game folder is found automatically (Steam, GOG, Epic Games, the Xbox app); every install found is listed there to pick from.
+1. **The setup wizard** (it opens the first time; or Settings) → paste your Nexus API key → **Check key**. The game folder is found automatically (Steam, GOG, Epic Games, the Xbox app); every install found is listed there to pick from.
 2. **Browse** → search Nexus by name or mod ID → **Download** on a mod (or open it to read its pages first). Or, in **Downloads**, paste one or more mod links (any form: with or without `?tab=…`, `/games/…`, or a `file_id`) → **Choose files** → tick the files you want → **Download**.
-3. **Play** (top of the sidebar) starts the game directly (no Steam "custom arguments" prompt, no CD Projekt launcher), with `-modded` when REDmods are installed. When your REDmods changed since the last time, it runs REDmod deploy first (as the launcher and Vortex do); if that fails you see why and can launch anyway. REDmods need CD Projekt's free REDmod tools (`tools\redmod\bin\redMod.exe`): when a copy of the game lacks them, Play explains how to get them for its store (Steam and GOG: a free DLC; Epic: part of the game since 1.6, put back by Verify) and then starts the game without REDmods; it asks once per session. Epic Games copies start through the Epic launcher. Settings → Game & Play → **When you press Play** can start Steam copies through Steam instead, so the Steam overlay works. Steam asks to confirm any arguments another program passes, so none are passed: the game's own Steam launch options (Properties → General) need `--launcher-skip -modded`. The app reads them, and when they are missing Play shows the exact line to paste, with Copy and Open in Steam. The REDmod button on the Mods page shows where they stand (deployed, changed since, or the last deploy failed) and runs a deploy by hand. Only REDmods need deploying: archive, CET, redscript, RED4ext and TweakXL mods work as soon as their files are in place. While the game runs, the button turns into **Stop**: click it twice (the second click confirms) to close the game.
+3. **Play** (top of the sidebar) starts the game directly (no Steam "custom arguments" prompt, no CD Projekt launcher), with `-modded` when REDmods are installed. When your REDmods changed since the last time, it runs REDmod deploy first (as the launcher and Vortex do); if that fails you see why and can launch anyway. REDmods need CD Projekt's free REDmod tools (`tools\redmod\bin\redMod.exe`): when a copy of the game lacks them, Play explains how to get them for its store (Steam and GOG: a free DLC; Epic: part of the game since 1.6, put back by Verify) and then starts the game without REDmods; it asks once per session. Epic Games copies start through the Epic launcher. Settings → Game → **When you press Play** can start Steam copies through Steam instead, so the Steam overlay works. Steam asks to confirm any arguments another program passes, so none are passed: the game's own Steam launch options (Properties → General) need `--launcher-skip -modded`. The app reads them, and when they are missing Play shows the exact line to paste, with Copy and Open in Steam. The REDmod button on the Mods page shows where they stand (deployed, changed since, or the last deploy failed) and runs a deploy by hand. Only REDmods need deploying: archive, CET, redscript, RED4ext and TweakXL mods work as soon as their files are in place. While the game runs, the button turns into **Stop**: click it twice (the second click confirms) to close the game.
 4. **Mods** → select (click, Ctrl-click, Shift-click, Ctrl+A) → Enable / Disable / Prioritize / Reinstall / Uninstall / Delete.
 
 ## What it does
@@ -97,7 +105,7 @@ The app keeps itself up to date: while it is open it checks for a new version ev
   - **Long chats.** The app learns how much the model can read at once (its context window): from your provider (llama.cpp, llama-swap, Ollama, LM Studio, vLLM, KoboldCpp, TabbyAPI, LocalAI, Anthropic, OpenRouter, Groq, Mistral, DeepSeek and xAI report it; **Test** in Settings shows it), from Settings → AI assistant → **Context window**, from the provider's "too long" error (each provider's wording is understood, including errors sent with HTTP 200), or, for servers that silently cut a long chat instead (Ollama, KoboldCpp, text-generation-webui), from a reply that read far less than was sent. A window too small for the assistant's instructions and tools (under about 8k tokens) is reported with how to raise it. The header shows how full it is. Near the limit, the model summarizes the older part of the chat (your goals, what it found, what was tried, changed or ruled out, open questions) and the recent turns stay word for word, so it carries on without forgetting. The chat you see is never shortened.
 - **Choose files.** Before downloading, a dialog lists every file on the mod's Files tab grouped by category (Main, Updates, Optional, Misc, Old versions, Archived), each with its description, version, size and upload date. Only files in the categories chosen in Settings → Downloads start ticked: Main by default, so you tick any other file yourself. A link to one file ticks just that file. **Select all**, **Select none**, **Suggested** and a tick per category change that. Files already downloaded are marked.
 - **Free accounts.** Nexus gives free accounts no direct download links: each file needs one click on "Slow download" on its Nexus page, which hands over a one-time key. The app does everything around that click: files that need it wait in Downloads (**Needs a click**), and the Browse page opens each one's download page in turn. Click **Slow download** (sign in to Nexus there first, once); the download continues in the app and the next file's page opens by itself. This covers everything that downloads: picked files, requirements, updates and imported profiles. The app never clicks for you: Nexus does not allow automating it, and accounts that do it get banned. With Premium none of this appears.
-- **Downloads** the ticked files directly through the API (with Premium; see above for free accounts), the same file the site's "Manual download" button gives you. The Downloads page shows each download's progress, speed and time left, and a live **Network** graph (current speed, peak, total this session).
+- **Downloads** the ticked files directly through the API (with Premium; see above for free accounts), the same file the site's "Manual download" button gives you. The Downloads page shows each download's progress, speed and time left in an **In progress** panel, with the total speed above it.
 - **Nexus "Mod Manager Download" buttons** (`nxm://` links) can be handled here: turn on the switch in Settings (it applies at once and asks first). Clicking one on nexusmods.com then downloads that file in this app; the first time, your browser asks whether to open Cyber Mod Manager. This works without Premium, because the link carries its own key. Whatever handled these links before is saved first (`nxm-previous-handler.reg`), and turning the switch off puts it back. Settings shows which program has the links now. Vortex takes them back each time it starts, unless you turn off "Handle Nexus links" in Vortex's settings.
 - Downloaded files are organised as `downloads/<game>/<Mod name> (<id>)/<Category>/<file>`. Already-downloaded files are skipped. Downloads run in parallel (4 by default), retry 3 times, and can be cancelled.
 - **Installs** by extracting with 7-Zip and placing each file where Cyberpunk expects it:
@@ -134,7 +142,7 @@ The app keeps itself up to date: while it is open it checks for a new version ev
   They are shown as a tree: each requirement under the mod that needs it, its own requirements under it, as deep as they go. A requirement two mods need, or one that leads back to a mod above it (a loop), is shown once and referred to after that. Missing ones start ticked; ticking a requirement ticks what it needs, and unticking it unticks what nothing else ticked still needs. **All** / **None** set everything at once.
 - **Updates.** **Check for updates** asks Nexus for each installed mod's files and follows each file's update chain to the newest version. If an author didn't link the new file, it falls back to the newest current file with the same name. Mods with an update get an **Update → version** tag and appear under the **Updates** filter; you can update them all or a selection. An update downloads the new file and installs it in the old version's place, keeping its on/off state, priority and profiles. Files that only the old version had are removed.
 - **Profiles.** A profile is a named set of enabled mods with its own conflict order. The **Profiles** page shows each profile as a card: how many of this app's mods it has active (out of how many), with the active profile first and marked **Active**, and below them what loads whatever the profile: Vortex's mods (they follow Vortex's own profile; **Move to this app** puts them in profiles) and files no mod manager put in the game folder. From there you can activate a profile, create one (empty, or copied from what is enabled now), rename, export or delete it. The active profile follows every enable and disable you make. Vortex's profiles are listed below yours, read-only.
-- **Sharing profiles.** Each profile card has **Copy code**: a share code (`CMM1-…`, a few hundred characters for a big profile) that holds the profile's **enabled, installed** mods with their exact Nexus file IDs, in priority order, and the options picked in FOMOD installers. The code is made from the profile itself, so it changes whenever you enable, disable, reorder or update a mod; the card shows a short tag of the current code. Nothing is uploaded anywhere: the code is the data. Mods moved over from Vortex, or installed from a file named like a Nexus download, know their Nexus mod but not the exact file: the app looks that file up on Nexus by the installed version (right after they come in, and once at startup), so they are in codes, and get update checks, like any Nexus mod. Mods installed from local files can't be in a code (they aren't on Nexus); the receiver is told how many there were. The export button (share icon) saves the profile as a file instead: a **.zip** (the default when the profile has mods from local files) carries those mods too (each one's original archive, or the files it installed if the archive is gone), with `profile.json` and `share-code.txt` (the code) inside; if any packed mod carries program files (.dll, .asi, .exe), the export lists them and says that browsers and virus scanners often flag such files (usually wrongly for game mods), so you know what you are sharing; a `.cmmprofile.json` holds the Nexus mods only. Send any of them to anyone. They drag the .zip onto the app (or choose **Import** and pick it, paste the code, or choose the .json) and see a review of every mod; mods from the zip show as **In the zip** and install into the new profile in the sender's order:
+- **Sharing profiles.** Each profile's details panel has **Copy code** (and **Export file** under it): a share code (`CMM1-…`, a few hundred characters for a big profile) that holds the profile's **enabled, installed** mods with their exact Nexus file IDs, in priority order, and the options picked in FOMOD installers. The code is made from the profile itself, so it changes whenever you enable, disable, reorder or update a mod; the card shows a short tag of the current code. Nothing is uploaded anywhere: the code is the data. Mods moved over from Vortex, or installed from a file named like a Nexus download, know their Nexus mod but not the exact file: the app looks that file up on Nexus by the installed version (right after they come in, and once at startup), so they are in codes, and get update checks, like any Nexus mod. Mods installed from local files can't be in a code (they aren't on Nexus); the receiver is told how many there were. The export button (share icon) saves the profile as a file instead: a **.zip** (the default when the profile has mods from local files) carries those mods too (each one's original archive, or the files it installed if the archive is gone), with `profile.json` and `share-code.txt` (the code) inside; if any packed mod carries program files (.dll, .asi, .exe), the export lists them and says that browsers and virus scanners often flag such files (usually wrongly for game mods), so you know what you are sharing; a `.cmmprofile.json` holds the Nexus mods only. Send any of them to anyone. They drag the .zip onto the app (or choose **Import** and pick it, paste the code, or choose the .json) and see a review of every mod; mods from the zip show as **In the zip** and install into the new profile in the sender's order:
   - **will enable**: they already have that exact file;
   - **will install**: it is downloaded but not installed;
   - **will download**: the exact file is fetched from Nexus;
@@ -154,12 +162,12 @@ The app keeps itself up to date: while it is open it checks for a new version ev
   - **Sources** lists every log file, with buttons to open it or show it in its folder.
   - It detects when the game starts and stops, and notices new crash reports from the game's crash reporter.
   - Errors from a mod's own folder are counted on that mod in the Mods list (filter: **Problems**) and shown in its details panel.
-- The **Console** at the bottom shows the app's own info, warning and error messages, and opens by itself when an error happens. It can be resized. Logs are also written to `%APPDATA%\Cyber Mod Manager\logs`.
+- The **Activity** line at the bottom (its drawer: **Manager activity**) shows the app's own info, warning and error messages, and opens by itself when an error happens. It can be resized. Logs are also written to `%APPDATA%\Cyber Mod Manager\logs`.
 - **Crashes** (a Game log tab) lists every crash the game's crash reporter recorded (`%LOCALAPPDATA%\REDEngine\ReportQueue`), newest first: what happened, the DLL it happened in and that DLL's mod (read from the crash dump), and whether the same DLL was in other crashes. Opened, a crash shows the errors and warnings from the 10 minutes before it, the crash logs mods wrote then, the game's last log lines and the mod DLLs that were loaded. A crash also shows in the timeline and as a notice. **Ask AI why** has the assistant read it all (and your earlier crashes) and say what caused it and how to fix it. **Its play** opens the logs of the play the crash ended. Crash reports can be deleted one by one or all at once (this removes their folders from the game's report queue).
-- **Display.** The app follows the scale Windows sets for each display (Settings → System → Display → Scale), on any resolution or aspect ratio, and moves with the window to a display with another scale. Settings → **Display** → **Interface scale** uses another scale instead (75% to 250%), for text and everything else; it says what scale is shown now. **Ctrl +** and **Ctrl −** change it at any time, **Ctrl 0** goes back to Automatic. A scale too large for the display is limited to the largest that still fits the app. On very wide screens the pages keep a readable width, centred.
-- **Plays.** Every launch of the game, until it exits or crashes, keeps its own set of logs: the timeline of that play and a copy of every log the game and its mods wrote during it (many mods start their log over on the next launch; the copy keeps the old one). The dropdown at the top of the Game log shows **Live** while the game runs; once it closes, that play becomes **Latest**, and earlier plays are listed by date, newest first, each with its length, how it ended and its errors; crashed plays stand out in red. The Game log moves to Live when the game starts and to Latest when it closes (unless you picked an earlier play). Picking one shows only that play's timeline, problems, crash and saved log files (under Sources). **Ask AI about this play** has the assistant look at it and compare it with your other plays; the assistant sees each play as a separate session (`get_plays`, `read_play_file`). Delete one play, or tick several under **Delete plays…**. The last 25 plays are kept (Settings → App & folders → **Game log: plays to keep**), in `%APPDATA%\Cyber Mod Manager\logs\plays`.
+- **Display.** The app follows the scale Windows sets for each display (Settings → System → Display → Scale), on any resolution or aspect ratio, and moves with the window to a display with another scale. Settings → **Interface** → **Interface scale** uses another scale instead (75% to 250%), for text and everything else; it says what scale is shown now. **Ctrl +** and **Ctrl −** change it at any time, **Ctrl 0** goes back to Automatic. A scale too large for the display is limited to the largest that still fits the app. On very wide screens the pages keep a readable width, centred.
+- **Plays.** Every launch of the game, until it exits or crashes, keeps its own set of logs: the timeline of that play and a copy of every log the game and its mods wrote during it (many mods start their log over on the next launch; the copy keeps the old one). The dropdown at the top of the Game log shows **Live** while the game runs; once it closes, that play becomes **Latest**, and earlier plays are listed by date, newest first, each with its length, how it ended and its errors; crashed plays stand out in red. The Game log moves to Live when the game starts and to Latest when it closes (unless you picked an earlier play). Picking one shows only that play's timeline, problems, crash and saved log files (under Sources). **Ask AI about this play** has the assistant look at it and compare it with your other plays; the assistant sees each play as a separate session (`get_plays`, `read_play_file`). Delete one play, or tick several under **Delete plays…**. The last 25 plays are kept (Settings → Advanced → **Game log: plays to keep**), in `%APPDATA%\Cyber Mod Manager\logs\plays`.
 - **Manager** (a Game log tab) is this app's own record, newest first: what was enabled or disabled (by name and version), installed, updated, switched. It is kept across restarts (`logs\manager-history.jsonl`, the last 3,000 lines) and is not part of exported reports.
-- **Export report.** The Game log and the Console both export the same single `.json` report: every error and warning from the game's and mods' logs, grouped with how often and when each happened and also listed in full, which mod each one comes from, and every mod (this app's and Vortex's) with its version, on/off state, type, conflicts, repairs needed and available updates.
+- **Export report.** The Game log and the Activity drawer both export the same single `.json` report: every error and warning from the game's and mods' logs, grouped with how often and when each happened and also listed in full, which mod each one comes from, and every mod (this app's and Vortex's) with its version, on/off state, type, conflicts, repairs needed and available updates.
 
 ## Display
 

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edgerunners Mod Manager · Cyberpunk 2077 mods, all in one place</title>
+  <meta name="description" content="A free mod manager for Cyberpunk 2077 on Windows: Nexus downloads, profiles, load order, game logs, crash help and an optional AI helper, in one app.">
+  <meta property="og:title" content="Edgerunners Mod Manager">
+  <meta property="og:description" content="Every Cyberpunk 2077 mod, profile and log, in one place. Free for Windows.">
+  <meta property="og:image" content="https://skyehosting.github.io/cyber77-mod-manager/assets/shots/mods.webp">
+  <meta name="theme-color" content="#07090d">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <a class="brand" href="#overview" data-tab-link="overview"><img src="assets/icon.png" alt="" width="28" height="28"><span>Edgerunners <b>Mod Manager</b></span></a>
+    <nav class="top-links" aria-label="Site">
+      <a href="https://github.com/skyehosting/cyber77-mod-manager" rel="noopener">Source</a>
+      <a href="https://github.com/skyehosting/cyber77-mod-manager/releases" rel="noopener">Releases</a>
+      <a class="btn btn-sm btn-primary dl-link" href="https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">Download</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <p class="kicker"><span class="dot"></span> Free · Windows 10 &amp; 11 · <span class="version" data-version>Latest release</span></p>
+      <h1>Every Cyberpunk 2077 mod, profile and log. <em>One app.</em></h1>
+      <p class="lede">Download from Nexus, keep separate setups for every playthrough, sort the load order, read your game's logs and find what crashed it. Edgerunners Mod Manager does the busywork so you can get back to Night City.</p>
+      <div class="cta">
+        <a class="btn btn-primary btn-lg dl-link" href="https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Windows</a>
+        <a class="btn btn-ghost btn-lg" href="#features" data-tab-link="features">See what it does</a>
+      </div>
+      <p class="fine">Formerly Cyber Mod Manager. Updates itself. Your data stays on your PC.</p>
+    </div>
+    <figure class="hero-shot"><img src="assets/shots/mods.webp" alt="The Mods page: every installed mod with its status, conflicts and version" width="1600" height="900"></figure>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+    <button role="tab" id="t-overview" aria-controls="overview" aria-selected="true">Overview</button>
+    <button role="tab" id="t-features" aria-controls="features" aria-selected="false" tabindex="-1">Features</button>
+    <button role="tab" id="t-themes" aria-controls="themes" aria-selected="false" tabindex="-1">Themes</button>
+    <button role="tab" id="t-download" aria-controls="download" aria-selected="false" tabindex="-1">Download</button>
+    <button role="tab" id="t-license" aria-controls="license" aria-selected="false" tabindex="-1">License</button>
+  </nav>
+
+  <main id="main">
+    <!-- OVERVIEW -->
+    <section class="panel" id="overview" role="tabpanel" aria-labelledby="t-overview" tabindex="0">
+      <h2>Your all-in-one modding hub</h2>
+      <p class="intro">Modding Cyberpunk usually means a browser, a downloader, a load-order tool, a log viewer and a lot of guessing. Here it is one app.</p>
+      <div class="grid four">
+        <article class="card"><span class="ico">⇣</span><h3>One click from Nexus</h3><p>Browse and search Nexus inside the app. Pick the files, and the mods they need come along.</p></article>
+        <article class="card"><span class="ico">◧</span><h3>A setup per playthrough</h3><p>Profiles keep different mods and load orders apart. Switch from the sidebar in one click.</p></article>
+        <article class="card"><span class="ico">⚠</span><h3>Know why it crashed</h3><p>Every mod's log in one live timeline, kept per play and per profile, with crashes traced to a mod.</p></article>
+        <article class="card"><span class="ico">✦</span><h3>A helper that reads logs</h3><p>An optional AI explains errors in plain words and suggests fixes. It changes nothing without your OK.</p></article>
+      </div>
+      <div class="split">
+        <div>
+          <h3>Built to stay out of your way</h3>
+          <ul class="checks">
+            <li>Mods install to a staging folder and link into the game, so turning one off leaves no trace.</li>
+            <li>Conflicts show who wins each file, and you choose the winner.</li>
+            <li>Already use Vortex? Its mods and profiles carry over, without copying a byte.</li>
+            <li>Updates for your mods, and for the app itself, arrive on their own.</li>
+            <li>A short welcome walks you through setup the first time. Every step can be skipped.</li>
+          </ul>
+        </div>
+        <figure class="shot"><img src="assets/shots/details.webp" alt="A mod's details: its status, game log problems and files" loading="lazy" width="1600" height="900"></figure>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="panel" id="features" role="tabpanel" aria-labelledby="t-features" tabindex="0" hidden>
+      <h2>Every page, at a glance</h2>
+      <p class="intro">Each tab of the app, in a line or two. Click a picture to see it full size.</p>
+      <div class="features">
+        <article class="feat"><a href="assets/shots/mods.webp" class="thumb"><img src="assets/shots/mods.webp" alt="Mods page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Mods</h3><p>Every mod with its status, conflicts, updates and version. Click one for its files and log problems; right-click for actions.</p></div></article>
+        <article class="feat"><a href="assets/shots/loadorder.webp" class="thumb"><img src="assets/shots/loadorder.webp" alt="Load order page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Load order</h3><p>Drag archives, or type a new position. Auto-sort puts add-ons above what they need.</p></div></article>
+        <article class="feat"><a href="assets/shots/config.webp" class="thumb"><img src="assets/shots/config.webp" alt="Mod files page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Mod files</h3><p>See every file a mod put in the game, and edit its settings in a built-in editor.</p></div></article>
+        <article class="feat"><a href="assets/shots/browse.webp" class="thumb"><img src="assets/shots/browse.webp" alt="Browse Nexus page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Browse Nexus</h3><p>Search, filter and sort Nexus mods without leaving the app; what you have is marked Installed.</p></div></article>
+        <article class="feat"><a href="assets/shots/downloads.webp" class="thumb"><img src="assets/shots/downloads.webp" alt="Downloads page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Downloads</h3><p>Paste a link, choose its files, and watch them come in, with every requirement added for you.</p></div></article>
+        <article class="feat"><a href="assets/shots/gamelog.webp" class="thumb"><img src="assets/shots/gamelog.webp" alt="Game log page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Game log</h3><p>CET, RED4ext, redscript, ArchiveXL and more in one live timeline. Each play is kept, filed under its profile.</p></div></article>
+        <article class="feat"><a href="assets/shots/ai.webp" class="thumb"><img src="assets/shots/ai.webp" alt="AI Assistant page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>AI Assistant</h3><p>Optional. Use your own provider, or a model on your PC. It reads your mods and logs, and asks before it changes anything.</p></div></article>
+        <article class="feat"><a href="assets/shots/profiles.webp" class="thumb"><img src="assets/shots/profiles.webp" alt="Profiles page" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Profiles</h3><p>Separate setups, a share code for friends, and one click to bring over a Vortex profile.</p></div></article>
+        <article class="feat"><a href="assets/shots/wizard.webp" class="thumb"><img src="assets/shots/wizard.webp" alt="The setup wizard" loading="lazy" width="1600" height="900"></a>
+          <div><h3>Setup &amp; Settings</h3><p>A welcome that finds your game and connects Nexus, and settings for scale, themes and more.</p></div></article>
+      </div>
+    </section>
+
+    <!-- THEMES -->
+    <section class="panel" id="themes" role="tabpanel" aria-labelledby="t-themes" tabindex="0" hidden>
+      <h2>Seven looks, or your own</h2>
+      <p class="intro">Every theme is checked for readability on every page. Or write your own with a colour picker and live preview.</p>
+      <ul class="swatches">
+        <li><span class="sw" style="--a:#0d0f12;--b:#f2dc4b;--c:#4cc98a"></span><b>Netrunner</b><span>The default: dark, Night City yellow</span></li>
+        <li><span class="sw" style="--a:#0d0f12;--b:#f5505c;--c:#4cc98a"></span><b>Samurai</b><span>Netrunner's dark, Johnny's red</span></li>
+        <li><span class="sw" style="--a:#0e172b;--b:#f5c518;--c:#6cb2f0"></span><b>NCPD</b><span>Deep navy, badge-gold yellow</span></li>
+        <li><span class="sw" style="--a:#f2f3f6;--b:#6553c9;--c:#147a49"></span><b>We made it, David ~</b><span>Moon-dust greys and white</span></li>
+        <li><span class="sw" style="--a:#f2f5fa;--b:#1f3f86;--c:#157a48"></span><b>Corpo</b><span>Crisp white, corporate navy</span></li>
+        <li><span class="sw" style="--a:#3b2e26;--b:#e8b483;--c:#a3cc9d"></span><b>El Coyote Cojo</b><span>Soft leather browns, caramel</span></li>
+        <li><span class="sw" style="--a:#fff5f8;--b:#b23a63;--c:#c2456f"></span><b>Cherry Blossom</b><span>Blossom pinks and white</span></li>
+      </ul>
+      <div class="grid three shots">
+        <figure class="shot"><img src="assets/shots/samurai.webp" alt="The Samurai theme" loading="lazy" width="1600" height="900"><figcaption>Samurai</figcaption></figure>
+        <figure class="shot"><img src="assets/shots/sakura.webp" alt="The Cherry Blossom theme" loading="lazy" width="1600" height="900"><figcaption>Cherry Blossom</figcaption></figure>
+        <figure class="shot"><img src="assets/shots/corpo.webp" alt="The Corpo theme" loading="lazy" width="1600" height="900"><figcaption>Corpo</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- DOWNLOAD -->
+    <section class="panel" id="download" role="tabpanel" aria-labelledby="t-download" tabindex="0" hidden>
+      <h2>Get it running in a minute</h2>
+      <div class="split">
+        <ol class="steps">
+          <li><b>Download</b> the installer, <span class="version" data-version>the latest release</span>.</li>
+          <li><b>Run it.</b> It installs for your Windows account; no admin needed. Windows may ask once before running a new app.</li>
+          <li><b>Follow the welcome.</b> It finds your game and connects your Nexus account with your personal API key.</li>
+        </ol>
+        <div class="dl-box">
+          <a class="btn btn-primary btn-lg dl-link" href="https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Windows</a>
+          <p class="fine"><span data-date>Always the newest build.</span> <a href="https://github.com/skyehosting/cyber77-mod-manager/releases">All releases</a></p>
+        </div>
+      </div>
+      <div class="grid three notes">
+        <div class="note"><h3>You'll need</h3><p>Windows 10 or 11, Cyberpunk 2077 (Steam, GOG or Epic), and a free Nexus Mods account. Premium makes downloads direct.</p></div>
+        <div class="note"><h3>Updates</h3><p>The app updates itself in the background and installs the new version when you restart it.</p></div>
+        <div class="note"><h3>Your keys stay yours</h3><p>Your Nexus and AI keys are encrypted on your PC and never leave it except to talk to those services.</p></div>
+      </div>
+    </section>
+
+    <!-- LICENSE -->
+    <section class="panel" id="license" role="tabpanel" aria-labelledby="t-license" tabindex="0" hidden>
+      <h2>Free to use. Not for sale.</h2>
+      <div class="split">
+        <div>
+          <p>Edgerunners Mod Manager is source-available under the <a href="https://github.com/skyehosting/cyber77-mod-manager/blob/main/LICENSE.md">PolyForm Noncommercial 1.0.0</a> license.</p>
+          <ul class="checks">
+            <li><b>You can</b> use it, read the code, change it and share it, for any non-commercial purpose.</li>
+            <li class="no"><b>You can't</b> sell it, charge for it, or make money from it or from anything built on it.</li>
+            <li><b>Credit is required:</b> every copy or fork keeps the notice naming skyehosting and linking to the original.</li>
+          </ul>
+        </div>
+        <div class="note">
+          <h3>Found a bug?</h3>
+          <p>Open an issue on <a href="https://github.com/skyehosting/cyber77-mod-manager/issues">GitHub</a>. The Game log's Export report collects the errors, warnings and your mod list (never your settings or keys) to attach.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Made by <a href="https://github.com/skyehosting">skyehosting</a> · <a href="https://github.com/skyehosting/cyber77-mod-manager">Source</a> · <a href="https://github.com/skyehosting/cyber77-mod-manager/blob/main/LICENSE.md">PolyForm Noncommercial, credit required</a></p>
+    <p class="fine">An unofficial fan tool, not affiliated with or endorsed by CD PROJEKT RED or Nexus Mods. Cyberpunk 2077 is a trademark of CD PROJEKT S.A. Screenshots show demo data. City photo by <a href="https://unsplash.com/@chwong97">Chi Hung Wong</a> on <a href="https://unsplash.com/photos/city-skyline-during-night-time-pmfSR43nDTc">Unsplash</a>.</p>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>

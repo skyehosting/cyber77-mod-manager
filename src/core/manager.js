@@ -621,6 +621,7 @@ class ModManager extends EventEmitter {
       // Swap old for new in one deployment, so the game never sees both or neither.
       mod.enabled = prev.enabled;
       delete this.data.mods[prev.id];
+      for (const [vid, own] of Object.entries(this.data.vortexAdopted || {})) if (own === prev.id) this.data.vortexAdopted[vid] = id;
       delete this.data.updates?.[prev.id];
       for (const p of Object.values(this.data.profiles?.list || {})) {
         p.enabled = p.enabled.map(x => (x === prev.id ? id : x));
@@ -724,12 +725,8 @@ class ModManager extends EventEmitter {
       for (const id of ids) {
         const m = this.data.mods[id];
         if (!m) continue;
-        // Forget the broken entries so the next sync places the files again.
-        const broken = m.files.map(f => f.toLowerCase()).filter(k => {
-          const e = this.deployer.deployed[k];
-          return e && e.owner === id && this.deployer.fileState(game, e) !== 'ok';
-        });
-        for (const k of broken) delete this.deployer.deployed[k];
+        // The deploy below puts back every missing or replaced file of an enabled mod (keeping the
+        // backup of the original it replaced), so nothing is forgotten here.
         delete m.health;
       }
       this.deploy();
@@ -891,7 +888,9 @@ class ModManager extends EventEmitter {
       const ordered = [...mods].sort((a, b) => wins.get(a.vortexId) - wins.get(b.vortexId));
 
       const out = [];
+      const failed = [];
       for (const v of ordered) {
+        try {
         // A file this app already has installed: point at it instead of adding a second copy.
         const same = v.fileId && Object.values(this.data.mods).find(m => Number(m.fileId) === v.fileId);
         if (same) {
@@ -905,6 +904,7 @@ class ModManager extends EventEmitter {
         const src = path.join(vxStaging, v.vortexId);
         const dest = path.join(this.settings.stagingDir, id);
         fs.rmSync(dest, { recursive: true, force: true });
+        if (!fs.existsSync(src)) throw new Error(`its files are not in Vortex's staging folder (${src})`);
         // What Vortex deployed, exactly; for a disabled mod, its whole staging folder.
         const rels = (v.deployedFiles?.length ? v.deployedFiles : listFiles(src).map(p => p.replace(/\\/g, '/'))).filter(isSafeRel);
         for (const rel of rels) {
@@ -937,7 +937,12 @@ class ModManager extends EventEmitter {
         if (this.data.updates?.[v.id]) { this.data.updates[id] = this.data.updates[v.id]; delete this.data.updates[v.id]; }
         adopted[v.vortexId] = id;
         out.push({ vortexId: v.vortexId, id });
+        } catch (err) {
+          failed.push(v);
+          this.log.error(`Could not move ${v.name} from Vortex`, err.message);
+        }
       }
+      this.adoptFailed = failed;
       this.library.save();
       // 3. This app places their files (the enabled ones) where Vortex's were.
       this.deploy();
@@ -945,6 +950,14 @@ class ModManager extends EventEmitter {
       this.emit('changed');
       this.resolveSoon(); // their Nexus files, now (Vortex kept only the mod)
       return { adopted: out };
+    }).then(async r => {
+      const back = (this.adoptFailed || []).filter(v => v.enabled);
+      this.adoptFailed = [];
+      if (back.length) {
+        await this.vortex.apply(back.map(v => ({ vortexId: v.vortexId, enabled: true }))).catch(err => this.log.warn('Could not switch them back on in Vortex', err.message));
+        this.log.warn(`${plural(back.length, 'mod')} stayed in Vortex (switched back on there): ${nameList(back)}`);
+      }
+      return r;
     });
   }
 
@@ -1029,7 +1042,7 @@ class ModManager extends EventEmitter {
   saveLoadOrder(order) {
     const game = this.gameDir();
     if (!isGameDir(game)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
-    this.data.loadOrder = loadOrder.writeOrder(game, Array.isArray(order) ? order.map(String) : []);
+    this.data.loadOrder = loadOrder.keepAbsent(this.data.loadOrder || [], loadOrder.writeOrder(game, Array.isArray(order) ? order.map(String) : []));
     this.library.save();
     this.log.info(`Saved the archive load order (${this.data.loadOrder.length} archives)`);
     return this.loadOrderView();
@@ -1055,7 +1068,7 @@ class ModManager extends EventEmitter {
       const here = reqs.filter(r => names.has(r)).map(r => names.get(r));
       if (here.length) this.data.loadOrderNeeds[id] = here;
     }
-    this.data.loadOrder = loadOrder.writeOrder(game, sorted);
+    this.data.loadOrder = loadOrder.keepAbsent(this.data.loadOrder || [], loadOrder.writeOrder(game, sorted));
     this.library.save();
     this.log.success(`Auto-sorted the archive load order: ${moved ? `${plural(moved, 'archive')} moved` : 'it was already in order'}`);
     return { ...this.loadOrderView(), moved };
@@ -1270,6 +1283,7 @@ class ModManager extends EventEmitter {
       this.applyProfilePriorities(p);
       const prevActive = this.data.profiles.active;
       this.data.profiles.active = id;
+      await this.switchOffVortexTwins([...want]).catch(err => this.log.warn("Could not switch off Vortex's copy", err.message));
       try {
         this.deploy();
       } catch (err) {
@@ -1732,7 +1746,30 @@ class ModManager extends EventEmitter {
 
   // ---------------------------------------------------------------- enabling / removing
 
+  /**
+   * Settings name another game folder than the one this app placed mods in: take this app's files
+   * out of the old folder first (its originals put back), or, when the old folder is gone (moved,
+   * renamed, a drive not connected), forget that record, so mods can go into the new one.
+   */
+  followGameFolder() {
+    const was = this.deployer.store.data.gameDir;
+    const now = this.settings.get('gamePath');
+    if (!was || !Object.keys(this.deployer.deployed).length || !isGameDir(now) || path.resolve(was) === path.resolve(now)) return;
+    if (isGameDir(was)) {
+      const res = this.deployer.sync(was, [], this.settings.get('deployMethod'));
+      if (res.errors.length) throw new Error(`Could not take this app's mods out of the previous game folder, ${was} (is the game running?). Close the game and try again.`);
+      this.log.info(`The game folder changed: this app's mods were taken out of ${was} (${res.removed} files${res.restored ? `, ${res.restored} originals put back` : ''})`);
+    } else {
+      this.deployer.store.data.deployed = {};
+      this.deployer.store.data.createdDirs = [];
+      this.deployer.store.data.gameDir = '';
+      this.deployer.store.save();
+      this.log.warn(`The game folder this app placed mods in (${was}) is no longer there. Its record is cleared and mods go into ${now} now. Originals it had backed up stay in ${this.deployer.backupDir}.`);
+    }
+  }
+
   deploy() {
+    this.followGameFolder();
     const game = this.gameDir();
     const enabled = Object.values(this.data.mods).filter(m => m.enabled).sort((a, b) => a.priority - b.priority);
     if (!isGameDir(game)) {
@@ -1745,7 +1782,7 @@ class ModManager extends EventEmitter {
       id: m.id, stagingDir: path.join(this.settings.stagingDir, m.id), files: m.files,
     })), this.settings.get('deployMethod'));
     if (this.data.loadOrder?.length) {
-      try { this.data.loadOrder = loadOrder.writeOrder(game, this.data.loadOrder); } catch (err) { this.log.warn('Could not update the archive load order', err.message); }
+      try { this.data.loadOrder = loadOrder.keepAbsent(this.data.loadOrder, loadOrder.writeOrder(game, this.data.loadOrder)); } catch (err) { this.log.warn('Could not update the archive load order', err.message); }
     }
     this.syncActiveProfile();
     this.library.save();
@@ -1809,6 +1846,7 @@ class ModManager extends EventEmitter {
       const changed = ids.map(id => this.data.mods[id]).filter(m => m && m.enabled !== enabled);
       const now = Date.now();
       for (const m of changed) { m.enabled = enabled; m[enabled ? 'enabledAt' : 'disabledAt'] = now; }
+      if (enabled && changed.length) await this.switchOffVortexTwins(changed.map(m => m.id)).catch(err => this.log.warn("Could not switch off Vortex's copy", err.message));
       try {
         this.deploy();
       } catch (err) {
@@ -1836,11 +1874,14 @@ class ModManager extends EventEmitter {
   uninstallNow(ids) {
     const mods = ids.map(id => this.data.mods[id]).filter(Boolean);
     for (const m of mods) m.enabled = false;
-    this.deploy();
+    const res = this.deploy();
+    const stuck = res?.errors?.length ? ` (${plural(res.errors.length, 'file')} could not be taken out of the game: is it running? They go on the next change.)` : '';
     for (const m of mods) {
       fs.rmSync(path.join(this.settings.stagingDir, m.id), { recursive: true, force: true });
       delete this.data.mods[m.id];
-      this.log.success(`Uninstalled ${m.name}`);
+      // A mod moved from Vortex: Vortex lists its own copy again.
+      for (const [vid, own] of Object.entries(this.data.vortexAdopted || {})) if (own === m.id) delete this.data.vortexAdopted[vid];
+      this.log.success(`Uninstalled ${m.name}${stuck}`);
     }
     this.library.save();
   }

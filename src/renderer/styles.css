@@ -2805,3 +2805,4 @@ html[data-setup="open"] #shell { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .btn:hover:not(:disabled), .theme-card:hover { transform: none; }
 }
+.ai-link-host { color: var(--muted); font-size: 0.88em; }

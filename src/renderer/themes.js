@@ -232,6 +232,8 @@ function themeTemplate(from = 'netrunner') {
     out.push('', `/* ${title} */`);
     for (const [k, what] of list) out.push(`${`${k}:`.padEnd(pad)} ${t.tokens[k]};  /* ${what} */`);
   }
+  const extra = Object.keys(t.tokens).filter(k => !THEME_KEYS.includes(k));
+  if (extra.length) out.push('', '/* This theme\'s fine-tuning */', ...extra.map(k => `${`${k}:`.padEnd(pad)} ${t.tokens[k]};`));
   out.push('', '/* Optional fine-tuning. These are mixed from the colours above; to set one yourself, add it as a line,',
     '   e.g. --accent-soft: rgb(242 220 75 / 0.2);',
     ...THEME_DERIVED.map(k => `   ${k}`), '*/', '');

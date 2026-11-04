@@ -16,7 +16,8 @@ async function loadLoadOrder() {
 
 /** Save a new order (all archive names, top first) and show it. */
 async function saveOrder(order, done = '') {
-  const r = await run(api.saveLoadOrder(order));
+  lo.saving = true;
+  const r = await run(api.saveLoadOrder(order)).finally(() => { lo.saving = false; });
   if (!r) return;
   lo.view = r;
   renderLoadOrder();
@@ -24,6 +25,7 @@ async function saveOrder(order, done = '') {
 }
 
 function move(i, to) {
+  if (lo.saving) return; // the order shown is not saved yet: the next move starts from the saved one
   const order = lo.view.archives.map(a => a.name);
   if (to < 0 || to >= order.length || to === i) return;
   const [n] = order.splice(i, 1);

@@ -1,5 +1,5 @@
 'use strict';
-/* global appName, api, $, h, icon, run, store, state, THEMES, THEME_ORDER, themeMini, chooseTheme, themeState, loadSettings, renderStatus */
+/* global plainHttpRemote, renderVortexMove, appName, api, $, h, icon, run, store, state, THEMES, THEME_ORDER, themeMini, chooseTheme, themeState, loadSettings, renderStatus */
 
 // ---------------------------------------------------------------- the setup wizard
 
@@ -28,7 +28,7 @@ async function maybeStartSetup() {
 /** The app behind the wizard: shown (it fades in when the wizard closes). */
 function revealApp() {
   delete document.documentElement.dataset.setup;
-  $('#shell').inert = false;
+  if ($('#modal-back').hidden) $('#shell').inert = false;
 }
 
 function openSetup() {
@@ -55,6 +55,7 @@ async function closeSetup() {
   // What the wizard saved shows in Settings and in the sidebar at once.
   await loadSettings();
   renderStatus();
+  renderVortexMove(); // a question held back while the wizard was open
   (su.prevFocus && document.contains(su.prevFocus) ? su.prevFocus : $('#play-btn'))?.focus();
 }
 
@@ -243,9 +244,11 @@ const SETUP_BUILD = {
     for (const x of [provider, endpoint, model, aiKey]) x.addEventListener('input', () => { su.result.ai = ''; });
     api.getSettings().then(r => {
       const s = r.ok || {};
-      provider.value = s.aiProvider || 'openai';
-      endpoint.value = s.aiEndpoint || '';
-      model.value = s.aiModel || '';
+      if (!endpoint.value && !model.value) {
+        provider.value = s.aiProvider || 'openai';
+        endpoint.value = s.aiEndpoint || '';
+        model.value = s.aiModel || '';
+      }
       if (s.hasAiKey) aiKey.placeholder = `Saved key ${s.aiKeyHint}`;
       examples();
     });
@@ -263,7 +266,7 @@ const SETUP_BUILD = {
       const r = await api.aiTest();
       if (r.error) { setStatus(status, 'bad', `${r.error} Fix it, or choose Skip for now.`); return false; }
       su.result.ai = model.value.trim();
-      setStatus(status, 'ok', `Connected: ${r.ok}`);
+      setStatus(status, plainHttpRemote(endpoint.value) ? 'warn' : 'ok', `Connected: ${r.ok}${plainHttpRemote(endpoint.value) ? '. This address is plain http: your key travels unencrypted. Use https:// unless it is on your own network.' : ''}`);
       return true;
     };
     const field = (label, input) => h('label', { class: 'su-field' }, h('span', {}, label), input);

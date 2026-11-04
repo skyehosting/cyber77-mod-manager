@@ -177,7 +177,12 @@ function startFreeDownloads(preferId = 0) {
 
 api.onJob(j => {
   // This file got its key: on to the next one.
-  if (free.active && j.id === free.jobId && j.status !== 'waiting') { setTimeout(() => startFreeDownloads(), 600); return; }
+  if (free.active && j.id === free.jobId && j.status !== 'waiting') {
+    free.jobId = 0; // handled: later events of this file do not move on again
+    clearTimeout(free.next);
+    free.next = setTimeout(() => startFreeDownloads(), 600);
+    return;
+  }
   // New files to click for (a download, an update, an import): open the first one.
   if (j.status === 'waiting' && !free.active) {
     clearTimeout(free.startSoon);
