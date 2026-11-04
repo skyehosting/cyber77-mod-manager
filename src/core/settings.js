@@ -40,6 +40,7 @@ class Settings {
       aiContext: 0, // the model's context window in tokens; 0: ask the provider
       playsKeep: 25, // how many plays (each launch's logs) the Game log keeps
       uiScale: 0, // the app's scale in percent, used instead of Windows' scale; 0: follow Windows
+      windowBg: '', // the theme's page colour (#rrggbb), so the window opens in it instead of flashing dark
       aiKeyEnc: '',
       aiKeyPlain: '',
     });
@@ -143,6 +144,7 @@ class Settings {
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
+    if ('windowBg' in patch) d.windowBg = /^#[0-9a-f]{6}$/i.test(String(patch.windowBg)) ? String(patch.windowBg) : '';
     if ('uiScale' in patch) { const v = Math.round(Number(patch.uiScale) || 0); d.uiScale = v ? Math.min(300, Math.max(50, v)) : 0; }
     if ('playsKeep' in patch) d.playsKeep = Math.min(500, Math.max(1, parseInt(patch.playsKeep, 10) || 25));
     if ('concurrentDownloads' in patch) {

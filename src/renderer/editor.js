@@ -42,6 +42,12 @@ const LANGS = {
   },
   log: { label: 'Log', flags: 'i', rules: [['err', '\\[\\s*(?:error|err|fatal|critical)\\s*\\]|\\b(?:error|err|fatal|critical|exception|failed|failure|crash(?:ed)?|access violation)\\b'], ['warn', '\\[\\s*(?:warning|warn)\\s*\\]'], ['warn', '\\b(?:warning|warn|deprecated|missing)\\b'], ['num', '\\b\\d{1,2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b'], ['key', '\\[[^\\]\\n]{1,40}\\]'], ['str', '"[^"\\n]*"']] },
   text: { label: 'Text', rules: [] },
+  // A custom theme (Settings > Interface): "--token: colour;" lines.
+  theme: {
+    label: 'Theme',
+    rules: [['com', '/\\*[\\s\\S]*?(?:\\*/|$)'], ['key', '--[\\w-]+'], ['num', '#[0-9a-fA-F]{3,8}\\b|\\b\\d+(?:\\.\\d+)?(?:%|rem|px|deg)?'],
+      ['fn', '\\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb|color-mix|color|var)(?=\\()'], ['kw', '\\b(?:light|dark|transparent|in|srgb)\\b']],
+  },
 };
 const BY_EXT = {
   '.json': 'json', '.yaml': 'yaml', '.yml': 'yaml', '.xl': 'yaml', '.ini': 'ini', '.cfg': 'ini', '.conf': 'ini', '.env': 'ini', '.properties': 'ini', '.toml': 'ini', '.settings': 'ini',

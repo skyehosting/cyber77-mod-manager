@@ -114,7 +114,7 @@ function createWindow() {
     focusable: !capture,
     minWidth: 900,
     minHeight: 580,
-    backgroundColor: '#0f1115',
+    backgroundColor: settings?.get('windowBg') || '#0d0f12',
     title: 'Cyber Mod Manager',
     autoHideMenuBar: true,
     webPreferences: {
@@ -464,6 +464,12 @@ async function boot() {
   handle('vortex:profilePlan', id => manager.vortexProfilePlan(String(id)));
   handle('vortex:useProfile', (id, opts) => manager.useVortexProfile(String(id), { switchOffOthers: opts?.switchOffOthers !== false }));
   handle('nexus:signedIn', () => nexusSignedIn());
+  // The theme's page colour: shown at once while resizing, and from the next start before the page draws.
+  handle('window:background', hex => {
+    if (!/^#[0-9a-f]{6}$/i.test(String(hex))) return;
+    if (settings.get('windowBg') !== hex) settings.update({ windowBg: hex });
+    if (win && !win.isDestroyed()) win.setBackgroundColor(hex);
+  });
   handle('profiles:export', async id => {
     await manager.resolveProfileFiles(id); // mods moved from Vortex: their Nexus files, so they are not "local"
     const doc = manager.exportProfile(id);

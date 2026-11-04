@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('api', {
   vortexProfilePlan: id => call('vortex:profilePlan', id),
   useVortexProfile: (id, opts) => call('vortex:useProfile', id, opts),
   nexusSignedIn: () => call('nexus:signedIn'),
+  setWindowBackground: hex => call('window:background', hex),
   onNexusSignedIn: on('nexus:signedIn'),
   createProfile: (name, copyCurrent) => call('profiles:create', name, copyCurrent),
   renameProfile: (id, name) => call('profiles:rename', id, name),

@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; frame-src https://*.nexusmods.com;">
   <title>Cyber Mod Manager</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="themes.js"></script>
 </head>
 <body>
   <!-- Icon set (24×24 stroke icons), used with <svg class="i"><use href="#i-name"/></svg> -->
@@ -799,6 +800,37 @@
             <section class="set-sec" data-sec="display" id="sec-display" aria-labelledby="sh-display">
               <h2 class="set-title" id="sh-display"><svg class="i"><use href="#i-eye"/></svg>Interface</h2>
               <div class="set-card">
+                <div class="set-row set-row-wide theme-row">
+                  <div class="set-label"><span class="set-name" id="theme-label">Theme</span><p class="set-desc">Colours for the whole app, applied at once. Custom lets you write your own, starting from any of these.</p></div>
+                  <div class="set-ctl"><div class="theme-grid" id="theme-grid" role="radiogroup" aria-labelledby="theme-label"></div></div>
+                </div>
+                <div class="theme-ed" id="theme-ed" hidden>
+                  <div class="theme-ed-head">
+                    <div class="theme-ed-title"><span class="set-name">Custom theme</span><span class="set-desc">One "--token: colour;" per line. Every change shows at once; only colours are taken from it.</span></div>
+                    <label class="theme-ed-from"><span>Start from</span>
+                      <select id="theme-ed-base" aria-label="Start from a theme"></select>
+                    </label>
+                    <button type="button" class="btn btn-sm" id="theme-ed-load" title="Replace the text with the chosen theme's colours"><svg class="i"><use href="#i-rotate"/></svg><span>Load</span></button>
+                    <button type="button" class="btn btn-sm" id="theme-ed-copy" title="Copy the theme, to share it"><svg class="i"><use href="#i-copy"/></svg><span>Copy</span></button>
+                  </div>
+                  <div class="theme-ed-main">
+                    <div class="ed-body theme-ed-code">
+                      <pre class="ed-gutter" id="theme-ed-gutter" aria-hidden="true"></pre>
+                      <div class="ed-area">
+                        <pre class="ed-hl" id="theme-ed-hl" aria-hidden="true"></pre>
+                        <textarea class="ed-text" id="theme-ed-text" spellcheck="false" autocomplete="off" aria-label="Custom theme" aria-describedby="theme-ed-problems"></textarea>
+                      </div>
+                    </div>
+                    <div class="theme-ed-side">
+                      <h3 class="theme-ed-h">Readability</h3>
+                      <ul class="theme-checks" id="theme-ed-checks"></ul>
+                      <h3 class="theme-ed-h">Easy to tell apart</h3>
+                      <ul class="theme-checks" id="theme-ed-apart"></ul>
+                      <h3 class="theme-ed-h">Problems</h3>
+                      <ul class="theme-problems" id="theme-ed-problems" aria-live="polite"></ul>
+                    </div>
+                  </div>
+                </div>
                 <div class="set-row">
                   <div class="set-label"><label for="s-ui-scale">Interface scale</label><p class="set-desc" id="s-ui-scale-hint">Automatic uses the scale Windows sets for your display. Ctrl + and Ctrl − change it at any time; Ctrl 0 goes back to Automatic.</p><p class="hint scale-now" id="s-ui-scale-now"></p></div>
                   <div class="set-ctl">
@@ -966,6 +998,7 @@
   <script src="loadorder.js"></script>
   <script src="modconfig.js"></script>
   <script src="editor.js"></script>
+  <script src="theme-editor.js"></script>
   <script src="assistant.js"></script>
 </body>
 </html>
