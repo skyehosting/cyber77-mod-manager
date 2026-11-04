@@ -4,8 +4,20 @@
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 const ids = tabs.map(t => t.getAttribute('aria-controls'));
 
+// Visitor counts (GoatCounter: no cookies, nothing personal). A tab opened is counted as an event;
+// its script loads on its own, so a count made before it is ready waits for the page to load.
+function track(name) {
+  const go = () => window.goatcounter?.count?.({ path: name, title: name, event: true });
+  if (window.goatcounter?.count) go();
+  else addEventListener('load', go, { once: true });
+}
+let shown = '';
+
 function show(id, focus = false, remember = true) {
   if (!ids.includes(id)) id = 'overview';
+  // A tab someone opens, or a link straight to one (#source); the plain page counts as a visit already.
+  if (id !== shown && (shown || id !== 'overview')) track(`tab-${id}`);
+  shown = id;
   for (const t of tabs) {
     const on = t.getAttribute('aria-controls') === id;
     t.setAttribute('aria-selected', String(on));
