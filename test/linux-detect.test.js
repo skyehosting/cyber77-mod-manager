@@ -12,6 +12,8 @@ const wine = require('../src/core/wine');
  * layout as seen in a real Ubuntu 26.04 VM (the Linux port audit, 19.3c/19.3d).
  */
 
+// As the app resolves paths: links followed, and full names for 8.3 short ones (RUNNER~1 on CI).
+const real = p => fs.realpathSync.native(p);
 const put = (p, text = '') => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
 const link = (target, at) => { fs.mkdirSync(path.dirname(at), { recursive: true }); fs.symlinkSync(target, at, 'junction'); };
 const vdf = libs => `"libraryfolders"\n{\n${libs.map((l, i) => `\t"${i}"\n\t{\n\t\t"path"\t\t"${l.path.replace(/\\/g, '\\\\')}"\n${l.mounted === false ? '\t\t"mounted"\t\t"0"\n' : ''}\t\t"apps"\n\t\t{\n\t\t}\n\t}\n`).join('')}}\n`;
@@ -60,8 +62,8 @@ test('library lists: both formats, unmounted libraries left out', () => {
 
 test('Steam on Linux: one root despite its links, every library, the game installed or still installing', () => {
   const { home, steam, card } = steamHome();
-  assert.deepStrictEqual(finder.linuxSteamRoots(home).map(r => r.dir), [fs.realpathSync(steam)], '~/.steam/steam and ~/.steam/root are the same Steam');
-  assert.deepStrictEqual(finder.linuxSteamLibraries(home).map(l => l.dir), [fs.realpathSync(steam), fs.realpathSync(card)]);
+  assert.deepStrictEqual(finder.linuxSteamRoots(home).map(r => r.dir), [real(steam)], '~/.steam/steam and ~/.steam/root are the same Steam');
+  assert.deepStrictEqual(finder.linuxSteamLibraries(home).map(l => l.dir), [real(steam), real(card)]);
 
   // Installed on the SD card; still downloading in the main library (its folder empty so far).
   const dir = game(card);
@@ -70,7 +72,7 @@ test('Steam on Linux: one root despite its links, every library, the game instal
   fs.mkdirSync(path.join(steam, 'steamapps', 'common', 'Cyberpunk 2077'), { recursive: true });
   const games = finder.linuxSteamGames(home);
   assert.deepStrictEqual(games.map(g => [g.installed, g.progress]), [[false, 0.37], [true, 1]]);
-  assert.strictEqual(games[1].path, fs.realpathSync(dir));
+  assert.strictEqual(games[1].path, real(dir));
 });
 
 test('a Flatpak Steam\'s library paths are read as the Flatpak sees them', () => {
@@ -83,8 +85,8 @@ test('a Flatpak Steam\'s library paths are read as the Flatpak sees them', () =>
   put(path.join(steam, 'steamapps', 'libraryfolders.vdf'), vdf([{ path: path.join(home, '.local', 'share', 'Steam') }]));
   const roots = finder.linuxSteamRoots(home);
   assert.strictEqual(roots.length, 1);
-  assert.strictEqual(roots[0].sandboxHome, fs.realpathSync(sandbox));
-  assert.deepStrictEqual(finder.linuxSteamLibraries(home).map(l => l.dir), [fs.realpathSync(steam)]);
+  assert.strictEqual(roots[0].sandboxHome, real(sandbox));
+  assert.deepStrictEqual(finder.linuxSteamLibraries(home).map(l => l.dir), [real(steam)]);
 });
 
 test('the game\'s Proton folder: its own library first, else another (an SD card), else the one used last', () => {
@@ -132,7 +134,7 @@ test('on Linux the app finds the game, its saves and crash reports from the game
   put(path.join(steam, 'steamapps', 'appmanifest_1091500.acf'), acf(4));
   await asLinux(home, async () => {
     const installs = await finder.findInstalls();
-    assert.deepStrictEqual(installs.map(i => [i.store, i.path]), [['steam', fs.realpathSync(dir)]]);
+    assert.deepStrictEqual(installs.map(i => [i.store, i.path]), [['steam', real(dir)]]);
     assert.strictEqual(finder.gameWindowsFolders(dir), null, 'not launched yet: no prefix');
     const pfx = prefix(steam);
     assert.strictEqual(finder.gameWindowsFolders(dir).saves, path.join(pfx, 'drive_c', 'users', 'steamuser', 'Saved Games', 'CD Projekt Red', 'Cyberpunk 2077'));
@@ -184,7 +186,7 @@ test('review fixes: no Steam saves for a game outside Steam, a manifest cannot p
   const escape = path.join(root, 'elsewhere');
   put(path.join(escape, 'bin', 'x64', 'Cyberpunk2077.exe'), 'exe');
   put(path.join(steam, 'steamapps', 'appmanifest_1091500.acf'), acf(4).replace('"Cyberpunk 2077"', '"../../../elsewhere"'));
-  assert.ok(finder.linuxSteamGames(home).every(g => g.path.startsWith(fs.realpathSync(steam))), 'installdir is a folder name only');
+  assert.ok(finder.linuxSteamGames(home).every(g => g.path.startsWith(real(steam))), 'installdir is a folder name only');
   const t = Date.now();
   finder.parseLibraryFolders('\n'.repeat(200000));
   assert.ok(Date.now() - t < 500, 'blank lines do not slow the old-format pattern down');
