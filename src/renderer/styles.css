@@ -2854,6 +2854,9 @@ html[data-setup="open"] #shell { visibility: hidden; }
 .sv-thumb { width: 7.5rem; aspect-ratio: 16 / 9; flex: none; object-fit: cover; border-radius: var(--r-sm); background: var(--surface-3); border: 1px solid var(--line); }
 .sv-mini { width: 4rem; aspect-ratio: 16 / 9; flex: none; object-fit: cover; border-radius: 0.25rem; background: var(--surface-3); }
 .sv-thumb.none, .sv-mini.none { visibility: hidden; }
+.sv-thumb[src], .sv-mini[src] { cursor: zoom-in; }
+/* A save's picture shown large (savespage.js zoomShot): above the page and menus, below toasts. */
+.shot-zoom { position: fixed; z-index: 85; object-fit: cover; transform-origin: 0 0; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--surface-3); box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 0.55); }
 .sv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .sv-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-weight: var(--fw-medium); color: var(--text); }
 .sv-sub { color: var(--muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

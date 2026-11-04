@@ -58,6 +58,13 @@ function pruneShots(v) {
 function shotEl(save, cls) {
   const img = h('img', { class: cls, alt: '', decoding: 'async' });
   if (!save) { img.classList.add('none'); return img; }
+  // A click shows it large (and does not open or close the row it sits in).
+  img.addEventListener('click', e => {
+    if (!img.src) return;
+    e.stopPropagation();
+    e.preventDefault();
+    zoomShot(img, e);
+  });
   const key = shotKey(save);
   let p = sv.shots.get(key);
   if (!p) {
@@ -67,6 +74,47 @@ function shotEl(save, cls) {
   }
   p.then(url => { if (url) img.src = url; else img.classList.add('none'); });
   return img;
+}
+
+// ---- a save's picture, large: grows out of the thumbnail, gone the moment the pointer leaves it
+
+let zoom = null;
+function closeZoom() {
+  if (!zoom) return;
+  zoom.el.remove();
+  zoom.off.abort();
+  zoom = null;
+}
+function zoomShot(img, e) {
+  closeZoom();
+  const from = img.getBoundingClientRect();
+  const ratio = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 16 / 9;
+  const m = 16;
+  // Up to twice the picture's own size (save pictures are small), within the window.
+  const w = Math.min(innerWidth - 2 * m, (innerHeight - 2 * m) * ratio, Math.max(img.naturalWidth * 2, 640));
+  const ht = w / ratio;
+  // Centred on the pointer, kept in the window: the pointer starts on the picture, so only moving away closes it.
+  const x = Math.min(Math.max(e.clientX - w / 2, m), innerWidth - m - w);
+  const y = Math.min(Math.max(e.clientY - ht / 2, m), innerHeight - m - ht);
+  const el = h('img', { class: 'shot-zoom', src: img.src, alt: '' });
+  Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${ht}px` });
+  document.body.append(el);
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.animate([
+      { transform: `translate(${from.left - x}px, ${from.top - y}px) scale(${from.width / w}, ${from.height / ht})`, borderRadius: '0.5rem' },
+      { transform: 'none' },
+    ], { duration: 200, easing: 'cubic-bezier(.2, .7, .2, 1)' });
+  }
+  const off = new AbortController();
+  const opts = { signal: off.signal, capture: true };
+  const outside = ev => ev.clientX < x || ev.clientX > x + w || ev.clientY < y || ev.clientY > y + ht;
+  addEventListener('pointermove', ev => { if (outside(ev)) closeZoom(); }, opts);
+  // A click on it lands on it (not on the row below) and closes it; a press elsewhere (touch) just closes it.
+  el.addEventListener('click', closeZoom, { signal: off.signal });
+  addEventListener('pointerdown', ev => { if (outside(ev)) closeZoom(); }, opts);
+  addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); closeZoom(); } }, opts);
+  for (const t of ['wheel', 'resize', 'blur']) addEventListener(t, closeZoom, opts);
+  zoom = { el, off };
 }
 
 function renderSaves() {
