@@ -60,18 +60,26 @@ function backupDirProblem(dir, savesDir = defaultSavesDir()) {
   if (typeof dir !== 'string' || !path.isAbsolute(dir)) return 'Choose a full folder path.';
   if (dir.length > 400) return 'That path is too long.';
   if (/^[\\/]{2}/.test(dir)) return 'Choose a folder on this PC, not a network share.';
-  let full = path.resolve(dir);
-  // Follow links and junctions: compare where the folder really is (its nearest existing part).
-  for (let p = full, rest = ''; ; rest = path.join(path.basename(p), rest), p = path.dirname(p)) {
-    try { full = path.join(fs.realpathSync.native(p), rest); break; } catch { if (path.dirname(p) === p) break; }
-  }
+  // Every folder compared by where it really is: links, junctions and short 8.3 names (RUNNER~1)
+  // followed, for its nearest existing part.
+  const real = p => {
+    let out = path.resolve(p);
+    for (let q = out, rest = ''; ; rest = path.join(path.basename(q), rest), q = path.dirname(q)) {
+      try { out = path.join(fs.realpathSync.native(q), rest); break; } catch { if (path.dirname(q) === q) break; }
+    }
+    return out;
+  };
+  const full = real(dir);
   if (path.parse(full).root === full || path.parse(full).root === `${full}\\`) return 'Choose a folder, not a whole drive.';
-  const inside = (a, b) => { const r = path.relative(path.resolve(b), path.resolve(a)); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
-  if (savesDir && (inside(full, savesDir) || inside(savesDir, full))) return 'Not in (or around) the game\'s save folder: cloud saves would sync the backups.';
-  for (const sys of [process.env.WINDIR, process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.ProgramData]) {
-    if (sys && inside(full, sys)) return 'Not in a Windows or program folder.';
+  const inside = (a, b) => { const r = path.relative(b, a); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+  if (savesDir) {
+    const saves = real(savesDir);
+    if (inside(full, saves) || inside(saves, full)) return 'Not in (or around) the game\'s save folder: cloud saves would sync the backups.';
   }
-  if (process.env.USERPROFILE && path.resolve(process.env.USERPROFILE) === full) return 'Choose a folder inside your user folder, not the user folder itself.';
+  for (const sys of [process.env.WINDIR, process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.ProgramData]) {
+    if (sys && inside(full, real(sys))) return 'Not in a Windows or program folder.';
+  }
+  if (process.env.USERPROFILE && real(process.env.USERPROFILE).toLowerCase() === full.toLowerCase()) return 'Choose a folder inside your user folder, not the user folder itself.';
   return '';
 }
 

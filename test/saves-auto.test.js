@@ -90,6 +90,12 @@ test('the backup folder setting refuses unsafe places', () => {
     assert.strictEqual(settings.get('saveBackupDir'), before, `not saved: ${bad.slice(0, 40)}`);
   }
   assert.strictEqual(backupDirProblem(path.join(os.tmpdir(), 'my backups'), saves), '');
+  // The save folder named another way (a junction to it, or a short 8.3 name): still the save folder.
+  const link = `${saves}-junction`;
+  fs.symlinkSync(saves, link, 'junction');
+  assert.ok(backupDirProblem(path.join(saves, 'backups'), link), 'refused: inside the saves, which were named by a junction');
+  assert.ok(backupDirProblem(path.join(link, 'backups'), saves), 'refused: inside the saves, through a junction');
+  fs.rmdirSync(link); // the junction only, never what it points to
   settings.update({ saveBackupDir: '' });
   assert.strictEqual(settings.get('saveBackupDir'), '', 'back to the default folder');
 });
