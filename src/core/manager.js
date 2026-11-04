@@ -39,6 +39,8 @@ function validChoices(c) {
 }
 const catOf = f => String(f.category_name || f.category || 'MISCELLANEOUS').toUpperCase();
 const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
+// Files a mod may rewrite while the game runs (its settings, databases, logs).
+const WRITABLE = /\.(json|ini|cfg|conf|toml|ya?ml|xml|txt|log|sqlite3?|db)$/i;
 const samePath = (a, b) => path.resolve(a).replace(/[\\/]+$/, '').toLowerCase() === path.resolve(b).replace(/[\\/]+$/, '').toLowerCase();
 /** The parts of a Nexus file record the UI shows. */
 /** Nexus descriptions are BBCode/HTML: keep the words only. */
@@ -1428,8 +1430,8 @@ class ModManager extends EventEmitter {
     const made = new Map(Object.values(this.data.profiles.list).filter(p => p.fromMo2).map(p => [p.fromMo2, p.name]));
     return {
       found: data.found,
-      running: !!this.mo2Running,
       folders: this.settings.get('mo2Folders') || [],
+      programs: this.mo2.programFolders, // where MO2 is installed (shown when it has no Cyberpunk setup)
       instances: data.instances.map(i => {
         const mods = [...i.mods.values()];
         return {
@@ -1437,6 +1439,8 @@ class ModManager extends EventEmitter {
           sameGame: !i.gamePath || !game || samePath(game, i.gamePath),
           mods: mods.length,
           here: mods.filter(m => this.mo2Ours(i, m, byFile)).length,
+          // Mods tried before and left in MO2 (empty, or MO2's own workaround): nothing to bring.
+          left: mods.filter(m => !this.mo2Ours(i, m, byFile) && !this.data.mo2Skipped?.[`${i.id}|${m.folder}`]).length,
           profiles: i.profiles.map(p => ({ id: p.id, name: p.name, selected: p.selected, count: p.enabled.length, profile: made.get(p.id) || '' })),
         };
       }),
@@ -1455,7 +1459,7 @@ class ModManager extends EventEmitter {
     const { inst, p } = this.mo2Profile(profileId);
     return [...p.enabled].reverse().map(f => {
       const m = inst.mods.get(f);
-      return { name: m.name, version: m.version, modId: m.modId, type: m.type, files: m.fileCount, here: !!this.mo2Ours(inst, m) };
+      return { name: m.name, version: m.version, modId: m.modId, here: !!this.mo2Ours(inst, m) };
     });
   }
 
@@ -1466,7 +1470,7 @@ class ModManager extends EventEmitter {
     const existing = Object.values(this.data.profiles.list).find(x => x.fromMo2 === p.id);
     return {
       name: p.name, instance: inst.name, mods: p.enabled.length, here: p.enabled.length - move.length, move: move.length,
-      empty: move.filter(f => !inst.mods.get(f).fileCount).length, profile: existing?.name || '',
+      empty: move.filter(f => this.mo2.skipReason(inst.mods.get(f))).length, profile: existing?.name || '',
     };
   }
 
@@ -1487,6 +1491,7 @@ class ModManager extends EventEmitter {
       const adopted = this.data.mo2Adopted;
       const out = [];
       const failed = [];
+      const skipped = [];
       // Lowest priority first, so the mod that won a file in MO2 wins it here too.
       for (const folder of [...want].reverse()) {
         const m = inst.mods.get(folder);
@@ -1494,8 +1499,14 @@ class ModManager extends EventEmitter {
         const key = `${inst.id}|${folder}`;
         const ours = this.mo2Ours(inst, m);
         if (ours) { adopted[key] = ours; out.push({ folder, id: ours, matched: true }); continue; }
+        const skip = this.mo2.skipReason(m);
+        if (skip) {
+          skipped.push(folder);
+          (this.data.mo2Skipped ||= {})[key] = skip; // so Settings does not keep offering it
+          this.log.info(`Left ${m.name} in Mod Organizer 2: ${skip}`);
+          continue;
+        }
         try {
-          if (!m.fileCount) throw new Error('its folder in MO2 is empty');
           const id = m.fileId && !this.data.mods[String(m.fileId)] ? String(m.fileId)
             : `mo2-${crypto.createHash('sha1').update(key).digest('hex').slice(0, 10)}`;
           const src = path.join(inst.modsDir, folder);
@@ -1503,14 +1514,16 @@ class ModManager extends EventEmitter {
           fs.rmSync(dest, { recursive: true, force: true });
           const files = [];
           const seen = new Set();
-          for (const f of m.files) {
+          for (const f of this.mo2.modFiles(m)) {
             const rel = f.dest.replace(/\\/g, '/');
             // root/x and x both mean the game's x: the first one found is kept.
             if (!isSafeRel(rel) || seen.has(rel.toLowerCase())) continue;
             seen.add(rel.toLowerCase());
             const to = path.join(dest, rel);
             fs.mkdirSync(path.dirname(to), { recursive: true });
-            try { fs.linkSync(path.join(src, f.src), to); } catch { fs.copyFileSync(path.join(src, f.src), to); }
+            // Settings files a mod rewrites while the game runs are copied: a link would change MO2's copy too.
+            if (WRITABLE.test(rel)) fs.copyFileSync(path.join(src, f.src), to);
+            else { try { fs.linkSync(path.join(src, f.src), to); } catch { fs.copyFileSync(path.join(src, f.src), to); } }
             files.push(rel);
           }
           // The archive too, so Reinstall works here.
@@ -1526,7 +1539,7 @@ class ModManager extends EventEmitter {
           this.data.mods[id] = {
             id, key: id, name: m.name, modName: m.modName, modId: m.modId, fileId: m.fileId,
             game: 'cyberpunk2077', version: m.version, category: m.category, author: m.author,
-            type: m.type, files, skipped: 0, warnings: [],
+            type: this.mo2.modType(m), files, skipped: 0, warnings: [],
             enabled: false, priority: this.data.nextPriority++, installedAt: Date.now(),
             fomod: false, dependencyOf: '', fromMo2: key,
           };
@@ -1542,7 +1555,7 @@ class ModManager extends EventEmitter {
       if (out.length) this.log.success(`Brought ${plural(fresh, 'mod')} over from Mod Organizer 2 (${inst.name})${out.length > fresh ? `; ${out.length - fresh} were here already` : ''}. MO2 is unchanged.`);
       this.emit('changed');
       if (fresh) this.resolveSoon(); // the exact Nexus file of any that only know their mod
-      return { adopted: out, failed: failed.length };
+      return { adopted: out, failed: failed.length, skipped: skipped.length };
     });
   }
 
@@ -1553,6 +1566,8 @@ class ModManager extends EventEmitter {
    */
   async useMo2Profile(profileId) {
     const first = this.mo2Profile(profileId);
+    if (!isGameDir(this.gameDir())) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    if (!first.p.enabled.length) throw new Error(`"${first.p.name}" has no mods enabled in Mod Organizer 2.`);
     const r = await this.adoptFromMo2(first.inst.id, first.p.enabled);
     const { inst, p } = this.mo2Profile(profileId);
     // Lowest priority first: the order the profile's mods get here.
@@ -1576,21 +1591,20 @@ class ModManager extends EventEmitter {
       return pid;
     });
     await this.switchProfile(id);
-    return { id, name: this.data.profiles.list[id].name, enabled: order.length, moved: r.adopted.filter(o => !o.matched).length, failed: r.failed };
+    return { id, name: this.data.profiles.list[id].name, enabled: order.length, moved: r.adopted.filter(o => !o.matched).length, failed: r.failed, skipped: r.skipped };
   }
 
   /** Notice MO2 changes (a profile edited, a mod added) while this app is open. */
   startMo2Watch() {
-    this.mo2.scanRegistry().catch(() => {}).finally(() => this.emit('changed'));
+    this.mo2.discover().catch(() => {}).finally(() => this.emit('changed'));
     let last = '';
-    const tick = async () => {
-      this.mo2Running = await this.mo2.isRunning();
+    const tick = () => {
       const d = this.mo2.read();
-      const now = `${this.mo2Running}|${this.mo2.sig}|${d.instances.length}`;
+      const now = `${this.mo2.sig}|${d.instances.length}`;
       if (now !== last) { last = now; this.emit('changed'); }
     };
-    tick().catch(() => {});
-    this.mo2Timer = setInterval(() => tick().catch(() => {}), 10000);
+    try { tick(); } catch { /* unreadable: tried again */ }
+    this.mo2Timer = setInterval(() => { try { tick(); } catch { /* unreadable: tried again */ } }, 10000);
   }
 
   // ---------------------------------------------------------------- sharing profiles

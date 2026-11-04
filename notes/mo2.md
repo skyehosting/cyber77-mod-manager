@@ -32,10 +32,22 @@ enabled mods on top; the UI says so.
   name). The registry value `HKCU\Software\Mod Organizer Team\Mod Organizer\CurrentInstance` names
   the last used one (empty = portable / none).
 - Portable instances: a `ModOrganizer.ini` next to `ModOrganizer.exe` (`portableInstanceExists`).
-  The installer writes no uninstall key, so MO2 folders are found from: the default
-  `<system drive>\Modding\MO2` (`MO2-Installer.iss` DefaultDirName), the nxm handler command when it
-  points at an MO2 `nxmhandler.exe`, the `executable` entries of `nxmhandler.ini` /
-  `downloadhandler.ini` in `%LOCALAPPDATA%\ModOrganizer`, and folders the user adds in Settings.
+  The installer writes no uninstall key (`CreateUninstallRegKey=no`), and a portable MO2 (unpacked by
+  hand, or by Wabbajack, which always uses a portable MO2) leaves nothing at all, so MO2 folders are
+  found from:
+  - the default `<system drive>\Modding\MO2` (`MO2-Installer.iss` DefaultDirName)
+  - the installer's all-users Start Menu shortcut `Mod Organizer\Mod Organizer.lnk` (its target)
+  - Windows' records of programs that ran: `HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache`
+    (`<exe>.FriendlyAppName`) and `HKCU\...\AppCompatFlags\Compatibility Assistant\Store` (`<exe>`).
+    These outlive the program (this PC kept a deleted Nolvus MO2), so a folder counts only while it
+    holds `ModOrganizer.exe`
+  - the nxm handler command when it points at an MO2 `nxmhandler.exe`, and the `executable` entries of
+    `nxmhandler.ini` / `downloadhandler.ini` in `%LOCALAPPDATA%\ModOrganizer`
+  - common folders on each local (fixed) drive: `\Modding\MO2`, `\MO2`, `\Mod Organizer 2`,
+    `\Games\MO2`, and one level under `\Modlists`, `\Wabbajack`, `\Modding` (Wabbajack lists such as
+    PunkCity install to e.g. `D:\Modlists\PunkCity`)
+  - folders the user adds in Settings.
+  Guides say never to put MO2 inside the game folder, so it is not searched.
 - An instance is for Cyberpunk when `[General] gameName` equals `Cyberpunk 2077`
   (case-insensitive, as MO2 compares; plugin `GameName`).
 
@@ -62,6 +74,9 @@ enabled mods on top; the UI says so.
 - `downloads/<archive>.meta` `[General]`: `modID`, `fileID`, `modName`, `version`, `name`.
 - Mod folders are laid out like the game folder. A top-level `root/` folder (RootBuilder) goes to
   the game root: `root/bin/x64/version.dll` is `bin/x64/version.dll` in the game.
+- MO2's Cyberpunk plugin 3.x makes a mod "disable CrashReporter (MO CET fix)": an empty
+  `bin/x64/CrashReporter/CrashReporter.exe`, needed only under MO2's virtual files. It is skipped,
+  as are mods with no files.
 - `overwrite/` is shared by all profiles and holds what the game wrote while running from MO2
   (logs, the redscript cache, CET mods' settings). Not carried over (yet).
 
@@ -73,7 +88,8 @@ enabled mods on top; the UI says so.
   app lacks are moved in, then a profile "<name> (MO2)" gets exactly its enabled mods, in MO2's
   order, and becomes active. Using it again updates that profile.
 - Moving a mod: its files are hardlinked from MO2's mod folder into this app's staging (no extra
-  space; copied across drives), `root/` mapped to the game root, its archive linked into this app's
+  space; copied across drives; settings files a mod rewrites, such as `.json` and `.ini`, are always
+  copied so MO2's copy never changes), `root/` mapped to the game root, its archive linked into this app's
   downloads when MO2 still has it. Name, version, Nexus ids and category come from `meta.ini` and
   the download's `.meta`. A mod this app already has (same Nexus file) is matched, not added twice.
 - MO2's priority order carries over: mods moved together are placed in MO2's order (lowest first,

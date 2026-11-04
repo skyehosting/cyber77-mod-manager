@@ -650,7 +650,8 @@ function mo2ProfileRow(x) {
     h('span', { class: 'vrow-acts' },
       h('button', { class: 'btn btn-sm btn-ghost', dataset: { key: `mo2:${x.id}:mods` }, 'aria-label': `Show the mods of the MO2 profile ${x.name}`, onclick: () => showMo2ProfileMods(x) }, h('span', {}, 'Show its mods')),
       h('button', {
-        class: 'btn btn-sm', dataset: { key: `mo2:${x.id}:use` }, title: 'Set this app up the way this MO2 profile is: its mods, and only them, in their order, in a profile here',
+        class: 'btn btn-sm', dataset: { key: `mo2:${x.id}:use` }, disabled: !x.count,
+        title: x.count ? 'Set this app up the way this MO2 profile is: its mods, and only them, in their order, in a profile here' : 'No mods are enabled in this profile in MO2',
         'aria-label': `Use the MO2 profile ${x.name} in this app`, onclick: useMo2Profile(x),
       }, icon('import'), h('span', {}, 'Use here'))));
 }
@@ -682,7 +683,7 @@ function useMo2Profile(x) {
       plan.move ? `${plural(plan.move, 'mod')} come over from MO2: their files are linked from MO2's folders (no copies), and MO2 keeps them as they are.` : '',
       plan.profile ? `The profile "${plan.profile}" (made from it before) is updated to match, in MO2's order, and becomes the active one.`
         : `A profile called "${plan.name} (MO2)" is made with exactly these mods, in MO2's order, and becomes the active one.`,
-      plan.empty ? `${plural(plan.empty, 'mod')} in it ${plan.empty === 1 ? 'has' : 'have'} no files in MO2 and ${plan.empty === 1 ? 'is' : 'are'} left out.` : '',
+      plan.empty ? `${plural(plan.empty, 'mod')} in it ${plan.empty === 1 ? 'is' : 'are'} left out: empty in MO2, or MO2's own workaround that only works inside MO2.` : '',
     ].filter(Boolean);
     const ok = await modal({
       title: `Use "${plan.name}" from Mod Organizer 2?`,
@@ -694,7 +695,7 @@ function useMo2Profile(x) {
     const r = await run(api.useMo2Profile(x.id));
     if (!r) return;
     prof.selected = r.id;
-    toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} brought over from MO2` : ''})`, r.failed ? 'warn' : 'success');
+    toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} brought over from MO2` : ''}${r.failed ? `; ${r.failed} could not be read, details in Activity` : ''})`, r.failed ? 'warn' : 'success');
   }, 'Setting up…');
 }
 

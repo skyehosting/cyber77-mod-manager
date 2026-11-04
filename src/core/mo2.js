@@ -69,22 +69,56 @@ class Mo2Bridge extends EventEmitter {
     this.globalRoot = localAppData ? path.join(localAppData, 'ModOrganizer') : '';
     this.extraFolders = extraFolders;
     this.scan = scan;
-    this.registryFolders = [];
+    this.programFolders = []; // MO2 program folders found by discover()
     this.cache = null;
     this.sig = '';
     this.readAt = 0;
   }
 
-  /** MO2 folders named in the registry (its nxm handler), read once in the background. */
-  async scanRegistry() {
+  /**
+   * Find MO2 program folders, once, in the background. MO2's installer writes no uninstall entry,
+   * and a portable MO2 (unpacked by hand, or by Wabbajack) none at all, so the traces are:
+   *   - the nxm link handler, when MO2 holds it
+   *   - the installer's Start Menu shortcut ("Mod Organizer", all users)
+   *   - Windows' records of programs that ran (MuiCache, Compatibility Assistant Store)
+   *   - common folders on each local drive: \Modding\MO2 (the installer's default), \MO2,
+   *     \Mod Organizer 2, \Games\…, and the lists in \Modlists or \Wabbajack (Wabbajack's MO2s)
+   * Records can outlive the program, so only folders that still hold ModOrganizer.exe are kept.
+   */
+  async discover() {
     if (!this.scan) return;
-    const query = key => new Promise(resolve => execFile('reg', ['query', key, '/ve'], { windowsHide: true }, (err, out) => resolve(err ? '' : out)));
+    const run = (file, args) => new Promise(resolve => execFile(file, args, { windowsHide: true, timeout: 30000, maxBuffer: 8 << 20 }, (err, out) => resolve(err ? '' : String(out))));
     const found = [];
     for (const key of ['HKCU\\Software\\Classes\\nxm\\shell\\open\\command', 'HKCR\\nxm\\shell\\open\\command']) {
-      const m = (await query(key)).match(/"([^"]*nxmhandler\.exe)"/i);
+      const m = (await run('reg', ['query', key, '/ve'])).match(/"([^"]*nxmhandler\.exe)"/i);
       if (m) found.push(path.dirname(m[1]));
     }
-    this.registryFolders = found;
+    const script = [
+      "$ErrorActionPreference = 'SilentlyContinue'",
+      '$out = New-Object System.Collections.Generic.List[string]',
+      '$sh = New-Object -ComObject WScript.Shell',
+      'foreach ($root in @("$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs", "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs")) {',
+      "  Get-ChildItem -LiteralPath $root -Filter *.lnk -Recurse -Depth 2 | ForEach-Object { $t = $sh.CreateShortcut($_.FullName).TargetPath; if ($t -like '*\\ModOrganizer.exe') { $out.Add((Split-Path $t)) } }",
+      '}',
+      "foreach ($key in @('HKCU:\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache', 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Compatibility Assistant\\Store')) {",
+      "  (Get-Item -LiteralPath $key).GetValueNames() | Where-Object { $_ -match '\\\\ModOrganizer\\.exe(\\.FriendlyAppName)?$' } | ForEach-Object { $out.Add((Split-Path ($_ -replace '\\.FriendlyAppName$', ''))) }",
+      '}',
+      "foreach ($d in (Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3').DeviceID) {",
+      "  foreach ($rel in 'Modding\\MO2', 'Modding\\Mod Organizer 2', 'MO2', 'Mod Organizer 2', 'ModOrganizer2', 'Games\\MO2', 'Games\\Mod Organizer 2') { $out.Add(\"$d\\$rel\") }",
+      "  foreach ($p in 'Modlists', 'Wabbajack', 'Modding') { Get-ChildItem -LiteralPath \"$d\\$p\" -Directory | ForEach-Object { $out.Add($_.FullName) } }",
+      '}',
+      '$out | Sort-Object -Unique',
+    ].join('\n');
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const listed = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded]);
+    found.push(...listed.split(/\r?\n/).map(s => s.trim()).filter(Boolean));
+    const seen = new Set();
+    this.programFolders = found.filter(f => {
+      const k = f.toLowerCase().replace(/[\\/]+$/, '');
+      if (seen.has(k) || !path.isAbsolute(f)) return false;
+      seen.add(k);
+      return fs.existsSync(path.join(f, 'ModOrganizer.exe'));
+    });
     this.cache = null;
   }
 
@@ -99,7 +133,7 @@ class Mo2Bridge extends EventEmitter {
     }
     const folders = [...(this.extraFolders() || [])];
     if (this.scan) {
-      folders.push(path.join(process.env.SystemDrive || 'C:', '\\Modding', 'MO2'), ...this.registryFolders);
+      folders.push(path.join(process.env.SystemDrive || 'C:', '\\Modding', 'MO2'), ...this.programFolders);
       // MO2's download handler lists every MO2 it was registered for.
       for (const name of ['nxmhandler.ini', 'downloadhandler.ini']) {
         const ini = this.globalRoot && readIni(path.join(this.globalRoot, name));
@@ -152,10 +186,10 @@ class Mo2Bridge extends EventEmitter {
     const d = k => (dl ? iniGet(dl, 'General', k) : '');
     if (!fileId && Number(d('fileID')) > 0 && (!modId || Number(d('modID')) === modId)) fileId = Number(d('fileID'));
     if (!modId && Number(d('modID')) > 0) modId = Number(d('modID'));
-    const files = listFiles(dir).filter(f => f.toLowerCase() !== 'meta.ini');
     return {
       id: `mo2:${inst.id}:${folder}`,
       folder,
+      dir,
       name: folder,
       modName: d('modName') || folder,
       modId, fileId,
@@ -163,10 +197,36 @@ class Mo2Bridge extends EventEmitter {
       author: g('author') || d('author') || '',
       category: FILE_STATUS[Number(g('nexusFileStatus'))] || 'MAIN',
       archive,
-      files: files.map(f => ({ src: f, dest: gamePathOf(f) })),
-      fileCount: files.length,
-      type: describeType(files.map(f => gamePathOf(f).replace(/\\/g, '/'))),
     };
+  }
+
+  /**
+   * A mod's files ({ src, dest }: its own path, its game path), read only when needed: listing
+   * every file of every mod on each refresh would be slow for big setups.
+   */
+  modFiles(mod) {
+    if (!mod.filesCache) {
+      mod.filesCache = listFiles(mod.dir).filter(f => f.toLowerCase() !== 'meta.ini').map(f => ({ src: f, dest: gamePathOf(f) }));
+    }
+    return mod.filesCache;
+  }
+
+  /**
+   * Why a mod is not brought over, or '' to bring it. MO2's Cyberpunk plugin (3.x) makes a mod of
+   * an empty bin/x64/CrashReporter/CrashReporter.exe so CET works through its virtual files; outside
+   * MO2 it would only break the game's crash reporter.
+   */
+  skipReason(mod) {
+    const files = this.modFiles(mod);
+    if (!files.length) return 'its folder in MO2 has no files';
+    const size = f => { try { return fs.statSync(path.join(mod.dir, f.src)).size; } catch { return -1; } };
+    if (files.every(f => /^bin\\x64\\CrashReporter\\/i.test(f.dest) && size(f) === 0)) return "it is MO2's own CrashReporter workaround, not needed outside MO2";
+    return '';
+  }
+
+  /** What kind of mod it is (Archive, CET, RED4ext…), from its files. */
+  modType(mod) {
+    return describeType(this.modFiles(mod).map(f => f.dest.replace(/\\/g, '/')));
   }
 
   /** What changing would change: instance settings, profile lists and the mods folders. */
@@ -226,14 +286,6 @@ class Mo2Bridge extends EventEmitter {
 
   instance(id) {
     return this.read().instances.find(i => i.id === id) || null;
-  }
-
-  isRunning() {
-    return new Promise(resolve => {
-      execFile('tasklist', ['/FI', 'IMAGENAME eq ModOrganizer.exe', '/FO', 'CSV', '/NH'], { windowsHide: true }, (err, out) => {
-        resolve(!err && /"ModOrganizer\.exe"/i.test(out));
-      });
-    });
   }
 }
 

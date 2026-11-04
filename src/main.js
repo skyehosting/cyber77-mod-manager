@@ -478,7 +478,11 @@ async function boot() {
     if (r.canceled || !r.filePaths[0]) return null;
     const dir = r.filePaths[0];
     const ini = path.join(dir, 'ModOrganizer.ini');
-    if (!fs.existsSync(ini)) throw new Error('That folder has no ModOrganizer.ini. Choose the folder MO2 is installed in (portable) or the instance folder.');
+    if (!fs.existsSync(ini)) {
+      // The program folder of an MO2 that keeps its setups in AppData: those are found already.
+      if (fs.existsSync(path.join(dir, 'ModOrganizer.exe'))) throw new Error("That is MO2's program folder, and it has no portable setup. MO2's other setups (instances) are in %LOCALAPPDATA%\\ModOrganizer, where this app already looks.");
+      throw new Error('That folder has no ModOrganizer.ini. Choose the folder of a portable MO2, or an MO2 instance folder.');
+    }
     if (!manager.mo2.readInstance({ file: ini, portable: fs.existsSync(path.join(dir, 'ModOrganizer.exe')) })) throw new Error('That Mod Organizer 2 instance is not for Cyberpunk 2077.');
     settings.update({ mo2Folders: [...(settings.get('mo2Folders') || []), dir] });
     manager.mo2.cache = null;

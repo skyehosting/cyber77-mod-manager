@@ -1446,7 +1446,7 @@ function renderMo2Settings() {
   if (sig === block.dataset.sig) return;
   block.dataset.sig = sig;
   const rows = mo.instances.map(i => {
-    const all = i.here >= i.mods;
+    const all = !i.left;
     return h('div', { class: 'set-row' },
       h('div', { class: 'set-label' },
         h('span', { class: 'set-name' }, i.name, i.portable ? h('span', { class: 'tag tag-off' }, 'Portable') : null),
@@ -1459,9 +1459,13 @@ function renderMo2Settings() {
         }, icon('mo2'), h('span', {}, all && i.mods ? 'All its mods are here' : 'Bring its mods here'))));
   });
   if (!rows.length) {
+    // MO2 is installed, but none of its setups is for Cyberpunk 2077 (yet).
+    const at = (mo.programs || [])[0];
     rows.push(h('div', { class: 'set-row' }, h('div', { class: 'set-label' },
-      h('span', { class: 'set-name' }, 'No Mod Organizer 2 setup for Cyberpunk 2077 found'),
-      h('p', { class: 'set-desc' }, "This app looks where MO2 keeps its setups. If yours is somewhere else, add its folder below."))));
+      h('span', { class: 'set-name' }, at ? 'Mod Organizer 2 has no Cyberpunk 2077 setup yet' : 'No Mod Organizer 2 setup for Cyberpunk 2077 found'),
+      h('p', { class: 'set-desc' }, at
+        ? `MO2 is installed in ${at}${mo.programs.length > 1 ? ` (and ${mo.programs.length - 1} other ${mo.programs.length === 2 ? 'folder' : 'folders'})` : ''}. Once you create an instance for Cyberpunk 2077 in MO2, it shows up here by itself.`
+        : 'This app looks where MO2 keeps its setups, and in the usual MO2 folders. If yours is somewhere else, add its folder below.'))));
   }
   const folders = mo.folders || [];
   rows.push(h('div', { class: 'set-row' },
@@ -1486,7 +1490,7 @@ async function addMo2Folder() {
 
 /** Every mod of an MO2 setup into this app: linked from MO2's folders, switched off here. */
 async function bringMo2Mods(i) {
-  const n = i.mods - i.here;
+  const n = i.left;
   const ok = await confirmBox('Bring mods over from Mod Organizer 2',
     `${plural(n, 'mod')} from "${i.name}" will be added to this app, switched off, in MO2's order. Their files are linked from MO2's folders, not copied, so this takes no extra disk space, and MO2 itself is not changed. To play with an MO2 profile's mods, use "Use here" on the Profiles page.${i.here ? ` ${plural(i.here, 'mod')} already in this app are matched instead of added twice.` : ''}`,
     'Bring them here');
@@ -1494,7 +1498,8 @@ async function bringMo2Mods(i) {
   const r = await run(api.adoptMo2(i.id));
   if (!r) return;
   const fresh = r.adopted.filter(a => !a.matched).length;
-  toast(`Brought ${plural(fresh, 'mod')} over from MO2${r.failed ? ` (${r.failed} could not be read)` : ''}`, r.failed ? 'warn' : 'success', { label: 'Show', fn: () => goTo('mods') });
+  const notes = [r.failed ? `${r.failed} could not be read` : '', r.skipped ? `${r.skipped} left in MO2` : ''].filter(Boolean).join(', ');
+  toast(`Brought ${plural(fresh, 'mod')} over from MO2${notes ? ` (${notes}; details in Activity)` : ''}`, r.failed ? 'warn' : 'success', { label: 'Show', fn: () => goTo('mods') });
 }
 
 // The nxm switch is not here: it applies at once, see "Nexus download links" below.

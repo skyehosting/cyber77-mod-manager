@@ -191,13 +191,15 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 
 ## Coming from Mod Organizer 2
 
-Mod Organizer 2 setups for Cyberpunk 2077 are found by themselves: global instances (`%LOCALAPPDATA%\ModOrganizer\<name>`), a portable MO2 in its default folder (`C:\Modding\MO2`) or wherever its download handler is registered, and any folder added in Settings → Mod Organizer 2 → **Add a folder**.
+Mod Organizer 2 setups for Cyberpunk 2077 are found by themselves: global instances (`%LOCALAPPDATA%\ModOrganizer\<name>`), and portable ones wherever MO2 is installed. MO2's installer leaves no uninstall entry (and a portable or Wabbajack MO2 none at all), so the app finds MO2's folder from its Start Menu shortcut, Windows' records of programs that ran, its download handler, and the usual folders on each local drive (`\Modding\MO2`, `\MO2`, `\Modlists\<list>` …), keeping only folders that still hold `ModOrganizer.exe`. Anything else: Settings → Mod Organizer 2 → **Add a folder**. When MO2 is installed but has no Cyberpunk 2077 setup yet, Settings says where it is.
 
 **MO2 is only read, never changed.** MO2 doesn't put its mods in the game folder (it overlays them only for programs it starts), and it rewrites its own files while it runs, so this app never writes into an MO2 setup. A game started from this app (or Steam) gets only this app's mods; started from MO2, MO2 adds its own enabled mods on top.
 
 - **Use here** on an MO2 profile (Profiles page) brings the mods it enables into this app and makes a profile "<name> (MO2)" with exactly those mods, in MO2's order (the mod lower in MO2's list wins a shared file here too), and switches to it. Using it again updates that profile. **Show its mods** lists them first, marking those already here.
 - **Bring its mods here** (Settings → Mod Organizer 2) adds every mod of a setup, switched off, in MO2's order.
 - Moving a mod links its files from MO2's mod folder (no copies, no extra space; copied only across drives), puts a `root/` folder (RootBuilder) at the game root, and links its archive into this app's downloads when MO2 still has it. Name, version, Nexus IDs and file category come from MO2's `meta.ini` and the download's `.meta`, so moved mods get update checks and go into share codes. A mod already here (moved before, or the same Nexus file) is matched instead of added twice. Separators and MO2's backup folders are skipped.
+- Settings files a mod rewrites while the game runs (`.json`, `.ini`, `.yaml`, `.sqlite` …) are copied instead of linked, so MO2's copy never changes.
+- Left in MO2: empty mods, and the "disable CrashReporter" mod MO2's Cyberpunk plugin makes (an empty `CrashReporter.exe` that only matters inside MO2, and would break the game's crash reporter here).
 - Not carried over: MO2's `overwrite` folder (logs, caches and settings the game wrote while running from MO2).
 
 Formats and sources: `notes/mo2.md`.
