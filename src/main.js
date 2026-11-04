@@ -188,6 +188,7 @@ async function boot() {
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
   manager.startVortexWatch();
+  manager.startMo2Watch();
   applyNxmSetting().catch(err => logger.error('Could not set the Nexus link handler', err.message));
   updater = new AppUpdater({
     autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
@@ -467,6 +468,28 @@ async function boot() {
   handle('profiles:delete', id => manager.deleteProfile(id));
   handle('vortex:profilePlan', id => manager.vortexProfilePlan(String(id)));
   handle('vortex:useProfile', (id, opts) => manager.useVortexProfile(String(id), { switchOffOthers: opts?.switchOffOthers !== false }));
+  handle('mo2:adopt', id => manager.adoptFromMo2(String(id), 'all'));
+  handle('mo2:profilePlan', id => manager.mo2ProfilePlan(String(id)));
+  handle('mo2:profileMods', id => manager.mo2ProfileMods(String(id)));
+  handle('mo2:useProfile', id => manager.useMo2Profile(String(id)));
+  // An MO2 this app did not find by itself: its folder (portable) or an instance's folder.
+  handle('mo2:addFolder', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose a Mod Organizer 2 folder', properties: ['openDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const dir = r.filePaths[0];
+    const ini = path.join(dir, 'ModOrganizer.ini');
+    if (!fs.existsSync(ini)) throw new Error('That folder has no ModOrganizer.ini. Choose the folder MO2 is installed in (portable) or the instance folder.');
+    if (!manager.mo2.readInstance({ file: ini, portable: fs.existsSync(path.join(dir, 'ModOrganizer.exe')) })) throw new Error('That Mod Organizer 2 instance is not for Cyberpunk 2077.');
+    settings.update({ mo2Folders: [...(settings.get('mo2Folders') || []), dir] });
+    manager.mo2.cache = null;
+    pushSnapshot();
+    return dir;
+  });
+  handle('mo2:removeFolder', dir => {
+    settings.update({ mo2Folders: (settings.get('mo2Folders') || []).filter(f => f !== dir) });
+    manager.mo2.cache = null;
+    pushSnapshot();
+  });
   handle('nexus:signedIn', () => nexusSignedIn());
   // The theme's page colour: shown at once while resizing, and from the next start before the page draws.
   handle('window:background', hex => {

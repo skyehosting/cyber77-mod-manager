@@ -54,7 +54,7 @@ Optional: your own AI provider reads your mods and logs, explains errors and pro
 
 ### Profiles
 
-Separate setups, a share code for friends, and a Vortex profile used here in one click.
+Separate setups, a share code for friends, and a Vortex or Mod Organizer 2 profile used here in one click.
 
 [![Profiles](docs/assets/shots/profiles.webp)](docs/assets/shots/profiles.webp)
 
@@ -71,6 +71,7 @@ Seven built-in looks (Settings → Interface), or your own in the custom theme e
 - **Themes.** Netrunner (the default), Samurai, NCPD, We made it David ~, Corpo, El Coyote Cojo and Cherry Blossom, each checked for readability on every page; or **Custom**: the whole theme as text, with a colour picker, live preview and readability checks. Settings → Interface also lets the app go by Lucy's, David's or Netrunner's Mod Manager.
 - **Per-profile game logs.** Each play remembers the profile it ran with; the Game log's play picker filters by profile.
 - **Vortex profiles.** Profiles → Vortex profiles → **Use here** sets this app up the way a Vortex profile is.
+- **Mod Organizer 2 profiles.** Profiles → Mod Organizer 2 profiles → **Use here** does the same for an MO2 profile, in MO2's order (see below).
 
 ## Install
 
@@ -187,6 +188,19 @@ When Vortex is installed, its Cyberpunk 2077 mods appear in the Mods list with a
 - **Move my Vortex mods here** (Settings → Vortex) moves every Vortex mod into this app in one go; **Move to this app** in a Vortex mod's details moves just that one. Each keeps its files (linked from Vortex's staging folder, so no extra disk space), name, version, Nexus IDs and on/off state, and its archive when Vortex still has it (so Reinstall works). A mod that won a shared file in Vortex gets the higher priority here, so the game ends up with the same files. In Vortex the moved mods stay installed but switched off: enable them there to go back. Moved mods are no longer listed as Vortex mods. Vortex is not opened (if it is open, it closes for a moment).
 - Reinstall, uninstall and delete for Vortex mods stay in Vortex.
 - A mod of this app that writes the same file as a Vortex mod gets a **Vortex N** tag in the Conflicts column. Whichever tool deploys last wins that file, so don't enable the same mod in both. If this app has to overwrite a file that Vortex deployed, it backs that file up first.
+
+## Coming from Mod Organizer 2
+
+Mod Organizer 2 setups for Cyberpunk 2077 are found by themselves: global instances (`%LOCALAPPDATA%\ModOrganizer\<name>`), a portable MO2 in its default folder (`C:\Modding\MO2`) or wherever its download handler is registered, and any folder added in Settings → Mod Organizer 2 → **Add a folder**.
+
+**MO2 is only read, never changed.** MO2 doesn't put its mods in the game folder (it overlays them only for programs it starts), and it rewrites its own files while it runs, so this app never writes into an MO2 setup. A game started from this app (or Steam) gets only this app's mods; started from MO2, MO2 adds its own enabled mods on top.
+
+- **Use here** on an MO2 profile (Profiles page) brings the mods it enables into this app and makes a profile "<name> (MO2)" with exactly those mods, in MO2's order (the mod lower in MO2's list wins a shared file here too), and switches to it. Using it again updates that profile. **Show its mods** lists them first, marking those already here.
+- **Bring its mods here** (Settings → Mod Organizer 2) adds every mod of a setup, switched off, in MO2's order.
+- Moving a mod links its files from MO2's mod folder (no copies, no extra space; copied only across drives), puts a `root/` folder (RootBuilder) at the game root, and links its archive into this app's downloads when MO2 still has it. Name, version, Nexus IDs and file category come from MO2's `meta.ini` and the download's `.meta`, so moved mods get update checks and go into share codes. A mod already here (moved before, or the same Nexus file) is matched instead of added twice. Separators and MO2's backup folders are skipped.
+- Not carried over: MO2's `overwrite` folder (logs, caches and settings the game wrote while running from MO2).
+
+Formats and sources: `notes/mo2.md`.
 
 ## Data
 

@@ -31,6 +31,7 @@ class Settings {
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       redmodLast: null, // the last REDmod deploy this app ran: { ok, at, reason }
       vortexAutoMove: 'ask', // Vortex's mods: 'on' move into this app automatically | 'ask' once | 'off' leave them
+      mo2Folders: [], // Mod Organizer 2 folders the user added (instances in places this app does not look)
       deployMethod: 'hardlink', // 'hardlink' | 'copy'
       // The AI assistant: the user's own provider. Its key is stored like the Nexus key.
       aiProvider: 'openai', // 'openai' (any OpenAI-compatible endpoint) | 'anthropic'
@@ -143,6 +144,7 @@ class Settings {
     if ('launchMode' in patch && ['direct', 'steam', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode === 'store' ? 'steam' : patch.launchMode;
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
+    if (Array.isArray(patch.mo2Folders)) d.mo2Folders = [...new Set(patch.mo2Folders.filter(f => typeof f === 'string' && path.isAbsolute(f)).map(f => f.slice(0, 500)))].slice(0, 20);
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
     if ('windowBg' in patch) d.windowBg = /^#[0-9a-f]{6}$/i.test(String(patch.windowBg)) ? String(patch.windowBg) : '';
     if ('uiScale' in patch) { const v = Math.round(Number(patch.uiScale) || 0); d.uiScale = v ? Math.min(300, Math.max(50, v)) : 0; }

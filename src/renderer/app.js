@@ -1435,6 +1435,68 @@ async function askVortexAutoMove(vx) {
   toast(v === 'on' ? (vx.running ? 'Your Vortex mods move here as soon as Vortex is closed' : 'Moving your Vortex mods here…') : 'Vortex mods stay in Vortex (Settings → Vortex changes this)');
 }
 
+// ---------------------------------------------------------------- Mod Organizer 2 (read only)
+
+/** Settings → Mod Organizer 2: the setups found, bringing their mods over, folders to look in. */
+function renderMo2Settings() {
+  const mo = state.snap.mo2;
+  const block = $('#s-mo2-block');
+  if (!mo || !block) return;
+  const sig = JSON.stringify(mo);
+  if (sig === block.dataset.sig) return;
+  block.dataset.sig = sig;
+  const rows = mo.instances.map(i => {
+    const all = i.here >= i.mods;
+    return h('div', { class: 'set-row' },
+      h('div', { class: 'set-label' },
+        h('span', { class: 'set-name' }, i.name, i.portable ? h('span', { class: 'tag tag-off' }, 'Portable') : null),
+        h('p', { class: 'set-desc' }, `${plural(i.mods, 'mod')}${i.here ? `, ${i.here} in this app` : ''} · ${plural(i.profiles.length, 'profile')} · ${i.path}`),
+        i.sameGame ? null : h('p', { class: 'set-desc mo2-other' }, `Set up for another copy of the game (${i.gamePath}). Its mods still work here.`)),
+      h('div', { class: 'set-ctl set-ctl-auto' },
+        h('button', {
+          type: 'button', class: 'btn', disabled: all || !i.mods, dataset: { key: `mo2:${i.id}:bring` },
+          title: 'Adds its mods to this app, switched off. MO2 keeps them as they are.', onclick: () => bringMo2Mods(i),
+        }, icon('mo2'), h('span', {}, all && i.mods ? 'All its mods are here' : 'Bring its mods here'))));
+  });
+  if (!rows.length) {
+    rows.push(h('div', { class: 'set-row' }, h('div', { class: 'set-label' },
+      h('span', { class: 'set-name' }, 'No Mod Organizer 2 setup for Cyberpunk 2077 found'),
+      h('p', { class: 'set-desc' }, "This app looks where MO2 keeps its setups. If yours is somewhere else, add its folder below."))));
+  }
+  const folders = mo.folders || [];
+  rows.push(h('div', { class: 'set-row' },
+    h('div', { class: 'set-label' },
+      h('span', { class: 'set-name' }, 'MO2 folders to look in'),
+      h('p', { class: 'set-desc' }, 'A portable MO2 (its own folder), or an instance folder, anywhere this app did not find it.'),
+      folders.length ? h('ul', { class: 'mo2-folders' }, ...folders.map(f => h('li', {},
+        h('span', { class: 'mono', title: f }, f),
+        h('button', { type: 'button', class: 'btn btn-sm btn-ghost', 'aria-label': `Stop looking in ${f}`, onclick: () => run(api.removeMo2Folder(f)) }, h('span', {}, 'Remove'))))) : null),
+    h('div', { class: 'set-ctl set-ctl-auto' },
+      h('button', { type: 'button', class: 'btn', dataset: { key: 'mo2:add' }, onclick: addMo2Folder }, icon('folder'), h('span', {}, 'Add a folder')))));
+  rows.push(h('div', { class: 'set-row' }, h('div', { class: 'set-label' },
+    h('span', { class: 'set-name' }, 'How it works with MO2'),
+    h('p', { class: 'set-desc' }, "MO2 is only read, never changed. Its mods don't touch the game folder, so a game started from this app (or Steam) gets only this app's mods. Started from MO2, MO2 adds its own enabled mods on top."))));
+  keepFocus(block, () => block.replaceChildren(...rows));
+}
+
+async function addMo2Folder() {
+  const dir = await run(api.addMo2Folder());
+  if (dir) toast(`Looking in ${dir} too`, 'success');
+}
+
+/** Every mod of an MO2 setup into this app: linked from MO2's folders, switched off here. */
+async function bringMo2Mods(i) {
+  const n = i.mods - i.here;
+  const ok = await confirmBox('Bring mods over from Mod Organizer 2',
+    `${plural(n, 'mod')} from "${i.name}" will be added to this app, switched off, in MO2's order. Their files are linked from MO2's folders, not copied, so this takes no extra disk space, and MO2 itself is not changed. To play with an MO2 profile's mods, use "Use here" on the Profiles page.${i.here ? ` ${plural(i.here, 'mod')} already in this app are matched instead of added twice.` : ''}`,
+    'Bring them here');
+  if (!ok) return;
+  const r = await run(api.adoptMo2(i.id));
+  if (!r) return;
+  const fresh = r.adopted.filter(a => !a.matched).length;
+  toast(`Brought ${plural(fresh, 'mod')} over from MO2${r.failed ? ` (${r.failed} could not be read)` : ''}`, r.failed ? 'warn' : 'success', { label: 'Show', fn: () => goTo('mods') });
+}
+
 // The nxm switch is not here: it applies at once, see "Nexus download links" below.
 // ---------------------------------------------------------------- Nexus download links (nxm://)
 
@@ -2239,6 +2301,7 @@ function applySnapshot(snap) {
   renderStatus();
   renderPlay();
   renderVortexMove();
+  renderMo2Settings();
   if (state.drawerMod) {
     const m = allMods().find(x => x.id === state.drawerMod);
     if (!m) closeDrawer();

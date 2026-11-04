@@ -65,6 +65,7 @@
       <symbol id="i-deploy" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></symbol>
       <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
       <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4M3.5 18a10 10 0 1 1 17 0"/></symbol>
+      <symbol id="i-mo2" viewBox="0 0 24 24"><rect x="3" y="3" width="12" height="12" rx="2"/><path d="M9 21h10a2 2 0 0 0 2-2V9"/><path d="M7 7h4M7 11h4"/></symbol>
       <symbol id="i-vortex" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7a5 5 0 1 0 5 5"/><circle cx="12" cy="12" r="1.2"/></symbol>
       <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M16 10l-2 2 2 2"/></symbol>
       <symbol id="i-panel-open" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M14 10l2 2-2 2"/></symbol>
@@ -602,6 +603,11 @@
               <span class="section-note">Read from Vortex. "Use here" sets this app up the same way, as a profile of its own.</span>
             </div>
             <div class="vx-list" id="vx-prof-grid" role="list" aria-label="Vortex profiles" hidden></div>
+            <div class="section-head" id="mo2-prof-head" hidden>
+              <h2>Mod Organizer 2 profiles</h2>
+              <span class="section-note">Read from MO2, which is never changed. "Use here" sets this app up the same way, as a profile of its own.</span>
+            </div>
+            <div class="vx-list" id="mo2-prof-grid" role="list" aria-label="Mod Organizer 2 profiles" hidden></div>
           </div>
           <aside class="side-panel" id="prof-panel" aria-label="Profile details"></aside>
         </div>
@@ -621,6 +627,7 @@
             <button type="button" class="set-nav-item" data-sec="nexus"><svg class="i"><use href="#i-globe"/></svg><span>Nexus Mods</span></button>
             <button type="button" class="set-nav-item" data-sec="downloads"><svg class="i"><use href="#i-download"/></svg><span>Downloads</span></button>
             <button type="button" class="set-nav-item" data-sec="vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span>Vortex</span></button>
+            <button type="button" class="set-nav-item" data-sec="mo2"><svg class="i"><use href="#i-mo2"/></svg><span>Mod Organizer 2</span></button>
             <button type="button" class="set-nav-item" data-sec="ai"><svg class="i"><use href="#i-sparkle"/></svg><span>AI Assistant</span></button>
             <button type="button" class="set-nav-item" data-sec="display"><svg class="i"><use href="#i-eye"/></svg><span>Interface</span></button>
             <button type="button" class="set-nav-item" data-sec="app"><svg class="i"><use href="#i-wrench"/></svg><span>Advanced</span></button>
@@ -750,6 +757,11 @@
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section class="set-sec" data-sec="mo2" id="sec-mo2" aria-labelledby="sh-mo2">
+              <h2 class="set-title" id="sh-mo2"><svg class="i"><use href="#i-mo2"/></svg>Mod Organizer 2</h2>
+              <div class="set-card" id="s-mo2-block"></div>
             </section>
 
             <section class="set-sec" data-sec="ai" id="sec-ai" aria-labelledby="sh-ai">

@@ -15,6 +15,7 @@ const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
 const { VortexBridge, parseFolderName } = require('./vortex');
 const { listFiles } = require('./vortexDeploy');
+const { Mo2Bridge } = require('./mo2');
 const loadOrder = require('./loadOrder');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
@@ -38,6 +39,7 @@ function validChoices(c) {
 }
 const catOf = f => String(f.category_name || f.category || 'MISCELLANEOUS').toUpperCase();
 const plural = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
+const samePath = (a, b) => path.resolve(a).replace(/[\\/]+$/, '').toLowerCase() === path.resolve(b).replace(/[\\/]+$/, '').toLowerCase();
 /** The parts of a Nexus file record the UI shows. */
 /** Nexus descriptions are BBCode/HTML: keep the words only. */
 const plainText = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/\[\/?[a-z0-9=#*"' -]+\]/gi, '').replace(/<[^>]+>/g, '')
@@ -111,6 +113,11 @@ class ModManager extends EventEmitter {
     // CMM_VORTEX_APPDATA points tests (and the screenshot harness) away from the real Vortex.
     this.vortex = new VortexBridge({ getGameDir: () => this.gameDir(), log, appData: process.env.CMM_VORTEX_APPDATA ?? process.env.APPDATA });
     this.vortex.on('changed', () => this.emit('changed'));
+    // CMM_MO2_LOCALAPPDATA / CMM_MO2_SCAN=off keep tests away from the real Mod Organizer 2.
+    this.mo2 = new Mo2Bridge({
+      log, localAppData: process.env.CMM_MO2_LOCALAPPDATA ?? process.env.LOCALAPPDATA,
+      scan: process.env.CMM_MO2_SCAN !== 'off', extraFolders: () => settings.get('mo2Folders'),
+    });
     this.chain = Promise.resolve();
 
     this.downloader.on('update', job => this.emit('job', job));
@@ -185,6 +192,7 @@ class ModManager extends EventEmitter {
       lastUpdateCheck: this.data.lastUpdateCheck || 0,
       profiles: this.profilesView(),
       vortex: this.vortexView(),
+      mo2: this.mo2View(),
     };
   }
 
@@ -1198,7 +1206,7 @@ class ModManager extends EventEmitter {
         let tag = '';
         try { tag = profileCode.fingerprint(profileCode.encode(this.exportProfile(p.id))); } catch { /* none */ }
         const mods = p.enabled.filter(id => this.data.mods[id]);
-        return { id: p.id, name: p.name, created: p.created || 0, count: mods.length, mods, codeTag: tag, fromVortex: p.fromVortex || '' };
+        return { id: p.id, name: p.name, created: p.created || 0, count: mods.length, mods, codeTag: tag, fromVortex: p.fromVortex || '', fromMo2: p.fromMo2 ? 'yes' : '' };
       }),
     };
   }
@@ -1398,6 +1406,191 @@ class ModManager extends EventEmitter {
     });
     await this.switchProfile(id);
     return { id, name: this.data.profiles.list[id].name, enabled: enabled.length, moved: first.move.length };
+  }
+
+  // ---------------------------------------------------------------- Mod Organizer 2 (read only)
+
+  /** This app's mod for an MO2 mod: moved before, or the same Nexus file installed here. */
+  mo2Ours(inst, mod, byFile = null) {
+    const moved = this.data.mo2Adopted?.[`${inst.id}|${mod.folder}`];
+    if (moved && this.data.mods[moved]) return moved;
+    if (!mod.fileId) return '';
+    if (byFile) return byFile.get(mod.fileId) || '';
+    return Object.values(this.data.mods).find(m => Number(m.fileId) === mod.fileId)?.id || '';
+  }
+
+  /** MO2's instances, profiles and mods for the UI. */
+  mo2View() {
+    let data;
+    try { data = this.mo2.read(); } catch (err) { return { found: false, error: err.message, instances: [], folders: this.settings.get('mo2Folders') || [] }; }
+    const game = this.gameDir();
+    const byFile = new Map(Object.values(this.data.mods).filter(m => Number(m.fileId) > 0).map(m => [Number(m.fileId), m.id]));
+    const made = new Map(Object.values(this.data.profiles.list).filter(p => p.fromMo2).map(p => [p.fromMo2, p.name]));
+    return {
+      found: data.found,
+      running: !!this.mo2Running,
+      folders: this.settings.get('mo2Folders') || [],
+      instances: data.instances.map(i => {
+        const mods = [...i.mods.values()];
+        return {
+          id: i.id, name: i.name, portable: i.portable, path: i.dir, gamePath: i.gamePath,
+          sameGame: !i.gamePath || !game || samePath(game, i.gamePath),
+          mods: mods.length,
+          here: mods.filter(m => this.mo2Ours(i, m, byFile)).length,
+          profiles: i.profiles.map(p => ({ id: p.id, name: p.name, selected: p.selected, count: p.enabled.length, profile: made.get(p.id) || '' })),
+        };
+      }),
+    };
+  }
+
+  mo2Profile(profileId) {
+    const inst = this.mo2.instance(String(profileId).split('/')[0]);
+    const p = inst?.profiles.find(x => x.id === profileId);
+    if (!p) throw new Error('That Mod Organizer 2 profile no longer exists.');
+    return { inst, p };
+  }
+
+  /** A profile's enabled mods, top to bottom as MO2's window lists them (the last one wins). */
+  mo2ProfileMods(profileId) {
+    const { inst, p } = this.mo2Profile(profileId);
+    return [...p.enabled].reverse().map(f => {
+      const m = inst.mods.get(f);
+      return { name: m.name, version: m.version, modId: m.modId, type: m.type, files: m.fileCount, here: !!this.mo2Ours(inst, m) };
+    });
+  }
+
+  /** What "Use here" would do with an MO2 profile (shown before anything changes). */
+  mo2ProfilePlan(profileId) {
+    const { inst, p } = this.mo2Profile(profileId);
+    const move = p.enabled.filter(f => !this.mo2Ours(inst, inst.mods.get(f)));
+    const existing = Object.values(this.data.profiles.list).find(x => x.fromMo2 === p.id);
+    return {
+      name: p.name, instance: inst.name, mods: p.enabled.length, here: p.enabled.length - move.length, move: move.length,
+      empty: move.filter(f => !inst.mods.get(f).fileCount).length, profile: existing?.name || '',
+    };
+  }
+
+  /**
+   * Bring MO2 mods into this app. MO2 is left exactly as it was: its files are hardlinked (copied
+   * across drives) into this app's staging folder, root/ (RootBuilder) going to the game root, and
+   * its archive into this app's downloads when MO2 still has it. A mod this app already has (moved
+   * before, or the same Nexus file) is matched instead. Moved mods start switched off here (using a
+   * profile turns them on). folders: highest priority first, as in modlist.txt.
+   */
+  adoptFromMo2(instId, folders = 'all') {
+    return this.op(async () => {
+      const inst = this.mo2.instance(instId);
+      if (!inst) throw new Error('That Mod Organizer 2 instance is no longer there.');
+      const order = inst.profiles.find(p => p.selected)?.order || [...inst.mods.keys()];
+      const want = folders === 'all' ? order : folders.filter(f => inst.mods.has(f));
+      this.data.mo2Adopted ||= {};
+      const adopted = this.data.mo2Adopted;
+      const out = [];
+      const failed = [];
+      // Lowest priority first, so the mod that won a file in MO2 wins it here too.
+      for (const folder of [...want].reverse()) {
+        const m = inst.mods.get(folder);
+        if (!m) continue;
+        const key = `${inst.id}|${folder}`;
+        const ours = this.mo2Ours(inst, m);
+        if (ours) { adopted[key] = ours; out.push({ folder, id: ours, matched: true }); continue; }
+        try {
+          if (!m.fileCount) throw new Error('its folder in MO2 is empty');
+          const id = m.fileId && !this.data.mods[String(m.fileId)] ? String(m.fileId)
+            : `mo2-${crypto.createHash('sha1').update(key).digest('hex').slice(0, 10)}`;
+          const src = path.join(inst.modsDir, folder);
+          const dest = path.join(this.settings.stagingDir, id);
+          fs.rmSync(dest, { recursive: true, force: true });
+          const files = [];
+          const seen = new Set();
+          for (const f of m.files) {
+            const rel = f.dest.replace(/\\/g, '/');
+            // root/x and x both mean the game's x: the first one found is kept.
+            if (!isSafeRel(rel) || seen.has(rel.toLowerCase())) continue;
+            seen.add(rel.toLowerCase());
+            const to = path.join(dest, rel);
+            fs.mkdirSync(path.dirname(to), { recursive: true });
+            try { fs.linkSync(path.join(src, f.src), to); } catch { fs.copyFileSync(path.join(src, f.src), to); }
+            files.push(rel);
+          }
+          // The archive too, so Reinstall works here.
+          if (m.archive) {
+            const dl = path.join(this.settings.downloadsDir, 'mo2', path.basename(m.archive));
+            fs.mkdirSync(path.dirname(dl), { recursive: true });
+            if (!fs.existsSync(dl)) { try { fs.linkSync(m.archive, dl); } catch { fs.copyFileSync(m.archive, dl); } }
+            this.data.downloads[id] = {
+              key: id, game: 'cyberpunk2077', modId: m.modId, modName: m.modName, fileId: m.fileId, name: m.name, fileName: path.basename(m.archive),
+              version: m.version, category: m.category, size: fs.statSync(dl).size, uploaded: 0, author: m.author, picture: '', path: dl, downloadedAt: Date.now(),
+            };
+          }
+          this.data.mods[id] = {
+            id, key: id, name: m.name, modName: m.modName, modId: m.modId, fileId: m.fileId,
+            game: 'cyberpunk2077', version: m.version, category: m.category, author: m.author,
+            type: m.type, files, skipped: 0, warnings: [],
+            enabled: false, priority: this.data.nextPriority++, installedAt: Date.now(),
+            fomod: false, dependencyOf: '', fromMo2: key,
+          };
+          adopted[key] = id;
+          out.push({ folder, id });
+        } catch (err) {
+          failed.push(folder);
+          this.log.error(`Could not move ${m.name} from Mod Organizer 2`, err.message);
+        }
+      }
+      this.library.save();
+      const fresh = out.filter(o => !o.matched).length;
+      if (out.length) this.log.success(`Brought ${plural(fresh, 'mod')} over from Mod Organizer 2 (${inst.name})${out.length > fresh ? `; ${out.length - fresh} were here already` : ''}. MO2 is unchanged.`);
+      this.emit('changed');
+      if (fresh) this.resolveSoon(); // the exact Nexus file of any that only know their mod
+      return { adopted: out, failed: failed.length };
+    });
+  }
+
+  /**
+   * Use an MO2 profile in this app: its mods this app lacks are brought over, then a profile here
+   * gets exactly its enabled mods in MO2's order and becomes the active one. Using the same MO2
+   * profile again updates the profile made the first time. MO2 itself is not changed.
+   */
+  async useMo2Profile(profileId) {
+    const first = this.mo2Profile(profileId);
+    const r = await this.adoptFromMo2(first.inst.id, first.p.enabled);
+    const { inst, p } = this.mo2Profile(profileId);
+    // Lowest priority first: the order the profile's mods get here.
+    const order = [...new Set([...p.enabled].reverse().map(f => this.mo2Ours(inst, inst.mods.get(f))).filter(Boolean))];
+    const id = await this.op(async () => {
+      const list = this.data.profiles.list;
+      let pid = Object.values(list).find(x => x.fromMo2 === p.id)?.id;
+      if (!pid) {
+        const taken = new Set(Object.values(list).map(x => x.name.toLowerCase()));
+        let name = `${p.name} (MO2)`.slice(0, 60);
+        for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${p.name} (MO2 ${n})`.slice(0, 60);
+        pid = crypto.randomBytes(5).toString('hex');
+        list[pid] = { id: pid, name, enabled: [], created: Date.now(), fromMo2: p.id };
+        this.log.success(`Created profile "${name}" from the Mod Organizer 2 profile "${p.name}"`);
+      }
+      list[pid].enabled = order;
+      list[pid].priorities = Object.fromEntries(Object.values(this.data.mods).map(m => [m.id, m.priority]));
+      list[pid].importOrder = order;
+      this.applyImportOrder(pid);
+      this.library.save();
+      return pid;
+    });
+    await this.switchProfile(id);
+    return { id, name: this.data.profiles.list[id].name, enabled: order.length, moved: r.adopted.filter(o => !o.matched).length, failed: r.failed };
+  }
+
+  /** Notice MO2 changes (a profile edited, a mod added) while this app is open. */
+  startMo2Watch() {
+    this.mo2.scanRegistry().catch(() => {}).finally(() => this.emit('changed'));
+    let last = '';
+    const tick = async () => {
+      this.mo2Running = await this.mo2.isRunning();
+      const d = this.mo2.read();
+      const now = `${this.mo2Running}|${this.mo2.sig}|${d.instances.length}`;
+      if (now !== last) { last = now; this.emit('changed'); }
+    };
+    tick().catch(() => {});
+    this.mo2Timer = setInterval(() => tick().catch(() => {}), 10000);
   }
 
   // ---------------------------------------------------------------- sharing profiles

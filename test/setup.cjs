@@ -1,5 +1,7 @@
-// Loaded before every test file: tests never read the real Vortex install.
+// Loaded before every test file: tests never read the real Vortex or Mod Organizer 2.
 process.env.CMM_VORTEX_APPDATA = '';
+process.env.CMM_MO2_LOCALAPPDATA = '';
+process.env.CMM_MO2_SCAN = 'off';
 
 // Every temporary folder a test makes goes when its test file is done (they used to pile up in %TEMP%).
 const fs = require('fs');

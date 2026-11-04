@@ -2575,6 +2575,17 @@ input.lo-pos:focus { color: var(--text); background: var(--bg); border-color: va
 .pshare .pcode { grid-column: 1; grid-row: 1; }
 .pshare .btn { grid-column: 2; justify-content: flex-start; }
 .vrow-acts { flex: none; display: flex; gap: var(--sp-2); }
+/* Mod Organizer 2: Settings rows, the folders added, and a profile's mods. */
+.set-desc.mo2-other { color: var(--warn-text); }
+.mo2-folders { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.mo2-folders li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-sm); }
+.mo2-folders .mono { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.mo2-mods { list-style: none; margin: 0; padding: 0; max-height: min(55vh, 28rem); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.mo2-mods li { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--line-soft); }
+.mo2-mods li:first-child { border-top: 0; }
+.mo2-mods .n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: var(--fs-sm); }
+.mo2-mods .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mo2-mods .ver { color: var(--muted); font-size: var(--fs-sm); margin-left: var(--sp-2); }
 .vrow .btn { width: auto; justify-content: center; }
 .vx-use p { margin: 0 0 0.6rem; }
 .vx-use .check { margin-top: 0.4rem; }

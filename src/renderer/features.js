@@ -469,7 +469,8 @@ function profileRow(x, p) {
   avatarEl(x),
   h('div', { class: 'prow-main' },
     h('div', { class: 'prow-name' }, h('span', { class: 'name', title: x.name }, x.name), active ? h('span', { class: 'tag tag-ok' }, 'Active') : null,
-      x.fromVortex ? h('span', { class: 'tag tag-info', title: 'Made from a Vortex profile ("Use here" under Vortex profiles updates it)' }, 'From Vortex') : null),
+      x.fromVortex ? h('span', { class: 'tag tag-info', title: 'Made from a Vortex profile ("Use here" under Vortex profiles updates it)' }, 'From Vortex') : null,
+      x.fromMo2 ? h('span', { class: 'tag tag-info', title: 'Made from a Mod Organizer 2 profile ("Use here" under MO2 profiles updates it)' }, 'From MO2') : null),
     h('div', { class: 'subname' }, [x.created ? `Created ${fmtDay(x.created)}` : '', `last played ${played ? fmtDay(played) : 'never'}`].filter(Boolean).join(' · '))),
   h('div', { class: 'prow-mods', title: `${on} of this app's ${plural(total, 'mod')} are on in this profile` },
     h('span', { class: 'prow-count' }, h('b', {}, String(on)), ` of ${total} mods on`),
@@ -564,7 +565,8 @@ function renderProfilesPage(force = false) {
   const vx = state.snap.vortex;
   if (!p.list.some(x => x.id === prof.selected)) prof.selected = p.active;
   const plays = typeof gl === 'undefined' ? [] : gl.plays.map(q => [q.id, q.profile?.id]);
-  const next = JSON.stringify([p, prof.editing, prof.selected, vx?.profiles, vx?.mods?.length, (state.snap.mods || []).length, (cfg.list || []).length, plays]);
+  const mo = state.snap.mo2;
+  const next = JSON.stringify([p, prof.editing, prof.selected, vx?.profiles, vx?.mods?.length, mo?.instances, (state.snap.mods || []).length, (cfg.list || []).length, plays]);
   // Never throw away a rename in progress.
   if (!force && (next === prof.sig || prof.editing)) return;
   prof.sig = next;
@@ -581,6 +583,11 @@ function renderProfilesPage(force = false) {
   $('#vx-prof-head').hidden = !vxList.length;
   $('#vx-prof-grid').replaceChildren(...vxList.map(vortexProfileRow));
   $('#vx-prof-grid').hidden = !vxList.length;
+  const many = (mo?.instances || []).length > 1;
+  const moList = (mo?.instances || []).flatMap(i => i.profiles.map(x => ({ ...x, instance: i.name, many })));
+  $('#mo2-prof-head').hidden = !moList.length;
+  $('#mo2-prof-grid').replaceChildren(...moList.map(mo2ProfileRow));
+  $('#mo2-prof-grid').hidden = !moList.length;
   // Files no mod manager put there: read once, then this page shows them too.
   if (!cfg.list && !prof.readingHand) {
     prof.readingHand = true;
@@ -629,6 +636,65 @@ function useVortexProfile(x) {
     if (!r) return;
     prof.selected = r.id;
     toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} moved from Vortex` : ''})`, 'success');
+  }, 'Setting up…');
+}
+
+function mo2ProfileRow(x) {
+  return h('div', { class: `vrow${x.selected ? ' active' : ''}`, role: 'listitem', 'aria-label': `Mod Organizer 2 profile ${x.name}${x.many ? ` in ${x.instance}` : ''}` },
+    h('span', { class: 'vrow-icon', 'aria-hidden': 'true' }, icon('mo2')),
+    h('span', { class: 'vrow-name' }, h('span', { class: 'name', title: x.name }, x.name),
+      x.many ? h('span', { class: 'tag tag-off', title: 'The MO2 setup it belongs to' }, x.instance) : null,
+      x.selected ? h('span', { class: 'tag tag-info', title: 'The profile MO2 opens with' }, 'Selected in MO2') : null,
+      x.profile ? h('span', { class: 'tag tag-ok', title: `"Use here" updates "${x.profile}"` }, 'Used here') : null),
+    h('span', { class: 'vrow-count' }, `${x.count} ${x.count === 1 ? 'mod' : 'mods'} enabled`),
+    h('span', { class: 'vrow-acts' },
+      h('button', { class: 'btn btn-sm btn-ghost', dataset: { key: `mo2:${x.id}:mods` }, 'aria-label': `Show the mods of the MO2 profile ${x.name}`, onclick: () => showMo2ProfileMods(x) }, h('span', {}, 'Show its mods')),
+      h('button', {
+        class: 'btn btn-sm', dataset: { key: `mo2:${x.id}:use` }, title: 'Set this app up the way this MO2 profile is: its mods, and only them, in their order, in a profile here',
+        'aria-label': `Use the MO2 profile ${x.name} in this app`, onclick: useMo2Profile(x),
+      }, icon('import'), h('span', {}, 'Use here'))));
+}
+
+/** An MO2 profile's enabled mods, in MO2's order (the lower one wins a shared file). */
+async function showMo2ProfileMods(x) {
+  const mods = await run(api.mo2ProfileMods(x.id));
+  if (!mods) return;
+  const here = mods.filter(m => m.here).length;
+  await modal({
+    title: `"${x.name}" in Mod Organizer 2`,
+    sub: `${plural(mods.length, 'mod')} enabled${here ? `, ${here} already in this app` : ''} · top to bottom as MO2 lists them; the lower one wins a shared file`,
+    body: mods.length ? h('ol', { class: 'mo2-mods' }, ...mods.map((m, n) => h('li', {},
+      h('span', { class: 'n' }, String(n + 1)),
+      h('span', { class: 'nm', title: m.name }, m.name, m.version ? h('span', { class: 'ver' }, `v${m.version}`) : null),
+      m.here ? h('span', { class: 'tag tag-ok' }, 'In this app') : h('span', { class: 'tag tag-off', title: '"Use here" brings it over' }, 'Comes over'))))
+      : h('p', {}, 'No mods are enabled in this profile.'),
+    buttons: [{ label: 'Close', value: false, safe: true }, { label: 'Use here', value: true, kind: 'btn-primary' }],
+  }).then(v => { if (v) useMo2Profile(x)(); });
+}
+
+/** An MO2 profile in this app: what it would do first, then it brings the mods over and switches. */
+function useMo2Profile(x) {
+  return profGuard(async () => {
+    const plan = await run(api.mo2ProfilePlan(x.id));
+    if (!plan) return;
+    const lines = [
+      `${plural(plan.mods, 'mod')} enabled in it${plan.here ? `, ${plan.here} already in this app` : ''}.`,
+      plan.move ? `${plural(plan.move, 'mod')} come over from MO2: their files are linked from MO2's folders (no copies), and MO2 keeps them as they are.` : '',
+      plan.profile ? `The profile "${plan.profile}" (made from it before) is updated to match, in MO2's order, and becomes the active one.`
+        : `A profile called "${plan.name} (MO2)" is made with exactly these mods, in MO2's order, and becomes the active one.`,
+      plan.empty ? `${plural(plan.empty, 'mod')} in it ${plan.empty === 1 ? 'has' : 'have'} no files in MO2 and ${plan.empty === 1 ? 'is' : 'are'} left out.` : '',
+    ].filter(Boolean);
+    const ok = await modal({
+      title: `Use "${plan.name}" from Mod Organizer 2?`,
+      body: h('div', { class: 'vx-use' }, ...lines.map(t => h('p', {}, t))),
+      buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Use here', value: true, kind: 'btn-primary' }],
+    });
+    if (!ok) return;
+    if (state.gameRunning) toast('The game is running: the new setup takes effect when you restart it');
+    const r = await run(api.useMo2Profile(x.id));
+    if (!r) return;
+    prof.selected = r.id;
+    toast(`Now using "${r.name}" (${plural(r.enabled, 'mod')} enabled${r.moved ? `, ${r.moved} brought over from MO2` : ''})`, r.failed ? 'warn' : 'success');
   }, 'Setting up…');
 }
 
