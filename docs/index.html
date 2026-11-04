@@ -106,19 +106,19 @@
     <section class="panel" id="themes" role="tabpanel" aria-labelledby="t-themes" tabindex="0" hidden>
       <h2>Seven looks, or your own</h2>
       <p class="intro">Every theme is checked for readability on every page. Or write your own with a colour picker and live preview.</p>
-      <ul class="swatches">
-        <li><span class="sw" style="--a:#0d0f12;--b:#f2dc4b;--c:#4cc98a"></span><b>Netrunner</b><span>The default: dark, Night City yellow</span></li>
-        <li><span class="sw" style="--a:#0d0f12;--b:#f5505c;--c:#4cc98a"></span><b>Samurai</b><span>Netrunner's dark, Johnny's red</span></li>
-        <li><span class="sw" style="--a:#0e172b;--b:#f5c518;--c:#6cb2f0"></span><b>NCPD</b><span>Deep navy, badge-gold yellow</span></li>
-        <li><span class="sw" style="--a:#f2f3f6;--b:#6553c9;--c:#147a49"></span><b>We made it, David ~</b><span>Moon-dust greys and white</span></li>
-        <li><span class="sw" style="--a:#f2f5fa;--b:#1f3f86;--c:#157a48"></span><b>Corpo</b><span>Crisp white, corporate navy</span></li>
-        <li><span class="sw" style="--a:#3b2e26;--b:#e8b483;--c:#a3cc9d"></span><b>El Coyote Cojo</b><span>Soft leather browns, caramel</span></li>
-        <li><span class="sw" style="--a:#fff5f8;--b:#b23a63;--c:#c2456f"></span><b>Cherry Blossom</b><span>Blossom pinks and white</span></li>
-      </ul>
-      <div class="grid three shots">
-        <figure class="shot"><img src="assets/shots/samurai.webp" alt="The Samurai theme" loading="lazy" width="1600" height="900"><figcaption>Samurai</figcaption></figure>
-        <figure class="shot"><img src="assets/shots/sakura.webp" alt="The Cherry Blossom theme" loading="lazy" width="1600" height="900"><figcaption>Cherry Blossom</figcaption></figure>
-        <figure class="shot"><img src="assets/shots/corpo.webp" alt="The Corpo theme" loading="lazy" width="1600" height="900"><figcaption>Corpo</figcaption></figure>
+      <div class="swatches" role="radiogroup" aria-label="Theme to preview" id="theme-pick">
+        <button type="button" role="radio" aria-checked="true" tabindex="0" data-theme="netrunner" data-name="Netrunner"><span class="sw" style="--a:#0d0f12;--b:#f2dc4b;--c:#4cc98a"></span><b>Netrunner</b><span>The default: dark, Night City yellow</span></button>
+        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-theme="samurai" data-name="Samurai"><span class="sw" style="--a:#0d0f12;--b:#f5505c;--c:#4cc98a"></span><b>Samurai</b><span>Netrunner's dark, Johnny's red</span></button>
+        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-theme="ncpd" data-name="NCPD"><span class="sw" style="--a:#0e172b;--b:#f5c518;--c:#6cb2f0"></span><b>NCPD</b><span>Deep navy, badge-gold yellow</span></button>
+        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-theme="david" data-name="We made it, David ~"><span class="sw" style="--a:#f2f3f6;--b:#6553c9;--c:#147a49"></span><b>We made it, David ~</b><span>Moon-dust greys and white</span></button>
+        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-theme="corpo" data-name="Corpo"><span class="sw" style="--a:#f2f5fa;--b:#1f3f86;--c:#157a48"></span><b>Corpo</b><span>Crisp white, corporate navy</span></button>
+        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-theme="coyote" data-name="El Coyote Cojo"><span class="sw" style="--a:#3b2e26;--b:#e8b483;--c:#a3cc9d"></span><b>El Coyote Cojo</b><span>Soft leather browns, caramel</span></button>
+        <button type="button" role="radio" aria-checked="false" tabindex="-1" data-theme="sakura" data-name="Cherry Blossom"><span class="sw" style="--a:#fff5f8;--b:#b23a63;--c:#c2456f"></span><b>Cherry Blossom</b><span>Blossom pinks and white</span></button>
+      </div>
+      <div class="theme-preview" aria-live="polite">
+        <figure class="shot big"><img data-page="mods" src="assets/themes/netrunner-mods.webp" alt="The Mods page in the Netrunner theme" loading="lazy" width="1600" height="900"><figcaption>Mods · <span data-theme-name>Netrunner</span></figcaption></figure>
+        <figure class="shot"><img data-page="profiles" src="assets/themes/netrunner-profiles.webp" alt="The Profiles page in the Netrunner theme" loading="lazy" width="1600" height="900"><figcaption>Profiles</figcaption></figure>
+        <figure class="shot"><img data-page="gamelog" src="assets/themes/netrunner-gamelog.webp" alt="The Game log page in the Netrunner theme" loading="lazy" width="1600" height="900"><figcaption>Game log</figcaption></figure>
       </div>
     </section>
 

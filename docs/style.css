@@ -117,12 +117,20 @@ main { max-width: var(--max); margin: 0 auto; padding: 3.5rem clamp(1rem, 4vw, 2
 .feat p { margin: 0; color: var(--text-2); font-size: 0.95rem; }
 
 /* Themes */
-.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.8rem; margin: 0 0 2rem; padding: 0; list-style: none; }
-.swatches li { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 0.8rem; align-items: center; padding: 0.8rem; background: var(--card); border: 1px solid var(--line); }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.7rem; margin: 0 0 1.8rem; }
+.swatches button { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 0.8rem; align-items: center; padding: 0.75rem; border: 1px solid var(--line); background: var(--card); color: var(--text); text-align: left; font: inherit; cursor: pointer; transition: border-color .15s, background .15s, transform .15s; }
+.swatches button:hover { border-color: var(--line-2); background: rgb(63 224 232 / 0.06); transform: translateY(-1px); }
+.swatches button[aria-checked="true"] { border-color: var(--yellow); box-shadow: inset 3px 0 0 var(--yellow), 0 0 1.2rem rgb(242 220 75 / 0.12); }
 .swatches b { font-family: var(--display); font-size: 1.15rem; }
-.swatches li > span:last-child { grid-column: 2; color: var(--muted); font-size: 0.88rem; }
+.swatches button > span:last-child { grid-column: 2; color: var(--muted); font-size: 0.88rem; }
 .sw { grid-row: 1 / 3; width: 3.2rem; height: 3.2rem; border: 1px solid var(--line-2); background: linear-gradient(135deg, var(--a) 0 55%, var(--b) 55% 78%, var(--c) 78%); }
-.shots { margin-top: 0.5rem; }
+/* The pictures: the Mods page large, Profiles and Game log beside it; they fade to the theme picked. */
+.theme-preview { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: auto auto; gap: 1rem; }
+.theme-preview .big { grid-row: 1 / 3; }
+.theme-preview img { transition: opacity .25s ease; }
+.theme-preview img.swap { opacity: 0; }
+@media (max-width: 700px) { .theme-preview { grid-template-columns: 1fr; } .theme-preview .big { grid-row: auto; } }
+
 
 /* Download */
 .steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 1.1rem; }

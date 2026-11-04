@@ -37,6 +37,39 @@ for (const a of document.querySelectorAll('[data-tab-link]')) {
 addEventListener('hashchange', () => show(location.hash.slice(1)));
 show(location.hash.slice(1), false, false);
 
+// Themes: pick one and the app's pictures change to it (all of a theme's pictures are fetched first,
+// so they change together).
+const picks = [...document.querySelectorAll('#theme-pick [role="radio"]')];
+const shots = [...document.querySelectorAll('.theme-preview img')];
+const swapReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function pickTheme(btn, focus = false) {
+  for (const b of picks) { const on = b === btn; b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; }
+  if (focus) btn.focus();
+  const id = btn.dataset.theme;
+  const name = btn.dataset.name;
+  const next = shots.map(img => `assets/themes/${id}-${img.dataset.page}.webp`);
+  Promise.all(next.map(src => new Promise(r => { const i = new Image(); i.onload = i.onerror = r; i.src = src; }))).then(() => {
+    shots.forEach(img => img.classList.add('swap'));
+    setTimeout(() => {
+      shots.forEach((img, i) => {
+        img.src = next[i];
+        img.alt = img.alt.replace(/in the .* theme$/, `in the ${name} theme`);
+        img.classList.remove('swap');
+      });
+      for (const el of document.querySelectorAll('[data-theme-name]')) el.textContent = name;
+    }, swapReduced ? 0 : 250);
+  });
+}
+picks.forEach((b, i) => {
+  b.addEventListener('click', () => pickTheme(b));
+  b.addEventListener('keydown', ev => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+    if (!step) return;
+    ev.preventDefault();
+    pickTheme(picks[(i + step + picks.length) % picks.length], true);
+  });
+});
+
 // The newest release, to show its version and date by the Download buttons.
 fetch('https://api.github.com/repos/skyehosting/edgerunners-mod-manager/releases/latest')
   .then(r => (r.ok ? r.json() : null))
