@@ -294,5 +294,7 @@ test('a playthrough kept in another profile\'s folder shows its picture, read fr
   assert.strictEqual(mgr.saveScreenshot(pt.shot.folder, first), `data:image/png;base64,${png.toString('base64')}`);
   assert.strictEqual(mgr.saveScreenshot(pt.shot.folder), '', 'not in the game\'s folder now');
   assert.throws(() => mgr.saveScreenshot('ManualSave-1', 'toString'), /Unknown profile/);
-  assert.throws(() => mgr.saveScreenshot('..\ManualSave-1', first), /No such save/);
+  for (const bad of [path.win32.join('..', 'ManualSave-1'), path.posix.join('..', 'ManualSave-1'), path.join(saves, 'ManualSave-1')]) {
+    assert.throws(() => mgr.saveScreenshot(bad, first), /No such save/, bad);
+  }
 });
