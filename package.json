@@ -28,11 +28,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/skyehosting/cyber77-mod-manager.git"
+    "url": "https://github.com/skyehosting/edgerunners-mod-manager.git"
   },
   "author": "skyehosting",
   "license": "PolyForm-Noncommercial-1.0.0",
-  "homepage": "https://skyehosting.github.io/cyber77-mod-manager/",
+  "homepage": "https://skyehosting.github.io/edgerunners-mod-manager/",
   "build": {
     "appId": "io.github.skyehosting.cybermodmanager",
     "productName": "Cyber Mod Manager",
@@ -86,7 +86,7 @@
       {
         "provider": "github",
         "owner": "skyehosting",
-        "repo": "cyber77-mod-manager",
+        "repo": "edgerunners-mod-manager",
         "releaseType": "release"
       }
     ]

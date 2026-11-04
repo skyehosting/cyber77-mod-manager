@@ -38,7 +38,7 @@ addEventListener('hashchange', () => show(location.hash.slice(1)));
 show(location.hash.slice(1), false, false);
 
 // The newest release, to show its version and date by the Download buttons.
-fetch('https://api.github.com/repos/skyehosting/cyber77-mod-manager/releases/latest')
+fetch('https://api.github.com/repos/skyehosting/edgerunners-mod-manager/releases/latest')
   .then(r => (r.ok ? r.json() : null))
   .then(rel => {
     if (!rel?.tag_name) return;

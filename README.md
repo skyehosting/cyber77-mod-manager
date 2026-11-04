@@ -2,13 +2,13 @@
 
 The all-in-one mod manager for Cyberpunk 2077 on Windows: Nexus downloads, profiles, load order, game logs, crash help and an optional AI helper, in one app. Formerly Cyber Mod Manager.
 
-### [⬇ Download the latest version](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe) · [Project page](https://skyehosting.github.io/cyber77-mod-manager/)
+### [⬇ Download the latest version](https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe) · [Project page](https://skyehosting.github.io/edgerunners-mod-manager/)
 
-[![Latest release](https://img.shields.io/github/v/release/skyehosting/cyber77-mod-manager?label=latest&style=flat-square)](https://github.com/skyehosting/cyber77-mod-manager/releases/latest) · [All releases](https://github.com/skyehosting/cyber77-mod-manager/releases)
+[![Latest release](https://img.shields.io/github/v/release/skyehosting/edgerunners-mod-manager?label=latest&style=flat-square)](https://github.com/skyehosting/edgerunners-mod-manager/releases/latest) · [All releases](https://github.com/skyehosting/edgerunners-mod-manager/releases)
 
 ## Screenshots
 
-The pages in the order of the sidebar, with demo mods. Click one to see it full size. More on the [project page](https://skyehosting.github.io/cyber77-mod-manager/).
+The pages in the order of the sidebar, with demo mods. Click one to see it full size. More on the [project page](https://skyehosting.github.io/edgerunners-mod-manager/).
 
 ### Mods
 
@@ -74,7 +74,7 @@ Seven built-in looks (Settings → Interface), or your own in the custom theme e
 
 ## Install
 
-Download [`Edgerunners-Mod-Manager-Setup.exe`](https://github.com/skyehosting/cyber77-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe) (always the newest version; also on the [releases page](https://github.com/skyehosting/cyber77-mod-manager/releases/latest)) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
+Download [`Edgerunners-Mod-Manager-Setup.exe`](https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe) (always the newest version; also on the [releases page](https://github.com/skyehosting/edgerunners-mod-manager/releases/latest)) and run it. It installs for your Windows user only (no admin rights) and starts the app. The installer is not code-signed, so Windows SmartScreen may warn the first time: choose **More info** → **Run anyway**.
 
 The app keeps itself up to date: while it is open it checks for a new version every 2 minutes (Settings → Advanced → App updates: any number of minutes, hours or days), downloads it, and restarts to install it once nothing is downloading or installing. **Later** on the notice leaves the update for when you close the app. Your settings (API key included), Nexus login, mods and downloads are kept: they live in `%APPDATA%\Cyber Mod Manager`, which updates never touch. Settings and the mod library also keep a backup of their last good version, used if the file is ever damaged or missing. New versions show at the top of the window from the moment one is found. Settings → Advanced → **New versions**: *Install automatically* restarts to install when nothing is in progress and the window is in view, after a 30-second notice (**Later** leaves it for when you close the app); *Download, then ask*; or *Off* (no checks by itself; **Check now** still works). While the game runs nothing is checked or restarted.
 
