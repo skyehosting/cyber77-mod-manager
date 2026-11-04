@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const fsp = require('fs/promises');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -39,17 +40,39 @@ const REASONS = Object.freeze(Object.assign(Object.create(null), {
 }));
 const reasonOf = r => (typeof r === 'string' && Object.prototype.hasOwnProperty.call(REASONS, r) ? r : 'manual');
 
-/** The game's save folder. CMM_SAVES_DIR points tests elsewhere. */
+/**
+ * The game's save folder on Windows ('' elsewhere: on Linux it is inside the game's Wine/Proton
+ * prefix, which the manager works out from the game folder). CMM_SAVES_DIR points tests elsewhere.
+ */
 function defaultSavesDir() {
   if (process.env.CMM_SAVES_DIR !== undefined) return process.env.CMM_SAVES_DIR;
-  return path.join(process.env.USERPROFILE || '', 'Saved Games', 'CD Projekt Red', 'Cyberpunk 2077');
+  if (process.platform !== 'win32' || !process.env.USERPROFILE) return '';
+  return path.join(process.env.USERPROFILE, 'Saved Games', 'CD Projekt Red', 'Cyberpunk 2077');
+}
+
+/**
+ * Where this app keeps saves of its own (backups, other profiles' saves) and the README about them:
+ * Saved Games\Edgerunners Mod Manager on Windows, ~/.local/share/Edgerunners Mod Manager on Linux.
+ */
+function appSavesHome() {
+  if (process.platform === 'win32') return process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Saved Games', 'Edgerunners Mod Manager') : '';
+  const xdg = process.env.XDG_DATA_HOME;
+  return path.join(xdg && path.isAbsolute(xdg) ? xdg : path.join(os.homedir(), '.local', 'share'), 'Edgerunners Mod Manager');
 }
 
 /** Where backups go by default: beside the game's saves (same drive: links work), outside the app. */
 function defaultBackupDir() {
   if (process.env.CMM_SAVE_BACKUPS_DIR !== undefined) return process.env.CMM_SAVE_BACKUPS_DIR;
-  return path.join(process.env.USERPROFILE || '', 'Saved Games', 'Edgerunners Mod Manager', 'Save backups');
+  const home = appSavesHome();
+  return home ? path.join(home, 'Save backups') : '';
 }
+
+/** A folder to write in, or an error saying so: never a path relative to wherever the app runs. */
+function needDir(dir, why) {
+  if (!dir || !path.isAbsolute(dir)) throw new Error(why);
+  return dir;
+}
+const SAVES_UNKNOWN = 'Cyberpunk 2077\'s save folder is not known yet. On Linux it appears once the game has been started from Steam.';
 
 /**
  * Is this a folder backups may go in? Returns '' when fine, else why not. Never: inside (or holding)
@@ -80,6 +103,14 @@ function backupDirProblem(dir, savesDir = defaultSavesDir()) {
     if (sys && inside(full, real(sys))) return 'Not in a Windows or program folder.';
   }
   if (process.env.USERPROFILE && real(process.env.USERPROFILE).toLowerCase() === full.toLowerCase()) return 'Choose a folder inside your user folder, not the user folder itself.';
+  if (process.platform !== 'win32') {
+    // Linux: the system's own folders, a Wine/Proton prefix (it can be deleted with the game), the home folder.
+    for (const sys of ['/usr', '/etc', '/var', '/bin', '/sbin', '/lib', '/lib32', '/lib64', '/opt', '/boot', '/proc', '/sys', '/dev', '/run', '/snap']) {
+      if (inside(full, sys)) return 'Not in a system folder.';
+    }
+    if (full.split(path.sep).includes('compatdata') || full.split(path.sep).includes('drive_c')) return 'Not inside a game\'s Proton or Wine folder: it can be deleted with the game.';
+    if (real(os.homedir()) === full) return 'Choose a folder inside your home folder, not the home folder itself.';
+  }
   return '';
 }
 
@@ -215,8 +246,8 @@ function cleanRecord(r, id) {
 class SaveBackups {
   /** savesDir(): the game's save folder. root(): where backups go. log: the app's log. */
   constructor({ savesDir = defaultSavesDir, root = defaultBackupDir, log }) {
-    this.savesDir = savesDir;
-    this.root = root;
+    this.savesDir = savesDir; // '' while unknown (reading finds nothing; writing into it refuses)
+    this.root = () => needDir(root(), 'There is no folder for save backups. Choose one in Settings, Save manager.');
     this.log = log;
     this.busy = false;
     this.linkCache = new Map();
@@ -491,6 +522,7 @@ class SaveBackups {
    */
   restore(id, folders = 'all', info = {}) {
     return this.exclusive(async () => {
+      needDir(this.savesDir(), SAVES_UNKNOWN); // before anything, the safety backup included
       const dir = this.dirOf(id);
       const raw = readJson(path.join(dir, 'backup.json'));
       const record = cleanRecord(raw, id);
@@ -520,7 +552,7 @@ class SaveBackups {
       await this.createNow({ profile: info.profile, profileName: info.profileName, mods: info.mods, reason: 'restore' });
       // Stage every slot first; a failure here changes nothing. The staging folder is on the save
       // folder's drive (so every swap is an atomic rename), and never inside the save folder itself.
-      const savesDir = this.savesDir();
+      const savesDir = needDir(this.savesDir(), SAVES_UNKNOWN);
       await fsp.mkdir(savesDir, { recursive: true });
       const sameDrive = (() => { try { fs.mkdirSync(this.root(), { recursive: true }); return fs.statSync(this.root()).dev === fs.statSync(savesDir).dev; } catch { return false; } })();
       const stage = path.join(sameDrive ? this.work : path.join(path.dirname(savesDir), '.edgerunners-work'), `restore-${Date.now()}`);
@@ -590,4 +622,4 @@ class SaveBackups {
   }
 }
 
-module.exports = { SaveBackups, scanSaves, readSave, groupPlaythroughs, savesFingerprint, backupDirProblem, defaultSavesDir, defaultBackupDir, REASONS, SLOT, move, hashFile };
+module.exports = { SaveBackups, scanSaves, readSave, groupPlaythroughs, savesFingerprint, backupDirProblem, defaultSavesDir, defaultBackupDir, appSavesHome, needDir, SAVES_UNKNOWN, REASONS, SLOT, move, hashFile };

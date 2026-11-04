@@ -194,7 +194,8 @@ class GameLogMonitor extends EventEmitter {
     super();
     this.getGameDir = getGameDir;
     this.log = log;
-    this.crashDir = crashDir;
+    // The ReportQueue folder ('' while unknown: on Linux it is inside the game's prefix).
+    this.crashDirOf = typeof crashDir === 'function' ? crashDir : () => crashDir;
     this.knownFile = knownFile;
     this.found = new Set();
     try { for (const r of JSON.parse(fs.readFileSync(knownFile, 'utf8')).logs || []) this.found.add(r); } catch { /* none yet */ }
@@ -483,14 +484,19 @@ class GameLogMonitor extends EventEmitter {
 
   /** The game's crash reporter drops a folder per crash under %LOCALAPPDATA%\REDEngine\ReportQueue. */
   snapshotCrashes() {
-    try { for (const d of fs.readdirSync(this.crashDir)) this.knownCrashes.add(d); } catch { /* none yet */ }
+    const dir = this.crashDirOf();
+    if (!dir || !path.isAbsolute(dir)) return;
+    try { for (const d of fs.readdirSync(dir)) this.knownCrashes.add(d); } catch { /* none yet */ }
   }
 
   newCrashReport() {
+    const dir = this.crashDirOf();
+    if (!dir || !path.isAbsolute(dir)) return '';
     try {
-      const fresh = fs.readdirSync(this.crashDir).filter(d => !this.knownCrashes.has(d));
+      // The newest by name (they carry the date and time; Linux lists folders in no set order).
+      const fresh = fs.readdirSync(dir).filter(d => !this.knownCrashes.has(d)).sort();
       fresh.forEach(d => this.knownCrashes.add(d));
-      return fresh.length ? path.join(this.crashDir, fresh[fresh.length - 1]) : '';
+      return fresh.length ? path.join(dir, fresh[fresh.length - 1]) : '';
     } catch {
       return '';
     }

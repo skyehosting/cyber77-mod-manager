@@ -2156,7 +2156,8 @@ function renderInstalls() {
     return h('div', { class: `install${active ? ' active' : ''}` },
       h('span', { class: 'tag' }, i.label),
       h('span', { class: 'install-path', title: i.path }, i.path),
-      active ? h('span', { class: 'status status-ok' }, 'In use')
+      i.installing ? h('span', { class: 'status status-warn' }, `Installing in ${i.label} · ${Math.floor((i.progress || 0) * 100)}%`)
+      : active ? h('span', { class: 'status status-ok' }, 'In use')
         : h('button', { type: 'button', class: 'btn btn-sm', onclick: () => { $('#s-game').value = i.path; updateDirty(); } }, 'Use this'));
   }));
 }

@@ -5,8 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
-const { findCyberpunk, findInstalls, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
-const { backupDirProblem } = require('./core/saves');
+const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
+const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { PlayHistory } = require('./core/plays');
@@ -240,7 +240,7 @@ async function boot() {
   gameLogs = new GameLogMonitor({
     getGameDir: () => settings.get('gamePath'),
     log: logger,
-    crashDir: path.join(process.env.LOCALAPPDATA || '', 'REDEngine', 'ReportQueue'),
+    crashDir: () => manager.crashDir(),
     knownFile: path.join(app.getPath('userData'), 'found-logs.json'),
   });
   gameLogs.on('entries', batch => send('gamelog', batch));
@@ -277,7 +277,7 @@ async function boot() {
   });
   // The AI assistant (after the game-log monitor, which its tools read): read tools see everything; changes only through approved proposals.
   const gameFiles = new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot });
-  crashes = new CrashReports({ dir: () => path.join(process.env.LOCALAPPDATA || '', 'REDEngine', 'ReportQueue'), gameDir: () => manager.gameDir(), gameLogs, files: gameFiles });
+  crashes = new CrashReports({ dir: () => manager.crashDir(), gameDir: () => manager.gameDir(), gameLogs, files: gameFiles });
   // A crash: the window says so wherever the user is, and the Crashes view shows it.
   gameLogs.on('crash', id => send('crash', crashes.list(1)[0] || { id }));
   modConfig = new ModConfig({ manager, files: gameFiles, ownerRoot, backupDir: path.join(app.getPath('userData'), 'edited-originals') });
@@ -332,7 +332,7 @@ async function boot() {
     // Per-profile saves are turned on and off through saves:perProfile only (it records whose saves are where).
     if (patch && typeof patch === 'object') delete patch.perProfileSaves;
     if (patch && typeof patch.saveBackupDir === 'string' && patch.saveBackupDir !== '') {
-      const problem = backupDirProblem(patch.saveBackupDir);
+      const problem = backupDirProblem(patch.saveBackupDir, manager.gameSavesDir());
       if (problem) throw new Error(problem);
     }
     const before = settings.get('dataDir');
@@ -352,7 +352,11 @@ async function boot() {
   handle('settings:validateKey', () => manager.validateKey());
   handle('settings:detectGame', async () => {
     const found = await findCyberpunk();
-    if (!found) throw new Error('Cyberpunk 2077 not found in any Steam library. Browse to its folder instead.');
+    if (!found) {
+      const busy = installingNow()[0];
+      if (busy) throw new Error(`Cyberpunk 2077 is still installing in Steam (${Math.floor(busy.progress * 100)}%). Look again once Steam has finished.`);
+      throw new Error('Cyberpunk 2077 not found in any Steam library. Browse to its folder instead.');
+    }
     settings.update({ gamePath: found });
     logger.success(`Found Cyberpunk 2077 at ${found}`);
     pushSnapshot();
@@ -369,7 +373,11 @@ async function boot() {
   handle('links:add', text => manager.addLinks(text));
   handle('links:plan', text => manager.planLinks(text));
   handle('links:queue', (token, deps, files) => manager.queuePlan(token, deps, files));
-  handle('game:installs', () => findInstalls());
+  handle('game:installs', async () => {
+    const ready = await findInstalls();
+    // Linux: a Steam install still downloading shows too, so nobody wonders where the game went.
+    return [...ready, ...installingNow().filter(i => !ready.some(r => r.path === i.path))];
+  });
   handle('steam:launchOptions', async () => {
     const found = await steamLaunchOptions();
     return found ? { options: found.options, missing: missingLaunchOptions(found.options, true) } : null;
@@ -563,7 +571,7 @@ async function boot() {
   handle('saves:copySaves', (source, folders, targets) => manager.copySaves(String(source), Array.isArray(folders) ? folders.map(String).slice(0, 500) : [], Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
   handle('saves:open', async which => {
     let dir;
-    if (which === 'saves') dir = manager.saves.savesDir();
+    if (which === 'saves') dir = needDir(manager.saves.savesDir(), SAVES_UNKNOWN);
     else if (which === 'backups') { dir = manager.saves.root(); fs.mkdirSync(dir, { recursive: true }); } else dir = manager.saves.dirOf(String(which)); // one backup (checked to be inside the backup folder)
     const failed = await shell.openPath(dir); // '' when it opened
     if (failed) throw new Error(`Could not open the folder: ${failed}`);
@@ -573,7 +581,7 @@ async function boot() {
     if (r.canceled || !r.filePaths[0]) return null;
     // A folder of their own inside the one chosen: cleaning up old backups never touches anything else there.
     const dir = /save backups$/i.test(path.basename(r.filePaths[0])) ? r.filePaths[0] : path.join(r.filePaths[0], 'Edgerunners save backups');
-    const problem = backupDirProblem(dir);
+    const problem = backupDirProblem(dir, manager.gameSavesDir());
     if (problem) throw new Error(problem);
     settings.update({ saveBackupDir: dir });
     manager.emit('saves');

@@ -10,7 +10,7 @@ const { redmodToolsInstalled } = require('./launcher');
 const { Downloader } = require('./downloader');
 const { Installer, isSafeRel } = require('./installer');
 const { Deployer } = require('./deployer');
-const { isGameDir } = require('./gameFinder');
+const { isGameDir, gameWindowsFolders } = require('./gameFinder');
 const { sanitizeName } = require('./layout');
 const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
@@ -127,7 +127,7 @@ class ModManager extends EventEmitter {
       scan: process.env.CMM_MO2_SCAN !== 'off', extraFolders: () => settings.get('mo2Folders'),
     });
     // Save backups: outside the app and the game's save folder (Settings, Save manager can move them).
-    this.saves = new SaveBackups({ savesDir: defaultSavesDir, root: () => settings.get('saveBackupDir') || defaultBackupDir(), log });
+    this.saves = new SaveBackups({ savesDir: () => this.gameSavesDir(), root: () => settings.get('saveBackupDir') || defaultBackupDir(), log });
     // Per-profile saves (Settings, Save manager): other profiles' saves wait in folders of their own.
     this.profileSaves = new ProfileSaves({ savesDir: () => this.saves.savesDir(), root: defaultStoreDir, log });
     this.gameRunning = () => false; // main.js puts the real check here
@@ -166,6 +166,33 @@ class ModManager extends EventEmitter {
     const deployedTo = this.deployer.store.data.gameDir;
     if (deployedTo && Object.keys(this.deployer.deployed).length) return deployedTo;
     return this.settings.get('gamePath');
+  }
+
+  /**
+   * Linux: where the game keeps its Windows folders (its Wine/Proton prefix; see gameFinder), worked
+   * out again when the game folder changes or after a few seconds (the prefix appears at the first
+   * launch). null on Windows or while unknown.
+   */
+  gameFolders() {
+    const dir = this.gameDir();
+    const c = this.foldersCache;
+    if (c && c.dir === dir && Date.now() - c.at < 5000) return c.folders;
+    let folders = null;
+    try { folders = gameWindowsFolders(dir); } catch (err) { this.log.warn('Could not look for the game\'s Proton folder', err.message); }
+    this.foldersCache = { dir, at: Date.now(), folders };
+    return folders;
+  }
+
+  /** The game's save folder: Windows' own, or inside the game's prefix on Linux ('' while unknown). */
+  gameSavesDir() {
+    if (process.env.CMM_SAVES_DIR !== undefined || process.platform === 'win32') return defaultSavesDir();
+    return this.gameFolders()?.saves || '';
+  }
+
+  /** The game's crash reporter's folder (ReportQueue), '' while unknown. */
+  crashDir() {
+    if (process.platform === 'win32') return process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'REDEngine', 'ReportQueue') : '';
+    return this.gameFolders()?.crashDir || '';
   }
 
   // ---------------------------------------------------------------- snapshot for the UI
@@ -1634,7 +1661,7 @@ class ModManager extends EventEmitter {
     const backups = this.saves.list();
     return {
       savesDir: dir, found: fs.existsSync(dir), backupDir: this.saves.root(),
-      steamCloud: fs.existsSync(path.join(dir, 'steam_autocloud.vdf')),
+      steamCloud: !!dir && fs.existsSync(path.join(dir, 'steam_autocloud.vdf')),
       playthroughs: groupPlaythroughs(saves),
       saves: saves.map(({ files, screenshot, ...s }) => s),
       backups,
@@ -1662,6 +1689,7 @@ class ModManager extends EventEmitter {
       if (!this.isProfile(profileId)) throw new Error('Unknown profile.');
       dir = this.profileSaves.dirOf(profileId);
     }
+    if (!dir || !path.isAbsolute(dir)) return ''; // the save folder is not known yet (Linux)
     const file = path.join(dir, s, 'screenshot.png');
     try {
       const st = fs.lstatSync(file);

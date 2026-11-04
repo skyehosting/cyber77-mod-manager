@@ -87,7 +87,12 @@ class CrashReports {
    * entries). files: the GameFiles index (who owns a file in the game folder).
    */
   constructor({ dir, gameDir, gameLogs, files }) {
-    this.dir = dir;
+    // '' while unknown (on Linux it is inside the game's prefix): never a path relative to the app.
+    this.dir = () => {
+      const d = dir();
+      if (!d || !path.isAbsolute(d)) throw new Error('The game\'s crash report folder is not known yet.');
+      return d;
+    };
     this.gameDir = gameDir;
     this.gameLogs = gameLogs;
     this.files = files;

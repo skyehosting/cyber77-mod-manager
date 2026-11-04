@@ -2,7 +2,7 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const { scanSaves, groupPlaythroughs, SLOT, hashFile } = require('./saves');
+const { scanSaves, groupPlaythroughs, SLOT, hashFile, appSavesHome, needDir, SAVES_UNKNOWN } = require('./saves');
 
 /*
  * Per-profile saves (off unless the user turns it on). The profile in use keeps its saves in the
@@ -27,13 +27,14 @@ const ID = /^[a-z0-9]{1,40}$/i;
 
 function defaultStoreDir() {
   if (process.env.CMM_PROFILE_SAVES_DIR !== undefined) return process.env.CMM_PROFILE_SAVES_DIR;
-  return path.join(process.env.USERPROFILE || '', 'Saved Games', 'Edgerunners Mod Manager', 'Profile saves');
+  const home = appSavesHome();
+  return home ? path.join(home, 'Profile saves') : '';
 }
 
 /** Where README.txt about the saves goes (the folder the uninstaller points to). None in tests. */
 function defaultHomeDir() {
   if (process.env.CMM_PROFILE_SAVES_DIR !== undefined) return '';
-  return path.join(process.env.USERPROFILE || '', 'Saved Games', 'Edgerunners Mod Manager');
+  return appSavesHome();
 }
 
 const slotsIn = dir => { try { return fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory() && SLOT.test(e.name)).map(e => e.name); } catch { return []; } };
@@ -66,8 +67,8 @@ async function safeMove(src, dst) {
 class ProfileSaves {
   /** savesDir(): the game's save folder. root(): where other profiles' saves wait. */
   constructor({ savesDir, root = defaultStoreDir, log }) {
-    this.savesDir = savesDir;
-    this.root = root;
+    this.savesDir = savesDir; // '' while unknown (reading finds nothing; writing into it refuses)
+    this.root = () => needDir(root(), 'There is no folder for other profiles\' saves.');
     this.log = log;
   }
 
@@ -102,7 +103,7 @@ class ProfileSaves {
    * point leaves it saying what happened (the manager's recoverSwap sorts it out).
    */
   async swap(from, to) {
-    const game = this.savesDir();
+    const game = needDir(this.savesDir(), SAVES_UNKNOWN);
     const fromDir = this.dirOf(from);
     const toDir = this.dirOf(to);
     if (fs.existsSync(this.journal)) throw new Error('An earlier switch of saves is still being sorted out. Try again in a moment.');
@@ -209,7 +210,7 @@ class ProfileSaves {
   async copySaves(fromDir, pick, toDir) {
     const saves = scanSaves(fromDir).filter(pick);
     if (!saves.length) return { copied: 0, renamed: 0, present: 0 };
-    await fsp.mkdir(toDir, { recursive: true });
+    await fsp.mkdir(needDir(toDir, SAVES_UNKNOWN), { recursive: true });
     const taken = new Set(slotsIn(toDir));
     const there = new Set(Object.values(await this.hashes(toDir)).filter(Boolean));
     let copied = 0;

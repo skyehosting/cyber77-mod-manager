@@ -167,7 +167,9 @@ function playthroughsView(v) {
   if (!v.playthroughs.length) {
     const elsewhere = otherCount(v);
     return [h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('save')), h('div', { class: 'empty-title' }, 'No saves yet'),
-      h('div', { class: 'empty-text' }, `Saves appear here once you play. This app reads them from ${v.savesDir}.`),
+      h('div', { class: 'empty-text' }, v.savesDir ? `Saves appear here once you play. This app reads them from ${v.savesDir}.`
+        // Linux: the save folder is inside the game's Proton folder, which Steam makes at the first launch.
+        : 'The game\'s save folder is not known yet. Start Cyberpunk 2077 once from Steam; its saves show here after that.'),
       elsewhere ? h('button', { class: 'btn btn-sm', dataset: { key: 'pt:to-others' }, onclick: () => { sv.tab = 'others'; renderSaves(); } }, icon('users'), h('span', {}, `${plural(elsewhere, 'playthrough')} in other profiles`)) : null),
     ...perProfileHint(v)];
   }
