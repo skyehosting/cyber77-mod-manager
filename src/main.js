@@ -560,6 +560,7 @@ async function boot() {
   handle('saves:profileCount', (id, stored) => manager.profileSaveCount(String(id), { stored: stored === true }));
   handle('saves:copyPlaythrough', (pt, source, targets) => manager.copyPlaythrough(String(pt), String(source), Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
   handle('saves:copyAll', (source, target) => manager.copyAllSaves(String(source), String(target)));
+  handle('saves:copySaves', (source, folders, targets) => manager.copySaves(String(source), Array.isArray(folders) ? folders.map(String).slice(0, 500) : [], Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
   handle('saves:open', async which => {
     let dir;
     if (which === 'saves') dir = manager.saves.savesDir();

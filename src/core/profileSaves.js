@@ -195,23 +195,31 @@ class ProfileSaves {
     }
   }
 
+  /** Copy every save of a playthrough into a folder (see copySaves). */
+  copyPlaythrough(fromDir, playthroughId, toDir) {
+    return this.copySaves(fromDir, s => s.playthrough === playthroughId, toDir);
+  }
+
   /**
-   * Copy saves of a playthrough into a folder (a profile's, or the game's for the profile in use). A
+   * Copy the saves `pick` chooses into a folder (a profile's, or the game's for the profile in use). A
    * save already there (same sav.dat) is skipped; a slot name taken there gets the next free
-   * ManualSave number. Returns how many were copied, and how many of those under a new name.
+   * ManualSave number. Returns how many were copied, how many of those under a new name, and how many
+   * were there already.
    */
-  async copyPlaythrough(fromDir, playthroughId, toDir) {
-    const saves = scanSaves(fromDir).filter(s => s.playthrough === playthroughId);
-    if (!saves.length) return { copied: 0, renamed: 0 };
+  async copySaves(fromDir, pick, toDir) {
+    const saves = scanSaves(fromDir).filter(pick);
+    if (!saves.length) return { copied: 0, renamed: 0, present: 0 };
     await fsp.mkdir(toDir, { recursive: true });
     const taken = new Set(slotsIn(toDir));
     const there = new Set(Object.values(await this.hashes(toDir)).filter(Boolean));
     let copied = 0;
     let renamed = 0;
+    let present = 0;
     for (const s of saves) {
       const src = path.join(fromDir, s.folder);
       const h = await savHash(src);
-      if (!h || there.has(h)) continue; // no sav.dat, or the same save is there already
+      if (!h) continue; // no sav.dat
+      if (there.has(h)) { present++; continue; } // the same save is there already
       const name = freeName(s.folder, taken);
       const tmp = path.join(toDir, `.${name}.copying`);
       try {
@@ -227,7 +235,7 @@ class ProfileSaves {
       copied++;
       if (name !== s.folder) renamed++;
     }
-    return { copied, renamed };
+    return { copied, renamed, present };
   }
 
   /**
@@ -258,9 +266,12 @@ class ProfileSaves {
       if (!ID.test(id)) continue;
       const saves = id === activeId ? scanSaves(this.savesDir()) : this.savesOf(id);
       const size = new Map(saves.map(s => [s.folder, s.size]));
-      // shot: the newest save, for its picture (the page asks for it by profile and slot).
+      const bySlot = new Map(saves.map(s => [s.folder, s]));
+      // shot: the newest save, for its picture (the page asks for it by profile and slot); saves: each
+      // one, newest first, to copy one alone.
       out[id] = groupPlaythroughs(saves).map(p => ({ id: p.id, count: p.count, level: p.level, lifePath: p.lifePath, gender: p.gender, time: p.time,
-        shot: { profile: id, folder: p.latest, time: p.time, size: size.get(p.latest) || 0 } }));
+        shot: { profile: id, folder: p.latest, time: p.time, size: size.get(p.latest) || 0 },
+        saves: p.saves.map(f => bySlot.get(f)).filter(Boolean).map(s => ({ profile: id, folder: s.folder, level: s.level, playTime: s.playTime, time: s.time, size: s.size, gameVersion: s.gameVersion })) }));
     }
     return out;
   }

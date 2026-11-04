@@ -298,3 +298,43 @@ test('a playthrough kept in another profile\'s folder shows its picture, read fr
     assert.throws(() => mgr.saveScreenshot(bad, first), /No such save/, bad);
   }
 });
+
+test('one save from another profile can be copied into this one, alone and only once', async () => {
+  const { mgr, saves, first } = setup();
+  await mgr.setPerProfileSaves(true);
+  await mgr.switchProfile('p2'); // the first profile's saves wait in its folder
+  const pt = mgr.savesView().perProfile.playthroughs[first].find(p => p.id === 'aaaa');
+  assert.deepStrictEqual(pt.saves.map(s => s.folder).sort(), ['AutoSave-0', 'ManualSave-1'], 'each save of the playthrough is listed');
+  assert.ok(pt.saves.every(s => s.profile === first));
+
+  const r = await mgr.copySaves(first, ['ManualSave-1'], ['p2']);
+  assert.deepStrictEqual([r.copied, r.present], [1, 0]);
+  assert.deepStrictEqual(slots(saves), ['ManualSave-1'], 'only that save came over, not the whole playthrough');
+  assert.strictEqual(fs.readFileSync(path.join(saves, 'ManualSave-1', 'sav.dat'), 'utf8'), 'save ManualSave-1');
+  assert.deepStrictEqual(slots(mgr.profileSaves.dirOf(first)), ['AutoSave-0', 'ManualSave-1', 'QuickSave-0'], 'a copy: the other profile keeps it');
+
+  const again = await mgr.copySaves(first, ['ManualSave-1'], ['p2']);
+  assert.deepStrictEqual([again.copied, again.present], [0, 1], 'the same save is not copied twice');
+
+  await assert.rejects(mgr.copySaves(first, ['..', 'sav.dat'], ['p2']), /No such save/);
+  mgr.gameRunning = () => true;
+  await assert.rejects(mgr.copySaves(first, ['AutoSave-0'], ['p2']), /Close Cyberpunk 2077 first/);
+  assert.deepStrictEqual(slots(saves), ['ManualSave-1']);
+});
+
+test('copying single saves: a taken slot name gets a new number, saves already there are counted, built-in ids refused', async () => {
+  const { mgr, first, save } = setup();
+  await mgr.setPerProfileSaves(true);
+  const p2 = mgr.profileSaves.dirOf('p2');
+  save(p2, 'ManualSave-1', 'zzzz', 'photo mode\'s own manual save 1');
+  fs.cpSync(path.join(mgr.saves.savesDir(), 'AutoSave-0'), path.join(p2, 'AutoSave-0'), { recursive: true }); // already there, byte for byte
+  const r = await mgr.copySaves(first, ['ManualSave-1', 'AutoSave-0'], ['p2']);
+  assert.deepStrictEqual([r.copied, r.renamed, r.present], [1, 1, 1]);
+  assert.deepStrictEqual(slots(p2), ['AutoSave-0', 'ManualSave-1', 'ManualSave-2']);
+  assert.strictEqual(fs.readFileSync(path.join(p2, 'ManualSave-1', 'sav.dat'), 'utf8'), 'photo mode\'s own manual save 1', 'its own save is untouched');
+  assert.strictEqual(fs.readFileSync(path.join(p2, 'ManualSave-2', 'sav.dat'), 'utf8'), 'save ManualSave-1');
+  for (const bad of ['toString', 'constructor', '__proto__']) {
+    await assert.rejects(mgr.copySaves(bad, ['ManualSave-1'], ['p2']), /no longer exists/);
+    assert.deepStrictEqual(await mgr.copySaves(first, ['ManualSave-1'], [bad]), { copied: 0, renamed: 0, present: 0, profiles: 0 });
+  }
+});

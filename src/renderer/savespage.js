@@ -50,7 +50,9 @@ async function loadSaves() {
 const shotKey = s => `${s.profile ? `${s.profile}/` : ''}${s.folder}:${Math.round(s.time)}:${s.size}`;
 function pruneShots(v) {
   const keep = new Set(v.saves.map(shotKey));
-  for (const list of Object.values(v.perProfile?.playthroughs || {})) for (const p of list) if (p.shot) keep.add(shotKey(p.shot));
+  for (const list of Object.values(v.perProfile?.playthroughs || {})) {
+    for (const p of list) for (const s of [p.shot, ...(p.saves || [])]) if (s) keep.add(shotKey(s));
+  }
   for (const k of sv.shots.keys()) if (!keep.has(k)) sv.shots.delete(k);
 }
 function shotEl(save, cls) {
@@ -84,10 +86,16 @@ function renderSaves() {
   $('#saves-cloud').replaceChildren(...(pp ? [h('div', { class: 'banner banner-cloud', role: 'note' }, icon('users'),
     h('span', {}, `Each profile has its own saves. These are the saves of "${ownerName}"${pp.owner !== pp.active ? ' (the profile that had them last)' : ''}.${v.steamCloud ? ' Steam Cloud is on for this game: it may bring a switched-out save back; this app keeps it out of the wrong profile.' : ''}`))] : []), ...(v.steamCloud && !pp ? [h('div', { class: 'banner banner-cloud', role: 'note' }, icon('info'),
     h('span', {}, 'Steam Cloud syncs this game\'s saves. Backups only copy them, so they are safe with it. Restoring changes your saves, and Steam uploads that the next time the game closes.'))] : []));
+  // Tabs: this profile's playthroughs (all of them with per-profile saves off), other profiles', backups.
+  if (sv.tab === 'others' && !pp) sv.tab = 'playthroughs';
+  $('#saves-pt-label').textContent = pp ? 'Active profile' : 'Playthroughs';
+  $('#saves-tab-others').hidden = !pp;
   $$('#saves-tabs .seg-btn').forEach(b => { const on = b.dataset.t === sv.tab; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
   $('#saves-pt-count').textContent = pts.length || '';
+  $('#saves-ot-count').textContent = otherCount(v) || '';
   $('#saves-bk-count').textContent = v.backups.length || '';
-  keepFocus(page, () => $('#saves-body').replaceChildren(...(sv.tab === 'backups' ? backupsView(v) : playthroughsView(v))));
+  const body = { backups: backupsView, others: otherProfilesView }[sv.tab] || playthroughsView;
+  keepFocus(page, () => $('#saves-body').replaceChildren(...body(v)));
 }
 
 // ---- playthroughs
@@ -108,10 +116,12 @@ function perProfileHint(v) {
 }
 
 function playthroughsView(v) {
-  const others = otherProfilesView(v);
   if (!v.playthroughs.length) {
-    return [...others, h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('save')), h('div', { class: 'empty-title' }, 'No saves yet'),
-      h('div', { class: 'empty-text' }, `Saves appear here once you play. This app reads them from ${v.savesDir}.`)), ...perProfileHint(v)];
+    const elsewhere = otherCount(v);
+    return [h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('save')), h('div', { class: 'empty-title' }, 'No saves yet'),
+      h('div', { class: 'empty-text' }, `Saves appear here once you play. This app reads them from ${v.savesDir}.`),
+      elsewhere ? h('button', { class: 'btn btn-sm', dataset: { key: 'pt:to-others' }, onclick: () => { sv.tab = 'others'; renderSaves(); } }, icon('users'), h('span', {}, `${plural(elsewhere, 'playthrough')} in other profiles`)) : null),
+    ...perProfileHint(v)];
   }
   const byFolder = new Map(v.saves.map(s => [s.folder, s]));
   return [h('div', { class: 'sv-list', role: 'list', 'aria-label': 'Playthroughs' }, ...v.playthroughs.map(p => {
@@ -140,37 +150,79 @@ function playthroughsView(v) {
         h('span', { class: 'sv-cell' }, hours(s.playTime)),
         h('span', { class: 'sv-cell', title: s.time ? when(s.time) : '' }, s.time ? ago(s.time) : ''),
         h('span', { class: 'sv-cell num' }, s.gameVersion ? `v${s.gameVersion}` : '')))));
-  })), ...others, ...perProfileHint(v)];
+  })), ...perProfileHint(v)];
 }
 
-/** With per-profile saves: the playthroughs other profiles keep, each with Copy here. */
-function otherProfilesView(v) {
+// ---- other profiles (per-profile saves): their playthroughs, each open to its saves, to copy whole or one save
+
+/** The other profiles that keep saves: [{ id, name, list }]. */
+function otherProfiles(v) {
   const pp = v.perProfile;
   if (!pp) return [];
-  const rows = [];
-  for (const [pid, list] of Object.entries(pp.playthroughs)) {
-    if (pid === pp.owner) continue;
-    const name = v.profiles.find(x => x.id === pid)?.name || pid;
-    for (const p of list) {
-      const here = v.playthroughs.some(x => x.id === p.id);
-      rows.push(h('div', { class: 'sv-bk', role: 'listitem' },
-        shotEl(p.shot, 'sv-thumb'),
-        h('span', { class: 'sv-main' },
-          h('span', { class: 'sv-title' }, ptTitle(p), h('span', { class: 'tag tag-off' }, name)),
-          h('span', { class: 'sv-sub' }, [p.level ? `Level ${p.level}` : '', plural(p.count, 'save'), p.time ? `last saved ${ago(p.time)}` : '', here ? 'also here' : ''].filter(Boolean).join(' · '))),
-        h('span', { class: 'sv-acts' }, h('button', {
-          class: 'btn btn-sm', dataset: { key: `other:${pid}:${p.id}` }, 'aria-label': `Copy ${ptTitle(p)} from ${name} into these saves`,
-          onclick: async () => {
-            const r = await run(api.copyPlaythrough(p.id, pid, [pp.owner]));
-            if (r) toast(`Copied ${plural(r.copied, 'save')} here${r.renamed ? ` (${r.renamed} under a new slot name)` : ''}`, 'success');
-          },
-        }, icon('copy'), h('span', {}, 'Copy here')))));
-    }
+  return Object.entries(pp.playthroughs).filter(([pid, list]) => pid !== pp.owner && list.length)
+    .map(([pid, list]) => ({ id: pid, name: v.profiles.find(x => x.id === pid)?.name || pid, list }));
+}
+const otherCount = v => otherProfiles(v).reduce((n, o) => n + o.list.length, 0);
+
+/**
+ * Copy saves from another profile into this one; the toast says what happened. "This one" is read when
+ * clicked (a switch since the page was drawn changes it).
+ */
+async function copyHere(from, what, call) {
+  const owner = sv.view?.perProfile?.owner;
+  if (!owner) return;
+  const r = await run(call(owner));
+  if (!r) return;
+  if (!r.copied) toast(r.present ? `Already in this profile: ${what} was not copied again` : 'Nothing was copied');
+  else toast(`Copied ${plural(r.copied, 'save')} from "${from}"${r.renamed ? ` (${r.renamed} under a new slot name)` : ''}`, 'success');
+}
+
+function otherProfilesView(v) {
+  const pp = v.perProfile;
+  const ownerName = v.profiles.find(x => x.id === pp?.owner)?.name || 'this profile';
+  const groups = otherProfiles(v);
+  if (!groups.length) {
+    return [h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('users')), h('div', { class: 'empty-title' }, 'No saves in other profiles'),
+      h('div', { class: 'empty-text' }, 'Each profile keeps its own saves. When another profile has some, they show here, and you can copy a playthrough or a single save into this one.'))];
   }
-  if (!rows.length) return [];
-  return [h('section', { class: 'sv-day', 'aria-label': 'In other profiles' },
-    h('div', { class: 'section-head' }, h('h2', {}, 'In other profiles'), h('span', { class: 'section-note' }, 'Their saves wait in their own folders until you switch to them.')),
-    h('div', { class: 'sv-list', role: 'list' }, ...rows))];
+  return [h('p', { class: 'sv-lead' }, `Saves the other profiles keep in their own folders. Open a playthrough to copy one save into "${ownerName}", or copy the whole playthrough. A copy never replaces a save here.`),
+    ...groups.map(g => h('section', { class: 'sv-day', 'aria-label': g.name },
+      h('div', { class: 'section-head' }, h('h2', {}, g.name), h('span', { class: 'section-note' }, plural(g.list.length, 'playthrough'))),
+      h('div', { class: 'sv-list', role: 'list', 'aria-label': `Playthroughs of ${g.name}` }, ...g.list.map(p => otherPlaythrough(v, g, p)))))];
+}
+
+function otherPlaythrough(v, g, p) {
+  const key = `o:${g.id}:${p.id}`;
+  const open = sv.open.has(key);
+  const here = v.playthroughs.some(x => x.id === p.id);
+  const title = ptTitle(p);
+  const row = h('button', {
+    class: 'sv-pt', 'aria-expanded': String(open), dataset: { key: `other:${g.id}:${p.id}` },
+    onclick: () => { if (open) sv.open.delete(key); else sv.open.add(key); renderSaves(); },
+  },
+  shotEl(p.shot, 'sv-thumb'),
+  h('span', { class: 'sv-main' },
+    h('span', { class: 'sv-title' }, title, here ? h('span', { class: 'tag tag-off' }, 'Also in this profile') : null),
+    h('span', { class: 'sv-sub' }, [p.level ? `Level ${p.level}` : '', plural(p.count, 'save'), p.time ? `last saved ${ago(p.time)}` : ''].filter(Boolean).join(' · '))),
+  icon('chevron-right', `sv-chev${open ? ' turn' : ''}`));
+  const copyAll = h('span', { class: 'sv-acts' }, h('button', {
+    class: 'btn btn-sm', dataset: { key: `other:${g.id}:${p.id}:all` }, 'aria-label': `Copy the whole playthrough ${title} from ${g.name} into this profile`,
+    onclick: () => copyHere(g.name, 'this playthrough', owner => api.copyPlaythrough(p.id, g.id, [owner])),
+  }, icon('copy'), h('span', {}, 'Copy playthrough')));
+  const head = h('div', { class: 'sv-row' }, row, copyAll);
+  if (!open) return h('div', { class: 'sv-item', role: 'listitem' }, head);
+  return h('div', { class: 'sv-item open', role: 'listitem' }, head,
+    h('div', { class: 'sv-saves', role: 'list', 'aria-label': `Saves of ${title} in ${g.name}` }, ...(p.saves || []).map(s => h('div', { class: 'sv-save has-act', role: 'listitem' },
+      shotEl(s, 'sv-mini'),
+      h('span', { class: 'sv-sname' }, slotName(s), h('span', { class: 'sv-folder' }, s.folder)),
+      h('span', { class: 'sv-cell' }, s.level ? `Level ${s.level}` : ''),
+      h('span', { class: 'sv-cell' }, hours(s.playTime)),
+      h('span', { class: 'sv-cell', title: s.time ? when(s.time) : '' }, s.time ? ago(s.time) : ''),
+      h('span', { class: 'sv-cell num' }, s.gameVersion ? `v${s.gameVersion}` : ''),
+      h('span', { class: 'sv-acts' }, h('button', {
+        class: 'btn btn-sm', dataset: { key: `other:${g.id}:${s.folder}` }, 'aria-label': `Copy ${slotName(s)} from ${g.name} into this profile`,
+        onclick: () => copyHere(g.name, 'this save', owner => api.copySaves(g.id, [s.folder], [owner])),
+      }, icon('copy'), h('span', {}, 'Copy here')))))));
 }
 
 /** Copy a playthrough to other profiles (a taken slot name gets the next free ManualSave number). */

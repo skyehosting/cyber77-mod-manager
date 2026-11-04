@@ -1843,26 +1843,39 @@ class ModManager extends EventEmitter {
    * Copy a playthrough from one profile to others (a save already there is skipped; a slot name taken
    * there gets the next free ManualSave number). Never into the game's folder while the game runs.
    */
-  async copyPlaythrough(playthroughId, sourceId, targetIds) {
+  copyPlaythrough(playthroughId, sourceId, targetIds) {
     const pt = String(playthroughId).slice(0, 80);
+    return this.copySavesBetween(sourceId, targetIds, s => s.playthrough === pt);
+  }
+
+  /** Copy single saves (slot folders, e.g. ManualSave-83) from one profile to others, like a playthrough. */
+  async copySaves(sourceId, folders, targetIds) {
+    const want = new Set((Array.isArray(folders) ? folders : []).map(String).filter(f => SAVE_SLOT.test(f)).slice(0, 500));
+    if (!want.size) throw new Error('No such save.');
+    return this.copySavesBetween(sourceId, targetIds, s => want.has(s.folder));
+  }
+
+  async copySavesBetween(sourceId, targetIds, pick) {
     const list = this.data.profiles.list;
     if (!this.isProfile(sourceId)) throw new Error('That profile no longer exists.');
     const targets = [...new Set((Array.isArray(targetIds) ? targetIds : []).map(String))].filter(t => this.isProfile(t) && t !== sourceId);
-    if (!targets.length) return { copied: 0, renamed: 0, profiles: 0 };
+    if (!targets.length) return { copied: 0, renamed: 0, present: 0, profiles: 0 };
     return this.saves.exclusive(async () => {
       await this.recoverSwap();
       if (targets.includes(this.savesOwner()) && await this.gameRunning()) throw new Error('Close Cyberpunk 2077 first: saves cannot be added to the game while it runs.');
       let copied = 0;
       let renamed = 0;
+      let present = 0;
       for (const t of targets) {
-        const r = await this.profileSaves.copyPlaythrough(this.savesDirOf(sourceId), pt, this.savesDirOf(t));
+        const r = await this.profileSaves.copySaves(this.savesDirOf(sourceId), pick, this.savesDirOf(t));
         copied += r.copied;
         renamed += r.renamed;
+        present += r.present;
         try { this.profileSaves.label(t, list[t].name); } catch { /* named next time */ }
       }
-      this.log.success(`Copied ${plural(copied, 'save')} to ${plural(targets.length, 'profile')}${renamed ? ` (${renamed} under a new slot name)` : ''}`);
+      if (copied) this.log.success(`Copied ${plural(copied, 'save')} to ${plural(targets.length, 'profile')}${renamed ? ` (${renamed} under a new slot name)` : ''}`);
       this.emit('saves');
-      return { copied, renamed, profiles: targets.length };
+      return { copied, renamed, present, profiles: targets.length };
     });
   }
 

@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('api', {
   profileSaveCount: (id, stored) => call('saves:profileCount', id, stored),
   copyPlaythrough: (pt, source, targets) => call('saves:copyPlaythrough', pt, source, targets),
   copyAllSaves: (source, target) => call('saves:copyAll', source, target),
+  copySaves: (source, folders, targets) => call('saves:copySaves', source, folders, targets),
   openSaves: which => call('saves:open', which),
   chooseSaveBackupDir: () => call('saves:chooseDir'),
   mo2ProfileMods: id => call('mo2:profileMods', id),
