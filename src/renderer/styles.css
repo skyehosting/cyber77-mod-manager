@@ -226,21 +226,32 @@ h1, h2, h3, p { margin: 0; }
 .brand-text { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; flex: 1; }
 .brand-name { font-weight: var(--fw-bold); font-size: 0.98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-sub { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.side-toggle {
-  width: 1.9rem;
-  height: auto;
-  aspect-ratio: 1;
-  flex: none;
+/* The sidebar pill: rests on the sidebar's edge by the title, folds the sidebar to its rail and back. */
+.shell { position: relative; }
+.side-pill {
+  position: absolute;
+  z-index: 30;
+  top: 1.25rem;
+  left: calc(var(--side-w) - 0.5px);
+  transform: translateX(-50%);
+  width: 0.55rem;
+  height: 2.4rem;
+  padding: 0;
   display: grid;
   place-items: center;
-  border: 0;
-  border-radius: var(--r);
-  background: transparent;
-  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: transparent;
   cursor: pointer;
+  overflow: hidden;
+  transition: left .2s ease, top .2s ease, width .12s, background .12s, color .12s, border-color .12s;
 }
-.side-toggle:hover { background: var(--surface-3); color: var(--text); }
-.side-toggle .i { width: 1.2rem; stroke-width: 1.7; }
+.side-pill .i { width: 0.8rem; stroke-width: 2.4; transform: rotate(180deg); }
+.side-pill:hover, .side-pill:focus-visible { width: 1.15rem; background: var(--surface-2); border-color: var(--field-line); color: var(--text); }
+.side-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.side-collapsed .side-pill { left: calc(var(--rail-w) - 0.5px); top: 1.03rem; }
+.side-collapsed .side-pill .i { transform: none; }
 
 /* Play, and the profile it starts with */
 .play-card { display: flex; flex-direction: column; flex: none; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--surface-2); }
@@ -1277,6 +1288,7 @@ label.dep:hover { background: var(--hover); }
 .grid td .link-btn { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .link-btn.quiet:hover, .link-btn.quiet:focus-visible { color: var(--text); text-decoration: underline; }
 .link-btn.quiet.warn { color: var(--warn); }
+.link-btn.quiet.err { color: var(--err-text); }
 tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decoration: underline; color: var(--info-text); }
 
 /* ================================================================== toasts */
@@ -1656,7 +1668,6 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .lo-row .tag { flex: none; }
 .lo-moves { display: flex; gap: 0.15rem; flex: none; opacity: 0; transition: opacity .12s; }
 .lo-row:hover .lo-moves, .lo-row:focus-within .lo-moves { opacity: 1; }
-.lo-hint { margin-top: var(--sp-3); }
 
 /* ================================================================== Mods sort */
 .sort-pick { display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex: none; }
@@ -2888,7 +2899,7 @@ html[data-setup="open"] #shell { visibility: hidden; }
 /* ---- Manage saves: playthroughs (a character's saves) and backups (by day). Theme colours only. */
 .banner-cloud { background: color-mix(in srgb, var(--info) 10%, transparent); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent); color: var(--text); margin-bottom: var(--sp-4); }
 .banner-cloud .i { color: var(--info-text); }
-#saves-tabs { margin-bottom: var(--sp-4); }
+
 .sv-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
 .sv-item + .sv-item, .sv-bk + .sv-bk { border-top: 1px solid var(--line-soft); }
 .sv-pt { display: flex; align-items: center; gap: 1rem; width: 100%; min-height: 5.4rem; padding: 0.8rem 1.3rem; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -3001,6 +3012,103 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .row-chev .i { width: 1rem; height: 1rem; transition: transform .15s var(--ease); }
 .row-chev.open { color: var(--text); }
 .row-chev.open .i { transform: rotate(-90deg); }
-#mods-req-all { margin-left: auto; }
-#mods-req-all + .sort-pick { margin-left: var(--sp-2); }
 .toolbar.selecting > #mods-req-all { display: none; }
+
+/* Mods toolbar: search, then Show, Category and Sort side by side; Expand all at the very end. */
+#mods-toolbar .sort-pick { margin-left: 0; }
+#mods-toolbar .filter-pick select { max-width: 12rem; }
+#mods-req-all { margin-left: auto; }
+/* A Show or Category choice other than "all" is marked, so a shortened list is never a surprise. */
+.sort-pick select.is-set { border-color: var(--accent); color: var(--text); }
+@container (max-width: 62rem) { #mods-toolbar .filter-pick select, #mods-toolbar .cat-pick select { max-width: 8.5rem; } }
+
+/* Mods: one Status tag per row (its most pressing item, and how many more); it opens the details panel. */
+.tag.status-tag { display: inline-flex; align-items: center; gap: 0.3rem; }
+.status-tag .i { width: 0.85rem; flex: none; }
+.status-tag .status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status-tag .status-more { flex: none; padding-left: 0.3rem; border-left: 1px solid currentColor; opacity: 0.75; font-variant-numeric: tabular-nums; }
+
+/* Details panel: Status and Requirements as short lists; the Files list folded until opened. */
+.drawer-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.drawer-li { display: flex; align-items: center; gap: var(--sp-2); min-height: 2.4rem; padding: 0.3rem var(--sp-3); border-top: 1px solid var(--line); font-size: var(--fs-sm); }
+.drawer-li:first-child { border-top: 0; }
+.drawer-li-text { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.drawer-li-text .muted { color: var(--muted); }
+.drawer-li .tag { flex: none; }
+.drawer-li .btn { flex: none; }
+.sev-dot { width: 0.5rem; height: auto; aspect-ratio: 1; border-radius: 50%; flex: none; background: var(--muted); }
+.sev-dot.sev-err { background: var(--err); }
+.sev-dot.sev-warn { background: var(--warn); }
+.sev-dot.sev-info { background: var(--info); }
+.sev-dot.sev-ok { background: var(--ok); }
+.drawer-note { margin: var(--sp-2) 0 0; color: var(--muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.drawer-fold { margin-top: 1.4rem; }
+.drawer-fold > summary { display: flex; align-items: center; gap: var(--sp-2); width: fit-content; max-width: 100%; height: var(--control-h-sm); padding: 0 0.65rem 0 0.45rem; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface-2); color: var(--text); font-size: var(--fs-sm); font-weight: var(--fw-medium); cursor: pointer; list-style: none; user-select: none; }
+.drawer-fold > summary::-webkit-details-marker { display: none; }
+.drawer-fold > summary:hover { background: var(--surface-3); border-color: var(--field-line); }
+.drawer-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.drawer-fold > summary .i { width: 0.95rem; transition: transform .15s var(--ease); }
+.drawer-fold[open] > summary .i { transform: rotate(90deg); }
+.drawer-fold[open] > summary { margin-bottom: var(--sp-2); }
+
+/* A page whose title has its explanation beside it (Load order): one line of text instead of two blocks. */
+.page-head-inline { align-items: baseline; gap: var(--sp-2) var(--sp-5); }
+.page-head-inline h1 { flex: none; }
+.page-head-inline .head-desc { flex: 1 1 24rem; min-width: 0; max-width: 62rem; margin: 0; line-height: 1.45; }
+#page-loadorder .lo-status { margin: 0; flex: 0 1 auto; }
+
+/* Saves: one bar with the tabs, the folder and Back up now (as low as the tabs inside it), then the per-profile switch. */
+.saves-bar { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.saves-bar-end { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+.saves-pp { display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control-h-sm); margin-left: var(--sp-1); padding-left: var(--sp-3); border-left: 1px solid var(--line); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
+.saves-pp:hover { color: var(--text); }
+@media (max-width: 1080px) {
+  .saves-bar-end .btn.collapsible { padding: 0; width: auto; aspect-ratio: 1; }
+  .saves-bar-end .btn.collapsible span { display: none; }
+}
+
+/* Settings: App updates (Check every…, Check now) ends at the right edge, like every other control. */
+.set-row .upd-row { justify-content: flex-end; }
+
+/* Downloads: Open folder sits under Download, the same width, with the link hint to its left. */
+#page-downloads .dl-add { margin-bottom: var(--sp-2); }
+.dl-under { display: flex; align-items: flex-start; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.dl-under .dl-hint { flex: 1; min-width: 0; margin: 0; padding-top: 0.45rem; }
+.dl-under .dl-hint:empty { display: block; }
+.dl-under > .btn { flex: none; margin-left: auto; }
+#dl-go, #dl-open-folder { min-width: 8.5rem; }
+
+/* Play while it gets the game going: still green (not greyed out), its icon pulsing, the step as its label. */
+.play-btn.staging:disabled { background: var(--running-bg); color: var(--ok-text); cursor: progress; }
+.play-btn.staging .play-icon { animation: play-pulse 1.2s ease-in-out infinite; }
+.play-btn.staging .play-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: var(--fs-sm); }
+@keyframes play-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .play-btn.staging .play-icon { animation: none; } }
+
+/* ================================================================== Performance */
+#page-perf { overflow-y: auto; }
+.perf-block { margin-bottom: var(--sp-5); }
+.perf-block-head { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); min-width: 0; }
+.perf-meta { color: var(--muted); font-size: var(--fs-sm); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--sp-3); }
+.perf-tile { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; padding: var(--sp-3) var(--sp-4) var(--sp-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.perf-tile-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.perf-label { color: var(--muted); font-size: var(--fs-sm); font-weight: var(--fw-medium); flex: none; }
+.perf-readout { margin-left: auto; min-width: 0; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perf-value { font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--text); }
+.perf-sub { display: flex; flex-wrap: wrap; gap: 0.2rem var(--sp-3); min-height: 1.3em; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perf-legend { display: inline-flex; align-items: center; gap: 0.35rem; }
+.perf-swatch { width: 0.75rem; height: 2px; border-radius: 1px; flex: none; }
+.perf-swatch.perf-s0 { background: var(--accent); }
+.perf-swatch.perf-s1 { background: var(--info); }
+.perf-graph-wrap { margin-top: var(--sp-2); height: 3.2rem; cursor: crosshair; touch-action: none; }
+.perf-graph { display: block; width: 100%; height: 100%; overflow: visible; border-bottom: 1px solid var(--line); }
+.perf-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.perf-line.perf-s0 { stroke: var(--accent); }
+.perf-line.perf-s1 { stroke: var(--info); }
+.perf-area { fill: var(--accent); opacity: 0.12; stroke: none; }
+.perf-cross { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 2 2; }
+.perf-tile.no-graph .perf-graph-wrap { display: none; }
+.perf-empty { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); color: var(--muted); font-size: var(--fs-sm); }
+.perf-empty .i { flex: none; width: 1.1rem; }
+#perf-notes .banner { margin-bottom: var(--sp-3); }

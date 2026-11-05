@@ -133,6 +133,7 @@ function renderSaves() {
     : 'no backup yet';
   $('#saves-sub').textContent = [v.saves.length ? `${plural(v.saves.length, 'save')} in ${plural(pts.length, 'playthrough')}` : 'No saves on this PC yet', backupText].join(' · ');
   $('#saves-backup').disabled = !v.saves.length || !!sv.busy;
+  $('#saves-perprofile').checked = !!v.perProfile;
   // Cloud saves: backups only copy, so they are safe with them; restoring changes the saves Steam then uploads.
   const pp = v.perProfile;
   const ownerName = pp ? v.profiles.find(p => p.id === pp.owner)?.name || '' : '';
@@ -165,16 +166,12 @@ function perProfileHint(v) {
       h('span', {}, `${plural(stored, 'playthrough')} ${stored === 1 ? 'is' : 'are'} still in profiles' own folders, from when each profile had its own saves. The game does not see ${stored === 1 ? 'it' : 'them'} until copied in. `,
         h('button', { class: 'link-btn', dataset: { key: 'pt:stored-hint' }, onclick: () => { sv.tab = 'others'; renderSaves(); } }, 'Show them')))];
   }
-  const open = () => {
-    state.settingsJump = 'saves';
-    goTo('settings');
-    $('#s-save-perprofile')?.focus();
-  };
+  const open = () => $('#saves-perprofile').focus();
   return [h('p', { class: 'sv-foot sv-hint' }, icon('users'),
     h('span', {}, v.profiles.length > 1
-      ? 'Want each profile to keep its own saves, and to copy playthroughs between profiles? Turn on "Separate saves for each profile". '
-      : 'With a second profile, each profile can keep its own saves, and playthroughs can be copied between them: "Separate saves for each profile". ',
-    h('button', { class: 'link-btn', dataset: { key: 'pt:perprofile-hint' }, onclick: open }, 'Open the Save manager settings')))];
+      ? 'Want each profile to keep its own saves, and to copy playthroughs between profiles? Turn on "Saves per profile" at the end of the bar above. '
+      : 'With a second profile, each profile can keep its own saves, and playthroughs can be copied between them: "Saves per profile", at the end of the bar above. ',
+    h('button', { class: 'link-btn', dataset: { key: 'pt:perprofile-hint' }, onclick: open }, 'Show me the switch')))];
 }
 
 function playthroughsView(v) {
@@ -449,9 +446,11 @@ async function backupNow() {
   }
 }
 
-$('#s-save-perprofile').addEventListener('change', async ev => {
-  const box = ev.currentTarget;
-  const on = box.checked;
+/** Saves per profile, on or off: the same switch in Settings and on the Saves page's bar (each follows the other). */
+async function changePerProfile(ev) {
+  const on = ev.currentTarget.checked;
+  const boxes = ['#s-save-perprofile', '#saves-perprofile'].map(sel => $(sel)).filter(Boolean);
+  const box = { set checked(v) { for (const b of boxes) b.checked = v; } };
   const ok = await modal({
     title: on ? 'Give each profile its own saves?' : 'Share one set of saves again?',
     body: h('div', {}, ...(on ? [
@@ -484,6 +483,7 @@ $('#s-save-perprofile').addEventListener('change', async ev => {
   }
   const r = await run(api.setPerProfileSaves(on, owner));
   if (!r) { box.checked = !on; return; }
+  box.checked = on;
   state.settings = { ...(state.settings || {}), perProfileSaves: on };
   toast(on ? 'Each profile now has its own saves' : 'Profiles share one set of saves again', 'success');
   // Off: say where saves the game no longer sees are, and lead there.
@@ -496,7 +496,9 @@ $('#s-save-perprofile').addEventListener('change', async ev => {
       });
     }
   }
-});
+}
+$('#s-save-perprofile').addEventListener('change', changePerProfile);
+$('#saves-perprofile').addEventListener('change', changePerProfile);
 
 $('#saves-backup').addEventListener('click', backupNow);
 $('#saves-open').addEventListener('click', () => run(api.openSaves('saves')));

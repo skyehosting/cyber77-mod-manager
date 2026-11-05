@@ -66,7 +66,7 @@ function renderLoadOrder() {
   const v = lo.view;
   if (!v) return;
   $('#lo-status').textContent = !v.archives.length ? 'No archive mods in archive\\pc\\mod.'
-    : v.custom ? `${plural(v.archives.length, 'archive')} · drag rows to reorder · saved to modlist.txt` : `${plural(v.archives.length, 'archive')} · the game's default: alphabetical · drag rows to reorder`;
+    : v.custom ? `${plural(v.archives.length, 'archive')} · your order` : `${plural(v.archives.length, 'archive')} · the game's default: alphabetical`;
   $('#lo-reset').disabled = !v.custom;
   $('#lo-auto').disabled = !v.archives.length;
   const SRC = { app: '', vortex: 'Vortex', other: 'Not from a mod manager' };

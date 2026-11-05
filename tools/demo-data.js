@@ -230,7 +230,7 @@
     state.modFilter = 'all';
     state.modSort = 'az';
     document.querySelector('#mods-sort').value = 'az';
-    setSegActive('#mods-filter', 'f', 'all');
+    state.modCat = '';
     document.querySelector('#modal-back').hidden = true;
     document.querySelector('#drawer').hidden = true;
     state.drawerMod = null;

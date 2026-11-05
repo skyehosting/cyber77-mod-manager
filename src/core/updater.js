@@ -58,10 +58,11 @@ class AppUpdater extends EventEmitter {
     this.up.on('checking-for-update', () => this.set({ status: 'checking', error: '' }));
     this.up.on('update-not-available', () => this.set({ status: 'current', lastCheck: Date.now() }));
     this.up.on('update-available', info => {
+      this.progressAt = Date.now();
       this.set({ status: 'downloading', available: info.version, progress: 0, lastCheck: Date.now() });
       this.log.info(`Edgerunners Mod Manager ${info.version} is available; downloading it`);
     });
-    this.up.on('download-progress', p => this.set({ progress: Math.round(p.percent || 0) }));
+    this.up.on('download-progress', p => { this.progressAt = Date.now(); this.set({ progress: Math.round(p.percent || 0) }); });
     this.up.on('update-downloaded', info => {
       this.set({ status: 'ready', available: info.version, progress: 100 });
       this.log.success(`Edgerunners Mod Manager ${info.version} is downloaded and installs with a restart`);
@@ -86,6 +87,17 @@ class AppUpdater extends EventEmitter {
     this.emit('state', this.state);
   }
 
+  /**
+   * The check made before the app opened (core/launchUpdate.js): the first scheduled check is not
+   * made again. Nothing newer: up to date as of now. Found, still downloading: shown as downloading.
+   */
+  afterLaunchCheck(result) {
+    if (!this.enabled || !result) return;
+    if (result.outcome === 'none') { this.skipFirstCheck = true; this.set({ status: 'current', lastCheck: Date.now(), error: '' }); }
+    if (result.downloaded) { this.skipFirstCheck = true; this.set({ status: 'ready', available: result.downloaded, progress: 100, lastCheck: Date.now() }); return; }
+    if (result.outcome === 'background') { this.skipFirstCheck = true; this.progressAt = Date.now(); this.set({ status: 'downloading', available: result.version || '', lastCheck: Date.now() }); }
+  }
+
   /** (Re)start the schedule; called at start and when the settings change. */
   start() {
     if (!this.enabled) return;
@@ -96,7 +108,8 @@ class AppUpdater extends EventEmitter {
     if (mode === 'off') return;
     const { every, unit } = this.getSchedule();
     this.timer = setInterval(() => this.scheduledCheck(), intervalMs(every, unit));
-    this.scheduledCheck();
+    if (this.skipFirstCheck) this.skipFirstCheck = false;
+    else this.scheduledCheck();
   }
 
   /** A check on the schedule: not while the game runs (it then runs when the game closes). */
@@ -121,7 +134,9 @@ class AppUpdater extends EventEmitter {
   check() {
     if (!this.enabled) return Promise.resolve(this.state);
     // A downloaded update waits for its restart; checking again would download it again.
-    if (['downloading', 'ready', 'checking'].includes(this.state.status)) return Promise.resolve(this.state);
+    // (A download with no progress for 10 minutes is given up on: it may have died without a word.)
+    const stuck = this.state.status === 'downloading' && Date.now() - (this.progressAt || 0) > 10 * UNIT_MS.minutes;
+    if (['downloading', 'ready', 'checking'].includes(this.state.status) && !stuck) return Promise.resolve(this.state);
     return this.up.checkForUpdates().then(() => this.state).catch(() => this.state);
   }
 

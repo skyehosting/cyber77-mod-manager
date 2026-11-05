@@ -23,7 +23,7 @@ class Settings {
       concurrentDownloads: 4,
       categories: ['MAIN'], // the file categories ticked for you when you download a mod
       categoriesV2: false, // the old default (every category but old and archived) was moved to Main only
-      autoInstall: 'main', // 'off' | 'main' | 'all'
+      autoInstall: 'all', // 'off' | 'main' | 'all': what installs by itself when its download finishes (then enabled, unless autoEnable is off)
       autoEnable: true,
       installDependencies: true,
       handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
@@ -31,6 +31,8 @@ class Settings {
       updateEvery: 1, // how often the app looks for a new version of itself (also each time it opens)…
       updateUnit: 'days', // …in 'minutes' | 'hours' | 'days'
       updateMode: 'auto', // 'auto' install with a restart | 'ask' before restarting | 'off' no checks by itself
+      launchInstallTried: '', // the version last installed before opening (the same one again: it did not take)
+      updateOnLaunch: true, // with 'auto': check before the window opens and install a newer version first (like Discord)
       launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'steam': through Steam, with its overlay
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       prereqsWaived: [], // Linux: Proton folders where Play goes on without asking for vcrun2022 / d3dcompiler_47
@@ -58,6 +60,9 @@ class Settings {
       aiTimeout: 5, // minutes one request to the AI provider may take (local models can be slow)
       aiContext: 0, // the model's context window in tokens; 0: ask the provider
       playsKeep: 25, // how many plays (each launch's logs) the Game log keeps
+      perfInterval: 1000, // the Performance page: milliseconds between readings (500 to 10000)
+      perfHistory: 60, // seconds of history its graphs show
+      perfGraphs: true, // graphs under the numbers
       uiScale: 0, // the app's scale in percent, used instead of Windows' scale; 0: follow Windows
       windowBg: '', // the theme's page colour (#rrggbb), so the window opens in it instead of flashing dark
       aiKeyEnc: '',
@@ -75,6 +80,14 @@ class Settings {
     if (!d.updateDailyV1) {
       if (d.updateEvery === 2 && d.updateUnit === 'minutes') { d.updateEvery = 1; d.updateUnit = 'days'; }
       d.updateDailyV1 = true;
+      this.store.save();
+    }
+    // Every finished download now installs (and enables) by itself, not only Main files: copies on the
+    // old default follow, once (a later choice of Main files only stays).
+    if (!d.autoInstallAllV1) {
+      // Said once when the app opens (main.js), with where to change it back.
+      if (d.autoInstall === 'main') { d.autoInstall = 'all'; this.movedAutoInstall = true; }
+      d.autoInstallAllV1 = true;
       this.store.save();
     }
     // The data folder in use: one chosen in Settings takes over after a restart (the library and the
@@ -242,6 +255,8 @@ class Settings {
     if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 1));
     if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
     if (['auto', 'ask', 'off'].includes(patch.updateMode)) d.updateMode = patch.updateMode;
+    if ('updateOnLaunch' in patch) d.updateOnLaunch = !!patch.updateOnLaunch;
+    if (typeof patch.launchInstallTried === 'string') d.launchInstallTried = patch.launchInstallTried.slice(0, 40);
     if ('launchMode' in patch && ['direct', 'steam', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode === 'store' ? 'steam' : patch.launchMode;
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     // Linux: Proton folders whose missing mod-loader components the player chose to start without.
@@ -274,6 +289,9 @@ class Settings {
     if (patch.redmodLast && typeof patch.redmodLast === 'object') d.redmodLast = { ok: !!patch.redmodLast.ok, at: Number(patch.redmodLast.at) || 0, reason: String(patch.redmodLast.reason || '').slice(0, 2000) };
     if ('windowBg' in patch) d.windowBg = /^#[0-9a-f]{6}$/i.test(String(patch.windowBg)) ? String(patch.windowBg) : '';
     if ('uiScale' in patch) { const v = Math.round(Number(patch.uiScale) || 0); d.uiScale = v ? Math.min(300, Math.max(50, v)) : 0; }
+    if ('perfInterval' in patch) d.perfInterval = Math.min(10000, Math.max(500, parseInt(patch.perfInterval, 10) || 1000));
+    if ('perfHistory' in patch) d.perfHistory = Math.min(600, Math.max(10, parseInt(patch.perfHistory, 10) || 60));
+    if ('perfGraphs' in patch) d.perfGraphs = !!patch.perfGraphs;
     if ('playsKeep' in patch) d.playsKeep = Math.min(500, Math.max(1, parseInt(patch.playsKeep, 10) || 25));
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));

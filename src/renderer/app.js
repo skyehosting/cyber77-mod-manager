@@ -109,6 +109,8 @@ const state = {
 // ---------------------------------------------------------------- navigation
 
 const pageHooks = {};
+// Called with the page shown after every page change (a page that works only while shown stops on leaving).
+const pageChangeHooks = [];
 
 function goTo(page) {
   if (typeof closeColourPicker === 'function') closeColourPicker(); // theme-editor.js: a picker belongs to its page
@@ -124,6 +126,7 @@ function goTo(page) {
     if (state.settingsJump) { showSettingsSection(state.settingsJump, false); state.settingsJump = ''; } else spySettings();
   }
   pageHooks[page]?.();
+  for (const fn of pageChangeHooks) fn(page);
 }
 
 // ---- Settings sections: one scrolling column, and a list of its sections that follows the scroll
@@ -212,7 +215,6 @@ function setSidebar(collapsed, remember = true) {
   t.title = `${label} (Ctrl+B)`;
   t.setAttribute('aria-label', label);
   t.setAttribute('aria-expanded', String(!collapsed));
-  t.querySelector('use').setAttribute('href', collapsed ? '#i-panel-open' : '#i-panel');
   if (remember) store.set('side.collapsed', collapsed);
   if (collapsed) closeProfileMenu(); // the rail has no profile field: its Profiles icon is the way there
 }
@@ -498,6 +500,7 @@ function renderModCats() {
   const opts = [['', `All categories (${rows.length})`], [NO_CAT, `Unassigned (${count.get(NO_CAT) || 0})`],
     ...names.map(n => [n, `${n} (${count.get(n) || 0})`])];
   const sel = $('#mods-cat');
+  sel.classList.toggle('is-set', !!state.modCat);
   // Rebuilt only when it changed: a list rebuilt while open would close under the pointer.
   const sig = JSON.stringify(opts);
   if (sel.dataset.sig === sig) return;
@@ -510,20 +513,43 @@ function visibleMods() {
   return groupedMods().filter(m => passesModFilters(m, true)).sort(SORTS[state.modSort] || byName);
 }
 
-/** Whether a row is listed: the search, the Category filter (when byCat) and the other filter. */
-function passesModFilters(m, byCat) {
+// The Show filter: which mods each choice lists, in the order the list offers them.
+const MOD_FILTERS = [
+  ['all', 'All mods', () => true],
+  ['enabled', 'Enabled', m => !!m.enabled],
+  ['disabled', 'Disabled', m => !m.enabled],
+  ['updates', 'With updates', m => !!rowUpdateId(m)],
+  ['problems', 'With problems', m => hasProblem(m)],
+  ['conflicts', 'With file conflicts', m => !!state.snap.conflicts[m.id]],
+  ['repair', 'Needing repair', m => !!m.health],
+  ['vortex', 'In Vortex', m => !!m.vortex],
+];
+const modFilterTest = f => (MOD_FILTERS.find(x => x[0] === f) || MOD_FILTERS[0])[2];
+
+/** Whether a row is listed: the search, the Category filter (when byCat) and the Show filter (when byShow). */
+function passesModFilters(m, byCat, byShow = true) {
   const q = $('#mods-search').value.trim().toLowerCase();
   // By name only (its own and its Nexus mod's): a search for "red4ext" is not every RED4ext plugin.
   if (q && ![m.name, m.modName].filter(Boolean).join(' ').toLowerCase().includes(q)) return false;
   if (byCat && state.modCat && (modCatOf(m) || NO_CAT) !== state.modCat) return false;
-  if (state.modFilter === 'enabled') return !!m.enabled;
-  if (state.modFilter === 'disabled') return !m.enabled;
-  if (state.modFilter === 'conflicts') return !!state.snap.conflicts[m.id];
-  if (state.modFilter === 'problems') return hasProblem(m);
-  if (state.modFilter === 'updates') return !!rowUpdateId(m);
-  if (state.modFilter === 'repair') return !!m.health;
-  if (state.modFilter === 'vortex') return !!m.vortex;
-  return true;
+  return !byShow || modFilterTest(state.modFilter)(m);
+}
+
+/** The Show filter's choices, each with how many it would list (with the search and category as they are). */
+function renderModFilter() {
+  const rows = groupedMods().filter(m => passesModFilters(m, true, false));
+  // Repair and Vortex only when they have something (or are the choice now); the rest always.
+  const opts = MOD_FILTERS.map(([value, label, test]) => [value, label, rows.filter(test).length])
+    .filter(([value, , n]) => n || !['repair', 'vortex'].includes(value) || value === state.modFilter)
+    .map(([value, label, n]) => [value, `${label} (${n})`]);
+  const sel = $('#mods-filter');
+  sel.classList.toggle('is-set', state.modFilter !== 'all');
+  const sig = JSON.stringify(opts);
+  if (sel.dataset.sig !== sig) {
+    sel.dataset.sig = sig;
+    sel.replaceChildren(...opts.map(([value, text]) => h('option', { value }, text)));
+  }
+  sel.value = state.modFilter;
 }
 
 // The Mods list order (kept between sessions). The "recent" ones put the latest first and
@@ -552,22 +578,6 @@ const ago = t => {
 // A to Z, ignoring case and accents, with numbers in number order (Mod 2 before Mod 10).
 const nameOrder = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
 const byName = (a, b) => nameOrder.compare(a.name, b.name) || nameOrder.compare(a.version || '', b.version || '');
-
-function conflictCell(m, byId) {
-  const c = state.snap.conflicts[m.id];
-  const vxHits = state.snap.vortex?.overlaps?.[m.id] || [];
-  const vxTag = vxHits.length ? h('button', {
-    class: 'tag tag-warn', title: `Shares files with Vortex mods: ${vxHits.map(id => byId[id]?.name || id.slice(3)).join(', ')}. One app will overwrite the other's files.`,
-    onclick: ev => { ev.stopPropagation(); openDrawer(m.id); },
-  }, `Vortex ${vxHits.length}`) : null;
-  if (!c) return vxTag;
-  const others = c.with.map(id => byId[id]?.name || id).join(', ');
-  const open = ev => { ev.stopPropagation(); openDrawer(m.id, 'conflicts'); };
-  return h('span', { class: 'chips-row' },
-    vxTag,
-    c.wins ? h('button', { class: 'tag tag-ok', title: `Wins ${plural(c.wins, 'file')} over ${others} — click to review`, onclick: open }, `Wins ${c.wins}`) : null,
-    c.loses ? h('button', { class: 'tag tag-warn', title: `Loses ${plural(c.loses, 'file')} to ${others} — click to resolve`, onclick: open }, `Loses ${c.loses}`) : null);
-}
 
 function versionMenu(m) {
   const label = v => `${v.enabled ? '✓ ' : ''}${v.version ? `v${v.version}` : v.name}`;
@@ -728,9 +738,102 @@ function reqRows(m, neededBy) {
 
 const hasProblem = m => !!(m.health || m.warnings?.length || state.modLogProblems[m.id] || reqProblem(m));
 
+/**
+ * What a mod's Status says, most pressing first: [{ sev: 'err' | 'warn' | 'info' | 'ok', text,
+ * section, detail }]. The list shows the first as one tag (and how many more); the details panel
+ * lists them all, each leading to its own section there.
+ */
+function modStatusItems(m, neededBy, byId = {}) {
+  const items = [];
+  const names = ids => ids.map(id => byId[id]?.name || String(id).replace(/^vx:/, '')).join(', ');
+  const reqs = reqsOf(m.id);
+  if (m.enabled) {
+    const missing = reqs.filter(q => q.state === 'missing' || q.state === 'official').length;
+    const off = reqs.filter(q => q.state === 'off').length;
+    if (missing) items.push({ sev: 'err', text: missing === 1 ? 'Requirement missing' : `${missing} requirements missing`, section: 'reqs' });
+    if (off) items.push({ sev: 'warn', text: off === 1 ? 'Requirement off' : `${off} requirements off`, section: 'reqs' });
+  }
+  if (m.health) items.push({ sev: m.health.missing ? 'err' : 'warn', text: m.health.missing ? `${plural(m.health.missing, 'file')} missing` : `${plural(m.health.replaced, 'file')} replaced`, section: 'health' });
+  const logIssues = state.modLogProblems[m.id];
+  if (logIssues) items.push({ sev: 'err', text: plural(logIssues, 'log error'), section: 'logs' });
+  if (m.warnings?.length) items.push({ sev: 'warn', text: plural(m.warnings.length, 'install warning'), section: 'warnings' });
+  const c = state.snap.conflicts[m.id];
+  if (c?.loses) items.push({ sev: 'warn', text: `Loses ${plural(c.loses, 'file')}`, section: 'conflicts', detail: `to ${names(c.with)}` });
+  const vxHits = state.snap.vortex?.overlaps?.[m.id] || [];
+  if (vxHits.length) items.push({ sev: 'warn', text: `Shares files with ${plural(vxHits.length, 'Vortex mod')}`, section: '', detail: `${names(vxHits)}: whichever app deploys last wins them` });
+  const upd = state.snap.updates?.[rowUpdateId(m) || m.id];
+  if (upd) items.push({ sev: 'info', text: upd.version ? `${upd.version} available` : 'Update available', section: 'update' });
+  const needers = neededBy.get(m.id) || [];
+  if (needers.length) items.push({ sev: 'info', text: `Needed by ${needers.length}`, section: 'reqs', detail: needers.join(', ') });
+  if (c?.wins) items.push({ sev: 'ok', text: `Wins ${plural(c.wins, 'file')}`, section: 'conflicts', detail: `over ${names(c.with)}` });
+  const twin = state.snap.vortex?.twins?.[m.id];
+  if (twin) items.push({ sev: 'info', text: 'Also in Vortex', section: '', detail: `while it is enabled here, Vortex's copy is switched off${twin.enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}` });
+  return items;
+}
+const SEV_ICON = { err: 'alert', warn: 'alert', info: 'info', ok: 'check' };
+
+/** A mod's Status in the list: its most pressing item as one tag that opens the details panel at Status. */
+function statusTag(m, items) {
+  if (!items.length) return null;
+  const [top] = items;
+  const all = items.map(i => i.text).join(', ');
+  return h('button', {
+    class: `tag tag-${top.sev} status-tag`, dataset: { key: `${m.id}:status` },
+    title: `${items.map(i => i.text).join(' · ')}\nClick for the details`, 'aria-label': `${m.name}: ${all}. Show the details`,
+    onclick: ev => { ev.stopPropagation(); openDrawer(m.id, 'status'); },
+  }, icon(SEV_ICON[top.sev]), h('span', { class: 'status-text' }, top.text), items.length > 1 ? h('span', { class: 'status-more' }, `+${items.length - 1}`) : null);
+}
+
+/** The details panel's Status: every item, each with a way to its own section below (when there is one). */
+function statusSection(items) {
+  if (!items.length) return [];
+  return [
+    h('h2', { dataset: { section: 'status' } }, 'Status'),
+    h('div', { class: 'drawer-list' }, items.map(i => h('div', { class: 'drawer-li' },
+      h('span', { class: `sev-dot sev-${i.sev}`, 'aria-hidden': 'true' }),
+      h('span', { class: 'drawer-li-text' }, i.text, i.detail ? h('span', { class: 'muted' }, ` · ${i.detail}`) : null),
+      i.section ? h('button', {
+        class: 'btn btn-sm', dataset: { gotoSection: i.section },
+        onclick: ev => $('#drawer-body').querySelector(`[data-section="${ev.currentTarget.dataset.gotoSection}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+      }, h('span', {}, 'Show')) : null))),
+  ];
+}
+
+/** Status items lead to their section only where the panel has one (a Show button with nowhere to go is removed). */
+function dropDeadLinks(body) {
+  for (const b of body.querySelectorAll('[data-goto-section]')) if (!body.querySelector(`[data-section="${b.dataset.gotoSection}"]`)) b.remove();
+}
+
+/** The details panel's Requirements: each mod this one needs, whether it is there and on, and the fix. */
+function reqSection(m, neededBy) {
+  const list = reqsOf(m.id);
+  const needers = neededBy.get(m.id) || [];
+  if (!list.length && !needers.length) return [];
+  const STATE = { on: ['tag-ok', 'On'], off: ['tag-warn', 'Off'], missing: ['tag-err', 'Missing'], outside: ['tag-off', 'Not managed here'], builtin: ['tag-ok', 'Part of the game'], official: ['tag-warn', 'Not installed'], external: ['tag-off', 'Not on Nexus'] };
+  return [
+    h('h2', { dataset: { section: 'reqs' } }, list.length ? `Requirements · ${list.length}` : 'Requirements'),
+    list.length ? h('div', { class: 'drawer-list' }, list.map(q => {
+      const [cls, label] = STATE[q.state] || ['tag-off', String(q.state || '')];
+      const page = Number(q.modId) > 0 ? `https://www.nexusmods.com/cyberpunk2077/mods/${Number(q.modId)}` : '';
+      const action = q.state === 'off' && q.id
+        ? h('button', { class: 'btn btn-sm', dataset: { key: `dreq:${q.id}:on` }, onclick: () => setModsEnabled([q.id], true) }, icon('check'), h('span', {}, 'Enable'))
+        : q.state === 'missing' && page
+          ? h('button', { class: 'btn btn-sm', dataset: { key: `dreq:${q.modId}:dl` }, onclick: () => downloadLinks(page) }, icon('download'), h('span', {}, 'Download'))
+          : ['official', 'external'].includes(q.state) && q.url ? h('button', { class: 'btn btn-sm', onclick: () => api.openLink(q.url) }, h('span', {}, 'Open page')) : null;
+      return h('div', { class: 'drawer-li' },
+        h('span', { class: 'drawer-li-text' }, q.id || page
+          ? h('button', { class: 'link-btn quiet', title: q.id ? `${q.name}: open its details` : `${q.name}: open its Nexus page`, onclick: () => { if (q.id) openDrawer(q.id); else api.openLink(page); } }, q.name)
+          : q.name),
+        h('span', { class: `tag ${cls}` }, label), action);
+    })) : null,
+    needers.length ? h('p', { class: 'drawer-note' }, `Needed by ${needers.join(', ')}`) : null,
+  ];
+}
+
 function renderMods() {
   const all = allMods();
   renderModCats();
+  renderModFilter();
   const mods = visibleMods();
   const ids = mods.map(m => m.id);
   for (const id of [...state.modSel]) if (!all.some(m => m.id === id)) state.modSel.delete(id);
@@ -739,12 +842,6 @@ function renderMods() {
   const neededBy = neededByMap(all);
 
   keepFocus(tbody, () => tbody.replaceChildren(...mods.flatMap(m => {
-    const logIssues = state.modLogProblems[m.id];
-    const upd = state.snap.updates?.[rowUpdateId(m) || m.id]; // the same update the Updates filter counts
-    const tagBtn = (cls, title, section, text, extra = {}) => h('button', {
-      class: `tag ${cls}`, title, dataset: { key: `${m.id}:${section}` }, ...extra,
-      onclick: ev => { ev.stopPropagation(); openDrawer(m.id, section); },
-    }, text);
     // While the change is applied the switch stays focusable (aria-disabled), so focus isn't lost.
     const switchBtn = h('button', {
       class: `switch${m.enabled ? ' on' : ''}`, role: 'switch', 'aria-checked': m.enabled ? 'true' : 'false',
@@ -765,8 +862,6 @@ function renderMods() {
     const who = m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ');
     const kind = [m.vortex ? 'Vortex' : '', modCatOf(m), m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
     const sub = [who, kind, stamp].filter(Boolean).join(' · ');
-    const needers = neededBy.get(m.id) || [];
-    const reqIssue = reqProblem(m) ? reqsOf(m.id).find(q => q.state === 'missing' || q.state === 'official') ? 'missing' : 'off' : '';
     const reqCount = reqsOf(m.id).length;
     const reqOpenNow = reqCount > 0 && reqIsOpen(m.id);
     return [h('tr', {
@@ -806,15 +901,7 @@ function renderMods() {
       h('div', { class: 'name-line' },
         h('button', { class: 'name-btn', title: `${m.name} — open details`, dataset: { key: `${m.id}:name` }, onclick: ev => { ev.stopPropagation(); openDrawer(m.id); } }, m.name)),
       sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
-    h('td', { class: 'status-cell' }, h('div', { class: 'chips-row' },
-        needers.length ? h('span', { class: 'tag tag-info', title: `Needed by ${needers.join(', ')}` }, `Needed by ${needers.length}`) : null,
-        reqIssue ? h('span', { class: `tag ${reqIssue === 'missing' ? 'tag-err' : 'tag-warn'}`, title: 'See its requirements below it' }, reqIssue === 'missing' ? 'Requirement missing' : 'Requirement off') : null,
-        state.snap.vortex?.twins?.[m.id] ? h('span', { class: 'tag tag-vortex', title: `Also installed in Vortex. While it is enabled here, Vortex's copy is switched off${state.snap.vortex.twins[m.id].enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}.` }, 'Also in Vortex') : null,
-        m.warnings?.length ? tagBtn('tag-warn tag-icon', `${plural(m.warnings.length, 'install warning')} — click to see`, 'warnings', icon('alert'), { 'aria-label': plural(m.warnings.length, 'install warning') }) : null,
-        logIssues ? tagBtn('tag-err', 'Errors in this mod\'s game logs — click to see them', 'logs', `${logIssues} log error${logIssues === 1 ? '' : 's'}`) : null,
-        m.health ? tagBtn('tag-warn', 'Files missing from the game folder or replaced by another tool — click to repair', 'health', m.health.missing ? `${m.health.missing} missing` : `${m.health.replaced} replaced`) : null,
-        upd ? tagBtn('tag-info', `Update available: ${upd.name}${upd.version ? ` v${upd.version}` : ''} — click for details`, 'update', upd.version ? `${upd.version} available` : 'Update', { 'aria-label': `Update to ${upd.version || 'a newer version'}` }) : null,
-        conflictCell(m, byId))),
+    h('td', { class: 'status-cell' }, h('div', { class: 'chips-row' }, statusTag(m, modStatusItems(m, neededBy, byId)))),
     h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : h('span', { class: 'ver-text' }, m.version || ''))), ...reqRows(m, neededBy)];
   })), null);
 
@@ -860,18 +947,14 @@ function renderMods() {
       title: 'Vortex\'s mods follow Vortex\'s own profile, not this app\'s profiles. Settings → Vortex can move them here.',
     }, `${vxCount} in Vortex (${vxOn} on${prof ? `, its profile "${prof}"` : ''})`));
   }
-  $('#mods-filter-vortex').hidden = !vxCount;
-  $('#mods-vx-count').textContent = vxCount || '';
   $('#mods-open-vortex').hidden = !state.snap.vortex?.installed;
   const link = (text, f, cls = '') => h('button', { class: `link-btn quiet ${cls}`, onclick: () => setModFilter(f) }, text);
   if (broken) sub.append(' · ', link(`${plural(broken, 'mod')} need${broken === 1 ? 's' : ''} repair`, 'repair', 'warn'));
   if (conflicts) sub.append(' · ', link(`${plural(conflicts, 'mod')} with file conflicts`, 'conflicts'));
   if (updates.length) sub.append(' · ', link(`${plural(updates.length, 'update')} available`, 'updates'));
+  // Problems: what the red count on the old filter tab said, now a link like the others.
+  if (problems) sub.append(' · ', link(`${plural(problems, 'mod')} with problems`, 'problems', 'err'));
 
-  $('#mods-upd-count').textContent = updates.length || '';
-  // Counted like the Conflicts filter: rows (versions of one mod are one) with a file conflict.
-  $('#mods-conf-count').textContent = rows.filter(m => state.snap.conflicts[m.id]).length || '';
-  $('#mods-prob-count').textContent = problems || '';
   const updAll = $('#mods-update-all');
   updAll.hidden = updates.length === 0;
   updAll.querySelector('span').textContent = `Update all (${updates.length})`;
@@ -895,8 +978,7 @@ function renderMods() {
   paintModSelection();
 }
 function setModFilter(f) {
-  state.modFilter = f;
-  setSegActive('#mods-filter', 'f', f);
+  state.modFilter = MOD_FILTERS.some(x => x[0] === f) ? f : 'all';
   renderMods();
 }
 
@@ -916,7 +998,7 @@ $('#mods-sort').addEventListener('change', ev => {
   store.set('modSort', state.modSort);
   renderMods();
 });
-$$('#mods-filter .seg-btn').forEach(b => b.addEventListener('click', () => setModFilter(b.dataset.f)));
+$('#mods-filter').addEventListener('change', ev => setModFilter(ev.target.value));
 $('#mods-all').addEventListener('change', ev => {
   visibleMods().forEach(m => (ev.target.checked ? state.modSel.add(m.id) : state.modSel.delete(m.id)));
   paintModSelection();
@@ -1161,14 +1243,17 @@ function closeDrawer() {
 }
 
 /** What the drawer shows depends on these; a snapshot that changes none of them leaves it alone. */
-const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedAt, m.fileCount, m.warnings, m.health, state.snap.conflicts[m.id], state.snap.updates?.[m.id], state.modLogProblems[m.id]]);
+const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedAt, m.fileCount, m.warnings, m.health, state.snap.conflicts[m.id], state.snap.updates?.[m.id], state.modLogProblems[m.id],
+  reqsOf(m.id), state.snap.vortex?.overlaps?.[m.id], state.snap.vortex?.twins?.[m.id], modCatOf(m), neededByMap(allMods()).get(m.id) || []]);
+// The Files list in the details panel: folded unless opened (it stays open for the next mod once opened).
+let drawerFilesOpen = false;
 
 let drawerSeq = 0;
 
 async function openDrawer(id, focusSection = '', takeFocus = true) {
   const m = allMods().find(x => x.id === id);
   if (!m) return;
-  if (m.vortex) { openVortexDrawer(m, takeFocus && !(!$('#drawer').hidden && state.drawerMod === id)); return; }
+  if (m.vortex) { openVortexDrawer(m, takeFocus && !(!$('#drawer').hidden && state.drawerMod === id), focusSection); return; }
   const seq = ++drawerSeq;
   const wasOpen = !$('#drawer').hidden && state.drawerMod === id;
   if (!wasOpen && $('#drawer').hidden) {
@@ -1201,10 +1286,19 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
       m.enabled ? act('Disable', 'ban', 'disable') : act('Enable', 'check', 'enable', 'btn-primary'),
       hasConflicts && !(conflicts || []).length ? act('Win conflicts', 'arrow-up', 'prioritize') : null,
       act('Reinstall', 'rotate', 'reinstall'),
-      h('button', { class: 'btn btn-sm btn-ghost', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`app:${m.id}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
-      h('button', { class: 'btn btn-sm btn-ghost', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
+      h('button', { class: 'btn btn-sm', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`app:${m.id}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
+      h('button', { class: 'btn btn-sm', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
       act('Uninstall', 'minus-circle', 'uninstall'),
     ].filter(Boolean));
+    const all = allMods();
+    const neededBy = neededByMap(all);
+    const files = h('details', { class: 'drawer-fold', open: drawerFilesOpen, ontoggle: ev => { drawerFilesOpen = ev.currentTarget.open; } },
+      h('summary', {}, icon('chevron-right'), h('span', {}, `Files · ${fileList.length || m.fileCount}`)),
+      fileList.length
+        ? h('div', { class: 'filelist' }, fileList.map(f => h('div', {},
+          h('span', {}, f.dest),
+          m.enabled && !f.deployed ? h('span', { class: 'lost', title: f.owner ? `The copy from ${byId[f.owner] || f.owner} is in the game` : 'Not in the game folder' }, f.owner ? `overridden by ${byId[f.owner] || 'another mod'}` : 'missing') : null)))
+        : h('div', { class: 'empty-inline' }, m.fileCount ? 'The file list could not be read. Reinstall the mod to rebuild it.' : 'This mod installed no files.'));
     body.replaceChildren(...[
       h('dl', { class: 'kv' },
         kv('Status', !m.enabled ? h('span', { class: 'tag' }, 'Disabled')
@@ -1216,17 +1310,15 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
         kv('Priority', `${m.priority}${hasConflicts ? ' — higher wins file conflicts' : ''}`),
         kv('Installed', new Date(m.installedAt).toLocaleString()),
         m.skipped ? kv('Not installed', `${plural(m.skipped, 'file')} (readmes, images, unknown files)`) : null),
+      ...statusSection(modStatusItems(m, neededBy, Object.fromEntries(all.map(x => [x.id, x])))),
+      ...reqSection(m, neededBy),
       ...conflictSection(m, conflicts || []),
       m.warnings?.length ? h('h2', { dataset: { section: 'warnings' } }, 'Install warnings') : null,
       m.warnings?.length ? h('ul', { class: 'warnlist' }, m.warnings.map(w => h('li', {}, w))) : null,
       ...drawerSections.flatMap(fn => fn(m) || []),
-      h('h2', {}, `Files · ${fileList.length || m.fileCount}`),
-      fileList.length
-        ? h('div', { class: 'filelist' }, fileList.map(f => h('div', {},
-          h('span', {}, f.dest),
-          m.enabled && !f.deployed ? h('span', { class: 'lost', title: f.owner ? `The copy from ${byId[f.owner] || f.owner} is in the game` : 'Not in the game folder' }, f.owner ? `overridden by ${byId[f.owner] || 'another mod'}` : 'missing') : null)))
-        : h('div', { class: 'empty-inline' }, m.fileCount ? 'The file list could not be read. Reinstall the mod to rebuild it.' : 'This mod installed no files.'),
+      files,
     ].filter(Boolean));
+    dropDeadLinks(body);
   }, '#drawer-close');
 
   setDrawerShown(true);
@@ -1236,7 +1328,7 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
 }
 
 /** A Vortex mod: what Vortex knows about it, and what can be done from here. */
-function openVortexDrawer(m, takeFocus = true) {
+function openVortexDrawer(m, takeFocus = true, focusSection = '') {
   const drawer = $('#drawer');
   if (drawer.hidden) { drawerOpener = document.activeElement; drawerOpenerKey = drawerOpener?.closest?.('[data-key]')?.dataset.key || ''; }
   state.drawerMod = m.id;
@@ -1256,10 +1348,12 @@ function openVortexDrawer(m, takeFocus = true) {
         ? h('button', { class: 'btn btn-sm', dataset: { key: 'act:disable' }, onclick: () => modAction('disable', [m.id]) }, icon('ban'), h('span', {}, 'Disable in Vortex'))
         : h('button', { class: 'btn btn-sm btn-primary', dataset: { key: 'act:enable' }, onclick: () => modAction('enable', [m.id]) }, icon('check'), h('span', {}, 'Enable in Vortex')),
       h('button', { class: 'btn btn-sm', title: 'This app manages it from now on; Vortex keeps it, switched off', onclick: () => moveFromVortex([m.id]) }, icon('download'), h('span', {}, 'Move to this app')),
-      h('button', { class: 'btn btn-sm btn-ghost', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
-      h('button', { class: 'btn btn-sm btn-ghost', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`vx:${m.vortexId}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
-      h('button', { class: 'btn btn-sm btn-ghost', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the Vortex mod "${m.name}": is anything wrong with it? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
+      h('button', { class: 'btn btn-sm', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
+      h('button', { class: 'btn btn-sm', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`vx:${m.vortexId}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
+      h('button', { class: 'btn btn-sm', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the Vortex mod "${m.name}": is anything wrong with it? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
     ]);
+    const all = allMods();
+    const neededBy = neededByMap(all);
     $('#drawer-body').replaceChildren(...[
       h('dl', { class: 'kv' },
         kv('Status', m.enabled ? h('span', { class: 'tag tag-ok' }, 'Deployed by Vortex') : h('span', { class: 'tag' }, 'Disabled in Vortex')),
@@ -1268,6 +1362,8 @@ function openVortexDrawer(m, takeFocus = true) {
         kv('Files in the game', String(m.fileCount)),
         m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
         kv('Changes', 'Switching it on or off here is done without opening Vortex (if Vortex is open, it closes for a moment). Move to this app to manage it here entirely.')),
+      ...statusSection(modStatusItems(m, neededBy, Object.fromEntries(all.map(x => [x.id, x])))),
+      ...reqSection(m, neededBy),
       u ? h('h2', { dataset: { section: 'update' } }, 'Update available') : null,
       u ? h('div', { class: 'notice notice-info' }, icon('up-circle'),
         h('div', { class: 'notice-text' }, h('div', { class: 'name' }, `${u.name}${u.version ? ` · v${u.version}` : ''}`), h('div', { class: 'subname' }, 'Updating moves it to this app, which downloads and installs the new version. Vortex is not opened.')),
@@ -1275,8 +1371,10 @@ function openVortexDrawer(m, takeFocus = true) {
       ours.length ? h('h2', {}, `Shares files with this app's mods · ${ours.length}`) : null,
       ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
     ].filter(Boolean));
+    dropDeadLinks($('#drawer-body'));
   }, '#drawer-close');
   setDrawerShown(true);
+  if (focusSection) $('#drawer-body').querySelector(`[data-section="${focusSection}"]`)?.scrollIntoView({ block: 'start' });
   if (takeFocus && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
 }
 
@@ -1655,7 +1753,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z', vortexExe: '#s-vx-exe',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode', perfInterval: '#s-perf-interval', perfHistory: '#s-perf-history',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1682,6 +1780,8 @@ function renderUpdate(st) {
   // Installed from the .deb: no checks of its own, so nothing to schedule.
   $('#s-upd-check').closest('.set-ctl').hidden = upd.status === 'package';
   $('#s-upd-mode').closest('.set-row').hidden = upd.status === 'package';
+  $('#s-upd-launch-row').hidden = upd.status === 'package';
+  updLaunchState();
 
   // The bar: from the moment a new version is found, until it installs.
   const bar = $('#update-bar');
@@ -1928,7 +2028,17 @@ $('#s-nxm').addEventListener('change', async ev => {
   }
 });
 
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause' };
+/** Update when the app opens: only with "Install automatically" (the other choices ask first, or never check). */
+function updLaunchState() {
+  const auto = $('#s-upd-mode').value === 'auto';
+  $('#s-upd-launch').disabled = !auto;
+  $('#s-upd-launch-row').classList.toggle('set-locked', !auto);
+  $('#s-upd-launch-desc').textContent = auto
+    ? 'Before the window opens, a small one checks for a new version and installs it first, so you always start on the newest. "Open now" skips the wait.'
+    : 'Only when new versions install automatically (above).';
+}
+$('#s-upd-mode').addEventListener('change', updLaunchState);
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs' };
 
 const AI_EXAMPLES = {
   openai: { endpoint: 'https://api.openai.com/v1 (or http://localhost:11434/v1 for Ollama)', model: 'e.g. gpt-5.1, or the model your endpoint serves' },
@@ -2017,6 +2127,7 @@ async function loadSettings() {
   updateDirty();
   if (state.snap?.mods) renderMods(); // requirements open or collapsed
   $('#s-save-perprofile').checked = !!s.perProfileSaves;
+  updLaunchState();
   $('#s-save-dir').textContent = s.saveBackupDir || 'Saved Games\\Edgerunners Mod Manager\\Save backups (default)';
 }
 $('#s-save-open').addEventListener('click', () => run(api.openSaves('backups')));
@@ -2234,20 +2345,36 @@ async function refreshInstalls() {
   renderPlay();
 }
 
+/**
+ * What Play is doing until the game shows up (applying mod changes, deploying REDmods, backing up
+ * saves, starting it, waiting for it): shown on the button. '' when nothing is under way.
+ */
+let playStage = '';
+let playStageTimer = 0;
+function setPlayStage(text, forMs = 0) {
+  playStage = text;
+  clearTimeout(playStageTimer);
+  // Each stage ends by itself at the latest after forMs (the game may never show up: closed at once, a Steam prompt…).
+  if (text && forMs) playStageTimer = setTimeout(() => setPlayStage(''), forMs);
+  renderPlay();
+}
+
 function renderPlay() {
   const g = state.snap.game || {};
   const here = installs.find(i => i.path.toLowerCase() === String(g.path || '').toLowerCase());
   const running = !!state.gameRunning;
   const btn = $('#play-btn');
+  if (running && playStage) { playStage = ''; clearTimeout(playStageTimer); }
   if (!running) stopArmed = false;
-  btn.disabled = !g.valid;
+  btn.disabled = !g.valid || !!playStage;
+  btn.classList.toggle('staging', !!playStage);
   btn.classList.toggle('running', running);
   btn.classList.toggle('armed', running && stopArmed);
   btn.querySelector('use').setAttribute('href', running ? '#i-stop' : '#i-play');
-  $('#play-label').textContent = running ? (stopArmed ? 'Close the game?' : 'Running') : 'Play';
-  $('#play-sub').textContent = !g.valid ? 'No game folder' : running ? (stopArmed ? 'Click again' : 'Stop') : here?.label || '';
+  $('#play-label').textContent = running ? (stopArmed ? 'Close the game?' : 'Running') : playStage || 'Play';
+  $('#play-sub').textContent = !g.valid ? 'No game folder' : running ? (stopArmed ? 'Click again' : 'Stop') : playStage ? '' : here?.label || '';
   $('#brand-sub').textContent = here ? `Cyberpunk 2077 · ${here.label}` : 'Cyberpunk 2077';
-  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? (stopArmed ? 'Click again to close the game: unsaved progress is lost' : 'Cyberpunk 2077 is running. Click twice to close it.') : `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
+  btn.title = !g.valid ? 'Set the Cyberpunk 2077 folder in Settings' : running ? (stopArmed ? 'Click again to close the game: unsaved progress is lost' : 'Cyberpunk 2077 is running. Click twice to close it.') : playStage || `Launch Cyberpunk 2077${here ? ` through ${here.label}` : ''}`;
 }
 // Stop asks twice: the first click arms it for a few seconds, the second closes the game.
 let stopArmed = false;
@@ -2375,9 +2502,10 @@ $('#play-btn').addEventListener('click', async () => {
     setTimeout(renderPlay, 1500);
     return;
   }
-  btn.disabled = true;
-  $('#play-label').textContent = 'Starting…';
+  setPlayStage('Getting ready…', 120000);
   let r = await run(api.launchGame());
+  // A question comes first (REDmods, Steam's launch options…): Play waits on the player, not busy.
+  if (r?.deployFailed || r?.steamOptions || r?.prereqs) setPlayStage('');
   const skip = { skipDeploy: true };
   // REDmod deploy (first, before the other checks) did not happen: say why, and let the player decide.
   if (r?.deployFailed) {
@@ -2394,29 +2522,39 @@ $('#play-btn').addEventListener('click', async () => {
     } else {
       go = await confirmBox('REDmod deploy failed', `Your REDmods may not load (the game uses what was last deployed successfully).\n\n${r.reason}\n\nThe full output is in Game log → Manager.`, 'Launch anyway');
     }
+    if (go) setPlayStage('Getting ready…', 120000);
     r = go ? await run(api.launchGame(skip)) : null;
+    if (r?.steamOptions || r?.prereqs) setPlayStage('');
   }
   // Through Steam: Steam's launch options for the game must skip the launcher and load REDmods;
   // on Linux also what the mod loaders need in the Proton folder. "Start anyway" holds for the rest.
   while (r?.steamOptions || r?.prereqs) {
     const go = r.steamOptions ? await steamOptionsBox(r.steamOptions) : await prereqsBox(r.prereqs);
     if (go === 'anyway') skip[r.steamOptions ? 'skipSteamCheck' : 'skipPrereqs'] = true;
+    if (go) setPlayStage('Getting ready…', 120000);
     r = go ? await run(api.launchGame(skip)) : null;
+    if (r?.steamOptions || r?.prereqs) setPlayStage('');
   }
-  if (r && !r.deployFailed) toast(`Starting Cyberpunk 2077 through ${r.via}`, 'success');
-  setTimeout(renderPlay, 4000);
+  if (r && !r.deployFailed) {
+    toast(`Starting Cyberpunk 2077 through ${r.via}`, 'success');
+    // Until the game shows up (the game check sees it within seconds), or 90 s at most.
+    if (!state.gameRunning) setPlayStage('Waiting for the game…', 90000);
+  } else setPlayStage('');
 });
+// Each step of Play (from the main process) shows on the button until the game is up.
+api.onPlayStage(e => { if (typeof e?.text === 'string') setPlayStage(e.text.slice(0, 60), 120000); });
 // REDmod deploy runs before the game when REDmods changed: the Play button shows it.
 api.onRedmod(e => {
   if (e.stage === 'deploying') {
-    $('#play-label').textContent = 'Deploying REDmods…';
+    // During Play the stage keeps going (120 s each line at most); a deploy started from the Mods page shows too.
+    setPlayStage('Deploying REDmods…', 120000);
     if (e.line) $('#play-btn').title = e.line.slice(0, 200);
   } else if (e.stage === 'done') {
     toast('REDmods deployed', 'success');
-    renderPlay();
+    if (playStage === 'Deploying REDmods…') setPlayStage('');
     refreshRedmod(e.status);
   } else if (e.stage === 'failed') {
-    renderPlay();
+    if (playStage === 'Deploying REDmods…') setPlayStage('');
     refreshRedmod(e.status);
   }
   if (e.stage === 'deploying') refreshRedmod({ ...(e.status || {}), count: 1, running: true });
@@ -2809,7 +2947,8 @@ api.onJob(job => {
   if (isNew) scheduleDlRender(); else updateJobRow(job);
   renderDlCounts();
 });
-api.onToast(t => toast(t.text, t.kind || 'info'));
+api.onToast(t => toast(t.text, t.kind || 'info', typeof t.settings === 'string' && /^[a-z0-9]+$/.test(t.settings)
+  ? { label: 'Open Settings', fn: () => { state.settingsJump = t.settings; goTo('settings'); } } : undefined));
 api.onSnapshot(applySnapshot);
 api.onLog(addLog);
 api.onFomod(enqueueFomod);

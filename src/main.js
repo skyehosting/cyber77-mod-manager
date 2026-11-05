@@ -21,6 +21,8 @@ const { scaleFor, stepScale } = require('./core/scale');
 const { buildReport } = require('./core/report');
 const nxm = require('./core/nxmHandler');
 const { AppUpdater } = require('./core/updater');
+const { updateBeforeOpening } = require('./core/launchUpdate');
+const { PerfMonitor } = require('./core/perf');
 const { Assistant } = require('./core/ai');
 const { makeTools } = require('./core/aiTools');
 const { WebReader } = require('./core/web');
@@ -38,7 +40,15 @@ let assistant = null;
 let modConfig = null;
 let crashes = null;
 let plays = null;
+let perf = null; // the Performance page's readings (only while it is open)
 let lastExport = '';
+// Update before opening: the small window shown meanwhile, and what the check found.
+let splash = null;
+let launchUpdate = null;
+let launchLate = null; // takes away the listeners kept between the check before opening and the app's updater
+// While the app starts, closing the update window is "open now", not "quit".
+let booting = true;
+let installingAtLaunch = false;
 
 const cipher = {
   available: () => safeStorage.isEncryptionAvailable(),
@@ -362,6 +372,8 @@ async function boot() {
   logger.on('entry', e => send('log', e));
   // One line per start: which version, and whether the saved settings and API key were there.
   logger.info(`Edgerunners Mod Manager ${app.getVersion()} started${process.argv.includes('--updated') ? ' after an update' : ''}: settings ${settings.store.restored ? 'restored from their backup' : 'loaded'}, API key ${settings.apiKey ? 'found' : settings.get('apiKeyEnc') ? 'saved but could not be read' : 'not set'}`);
+  // A newer version installs before anything else starts (it then opens by itself).
+  if (await updateAtLaunch()) return;
 
   if (!isGameDir(settings.get('gamePath'))) {
     const found = await findCyberpunk();
@@ -409,6 +421,8 @@ async function boot() {
     log: logger,
   });
   updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
+  launchLate?.(); // the app's updater listens from here on
+  if (launchUpdate) updater.afterLaunchCheck(launchUpdate);
   updater.start();
   if (settings.apiKey) {
     manager.validateKey().then(u => send('key-user', u)).catch(err => logger.warn('Could not check the Nexus API key', err.message));
@@ -536,6 +550,7 @@ async function boot() {
     if ('blockAds' in patch) applyAdBlock();
     if ('playsKeep' in patch) plays?.prune();
     if ('uiScale' in patch) applyScale();
+    if ('perfInterval' in patch && perf?.running) perf.start(settings.get('perfInterval'));
     if ('updateEvery' in patch || 'updateUnit' in patch || 'updateMode' in patch) updater?.start();
     logger.success('Settings saved');
     pushSnapshot();
@@ -591,6 +606,17 @@ async function boot() {
   handle('game:launch', async ({ skipDeploy = false, skipSteamCheck = false, skipPrereqs = false } = {}) => {
     const dir = settings.get('gamePath');
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
+    // The Play button says what is happening until the game shows up (the window follows 'play').
+    const stage = (name, text) => send('play', { stage: name, text });
+    // Mod changes still being applied (an install, an enable) finish first, so the game starts with them.
+    // Not while a mod's installer waits for its options (that waits for the user); never more than 30 s.
+    if (manager.pendingOps > 0 && !manager.pendingFomod.size) {
+      stage('applying', 'Applying mod changes…');
+      let late;
+      const timedOut = await Promise.race([manager.chain.then(() => false), new Promise(r => { late = setTimeout(() => r(true), 30000); })]);
+      clearTimeout(late);
+      if (timedOut) send('toast', { text: 'Mod changes are still being applied: the game starts now, and some of them may only load next time', kind: 'warn' });
+    }
     if (!skipDeploy) {
       const r = await runRedmodDeploy(dir, false);
       // Linux: no protontricks, or not a Steam copy: said once per run, and Play goes on.
@@ -624,9 +650,11 @@ async function boot() {
       logger.warn('Could not back up your saves before playing', err.message);
       send('toast', { text: `Could not back up your saves before playing: ${err.message}`, kind: 'warn' });
     });
+    stage('backup', 'Backing up saves…');
     const slow = setTimeout(() => send('toast', { text: 'Backing up your saves before playing…', kind: 'info' }), 1500);
     await Promise.race([backup, new Promise(r => setTimeout(r, 20000))]);
     clearTimeout(slow);
+    stage('starting', 'Starting the game…');
     let r;
     try {
       r = await launchGame({ gameDir: dir, store: store.store, epicApp: store.epicApp, mode: settings.get('launchMode') }, url => shell.openExternal(url));
@@ -734,6 +762,12 @@ async function boot() {
   handle('update:check', () => updater.check());
   handle('update:postpone', () => updater.postpone());
   handle('update:install', () => updater.installNow());
+  // The Performance page: readings only while it is open and the window can be seen (the page says when).
+  perf = new PerfMonitor({ log: logger });
+  perf.on('sample', s => send('perf', s));
+  app.on('before-quit', () => perf?.stop());
+  handle('perf:start', () => { perf.start(settings.get('perfInterval')); return { ms: perf.ms, platform: process.platform }; });
+  handle('perf:stop', () => { perf.stop(); return true; });
   // The switch applies at once (not with Save): Settings shows the result right away.
   handle('nxm:set', async on => {
     settings.update({ handleNxm: !!on });
@@ -970,6 +1004,88 @@ async function boot() {
   ipcMain.on('renderer-error', (_e, msg) => logger.error(`UI error: ${msg}`));
 
   createWindow();
+  // Moved off the old "Main files only" default (settings.js): said once, with the way back.
+  if (settings.movedAutoInstall) {
+    const said = 'Finished downloads now install every file you picked, and enable it, not only Main files. Settings → Downloads changes this.';
+    logger.info(said);
+    win.webContents.once('did-finish-load', () => setTimeout(() => send('toast', { text: said, kind: 'info', settings: 'downloads' }), 2500));
+  }
+  // The update window gives way to the app's own (only now: the last window closing quits the app).
+  if (splash && !splash.isDestroyed()) splash.destroy();
+  booting = false;
+}
+
+/**
+ * Update when the app opens (App updates set to install automatically, and this not turned off):
+ * a small window checks first and installs a newer version, which then opens (core/launchUpdate.js).
+ * Resolves true when it is installing (the caller stops: the app quits into the installer).
+ */
+async function updateAtLaunch() {
+  const canUpdate = app.isPackaged && !process.env.CMM_CAPTURE && (process.platform !== 'linux' || IS_APPIMAGE);
+  if (!canUpdate || settings.get('updateMode') !== 'auto' || !settings.get('updateOnLaunch') || process.argv.includes('--updated')) return false;
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.logger = null;
+  splash = new BrowserWindow({
+    width: 380,
+    height: 220,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: true,
+    fullscreenable: false,
+    show: false,
+    center: true,
+    backgroundColor: settings.get('windowBg') || '#0d0f12',
+    title: 'Edgerunners Mod Manager',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  splash.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  splash.webContents.on('will-navigate', e => e.preventDefault());
+  let openNow;
+  const skip = new Promise(r => { openNow = r; });
+  // "Open now" in the window (a #open link), or the window closed: the app opens without waiting.
+  splash.webContents.on('did-navigate-in-page', (_e, url) => { if (String(url).endsWith('#open')) openNow(); });
+  splash.on('closed', () => { splash = null; openNow(); });
+  splash.once('ready-to-show', () => splash?.show());
+  // A light theme's page colour gets dark words (#rrggbb, as Settings stores it).
+  const bg = /^#[0-9a-f]{6}$/i.exec(settings.get('windowBg') || '') ? settings.get('windowBg') : '#0d0f12';
+  const light = [1, 3, 5].map(i => parseInt(bg.slice(i, i + 2), 16)).reduce((a, c, i) => a + c * [0.299, 0.587, 0.114][i], 0) > 150;
+  splash.loadFile(path.join(__dirname, 'renderer', 'splash.html'), { query: light ? { light: '1' } : {} }).catch(() => {});
+  const say = (text, pct) => {
+    if (!splash || splash.isDestroyed()) return;
+    splash.webContents.executeJavaScript(`window.say && window.say(${JSON.stringify(String(text))}, ${Number(pct) || 0})`).catch(() => {});
+  };
+  launchUpdate = await updateBeforeOpening({ autoUpdater, say, skip });
+  // The same version again after installing it before opening: the install did not take (a
+  // read-only AppImage, a blocked installer). Opened as usual this time, so it never loops.
+  if (launchUpdate.outcome === 'install' && launchUpdate.version && settings.get('launchInstallTried') === launchUpdate.version) {
+    logger.warn(`Edgerunners Mod Manager ${launchUpdate.version} was installed before opening last time, but this is still ${app.getVersion()}: opening as usual (it installs when the app closes)`);
+    launchUpdate = { ...launchUpdate, outcome: 'background', downloaded: launchUpdate.version };
+  }
+  if (launchUpdate.outcome === 'install') {
+    logger.info(`Installing Edgerunners Mod Manager ${launchUpdate.version} before opening`);
+    settings.update({ launchInstallTried: launchUpdate.version });
+    installingAtLaunch = true;
+    say(`Installing version ${launchUpdate.version}. The app opens by itself when it is done.`, 100);
+    // Silent install, then the new version starts (with --updated: no second check). Should the
+    // installer never take over, the app quits after 20 s rather than stay with no window.
+    setTimeout(() => { try { autoUpdater.quitAndInstall(true, true); } catch (err) { logger.error('Could not install the update', err.message); app.quit(); } }, 600);
+    setTimeout(() => app.quit(), 20000).unref?.();
+    return true;
+  }
+  // The check or its download may still finish before the app's updater listens: an error then is
+  // not an uncaught one, and a finished download shows as ready (AppUpdater.afterLaunchCheck).
+  if (launchUpdate.outcome !== 'none') {
+    const result = launchUpdate;
+    const late = { error: () => {}, done: info => { result.downloaded = info?.version || result.version || ''; } };
+    autoUpdater.on('error', late.error);
+    autoUpdater.once('update-downloaded', late.done);
+    launchLate = () => { autoUpdater.removeListener('error', late.error); autoUpdater.removeListener('update-downloaded', late.done); };
+  }
+  if (launchUpdate.outcome === 'error') logger.warn('Could not check for an update before opening', launchUpdate.error);
+  if (launchUpdate.outcome === 'background') logger.info(`Edgerunners Mod Manager ${launchUpdate.version} goes on downloading in the background`);
+  say('Opening…', -1);
+  return false;
 }
 
 process.on('uncaughtException', err => logger.error(`Unexpected error: ${err.message}`, err.stack));
@@ -1297,7 +1413,12 @@ function handleNxmArgs(argv) {
 
 function start() {
   app.on('second-instance', (_e, argv) => handleNxmArgs(argv));
-  app.whenReady().then(guardWebviews).then(boot).then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); });
+  app.whenReady().then(guardWebviews).then(boot)
+    .then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); })
+    .catch(err => logger.error('The app could not start', err?.stack || String(err)))
+    // Started (or failed, or installing an update): closing the last window quits again, and with
+    // no window left at all there is nothing to keep the app running for.
+    .finally(() => { booting = false; if (!BrowserWindow.getAllWindows().length) app.quit(); });
 }
 
 if (app.requestSingleInstanceLock()) {
@@ -1312,4 +1433,5 @@ if (app.requestSingleInstanceLock()) {
 } else {
   app.quit();
 }
-app.on('window-all-closed', () => app.quit());
+// (Not while an update installs before opening: the installer quits the app itself.)
+app.on('window-all-closed', () => { if (!booting && !installingAtLaunch) app.quit(); });
