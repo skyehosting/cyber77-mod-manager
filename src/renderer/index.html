@@ -839,6 +839,18 @@
                   <div class="set-ctl"><input id="s-ai-model" class="mono" type="text" spellcheck="false"></div>
                 </div>
                 <div class="set-row">
+                  <div class="set-label"><label for="s-ai-reasoning">Reasoning effort</label><p class="set-desc" id="s-ai-reasoning-hint">For reasoning models: how much the model thinks before it answers. More is better for hard crash hunts, but slower and costs more (thinking is billed as output). A model that does not take this setting is asked again without it.</p></div>
+                  <div class="set-ctl">
+                    <select id="s-ai-reasoning" aria-describedby="s-ai-reasoning-hint">
+                      <option value="">The model's default</option>
+                      <option value="none">None (no thinking)</option>
+                      <option value="low">Low (faster, cheaper)</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High (most thinking)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="set-row">
                   <div class="set-label"><label for="s-ai-endpoint">Endpoint</label></div>
                   <div class="set-ctl"><input id="s-ai-endpoint" class="mono" type="text" spellcheck="false"></div>
                 </div>

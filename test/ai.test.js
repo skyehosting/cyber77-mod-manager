@@ -64,7 +64,9 @@ test('token use: counted per answer (every step) and per chat, sent as it goes, 
 });
 
 test('endpoints: a base URL gets the right path; a full one is kept', () => {
-  assert.strictEqual(endpointFor('openai', 'https://api.openai.com/v1/'), 'https://api.openai.com/v1/chat/completions');
+  assert.strictEqual(endpointFor('openai', 'https://api.openai.com/v1/'), 'https://api.openai.com/v1/responses', 'OpenAI itself: its Responses API');
+  assert.strictEqual(endpointFor('openai', 'https://api.openai.com/v1/chat/completions'), 'https://api.openai.com/v1/chat/completions', 'written out: kept');
+  assert.strictEqual(endpointFor('openai', 'https://openrouter.ai/api/v1'), 'https://openrouter.ai/api/v1/chat/completions');
   assert.strictEqual(endpointFor('openai', 'http://localhost:11434/v1/chat/completions'), 'http://localhost:11434/v1/chat/completions');
   assert.strictEqual(endpointFor('anthropic', ''), 'https://api.anthropic.com/v1/messages');
   assert.strictEqual(endpointFor('anthropic', 'https://api.anthropic.com/v1'), 'https://api.anthropic.com/v1/messages');

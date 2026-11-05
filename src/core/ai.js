@@ -15,8 +15,11 @@ const ctx = require('./aiContext');
  *
  * The history is kept provider-neutral and converted per request:
  *   { role: 'user', text }
- *   { role: 'assistant', text, calls: [{ id, name, args }] }
+ *   { role: 'assistant', text, calls: [{ id, name, args }], raw?, rawModel? }
  *   { role: 'tool', results: [{ id, name, content }] }
+ * OpenAI's own endpoint is spoken to through its Responses API (/v1/responses): its reasoning models
+ * take tools there only. `raw` is that reply's output items (reasoning included, encrypted), sent
+ * back word for word in later requests to the same model, as OpenAI asks of stateless clients.
  * Events ('event'): activity, message, card, proposal, status, error — the page draws them.
  *
  * A chat that grows near the model's context window is compacted before the next request: the
@@ -77,7 +80,91 @@ function endpointFor(provider, endpoint) {
     return /\/messages$/.test(b) ? b : `${b.replace(/\/v1$/, '')}/v1/messages`;
   }
   if (!base) throw new Error('Set the AI endpoint in Settings (for OpenAI: https://api.openai.com/v1).');
-  return /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
+  if (/\/chat\/completions$/.test(base)) return base;
+  if (usesResponses(provider, base)) return /\/responses$/.test(base) ? base : `${base}/responses`;
+  return `${base}/chat/completions`;
+}
+
+/**
+ * Whether requests go to OpenAI's Responses API: OpenAI's own endpoint (its reasoning models refuse
+ * tools on chat completions). Other OpenAI-compatible servers (OpenRouter, Ollama, LM Studio, …) keep
+ * chat completions, which they all have; an endpoint written out to /chat/completions does too.
+ */
+function usesResponses(provider, endpoint) {
+  if (provider === 'anthropic') return false;
+  const base = String(endpoint || '').trim().replace(/\/+$/, '');
+  if (/\/chat\/completions$/.test(base)) return false;
+  try { return new URL(base).hostname.toLowerCase() === 'api.openai.com'; } catch { return false; }
+}
+
+const EFFORTS = ['none', 'low', 'medium', 'high'];
+
+/**
+ * A reply's output to send back: as it came, but never a reasoning item with nothing after it (a
+ * reply cut short while thinking), which OpenAI refuses ("…provided without its required following item").
+ */
+function replayable(raw) {
+  const items = raw.filter(i => i && typeof i === 'object');
+  while (items.length && items[items.length - 1].type === 'reasoning') items.pop();
+  return items.filter((i, n) => i.type !== 'reasoning' || ['message', 'function_call'].includes(items[n + 1]?.type));
+}
+
+/**
+ * The request body for OpenAI's Responses API (stateless: nothing is stored at OpenAI). `plain`:
+ * no raw output at all (the retry when OpenAI refused what was sent back).
+ */
+function responsesRequest({ model, system, history, tools, effort = '', plain = false }) {
+  const input = [];
+  // Its own output goes back only for the steps of the current question (after the last user
+  // message): OpenAI needs the reasoning there with its function calls, and drops older reasoning.
+  let lastUser = -1;
+  history.forEach((t, n) => { if (t.role === 'user') lastUser = n; });
+  history.forEach((turn, n) => {
+    if (turn.role === 'user') input.push({ role: 'user', content: turn.text });
+    else if (turn.role === 'assistant') {
+      // Word for word (reasoning items with their function calls), to the model that wrote it.
+      const raw = !plain && n > lastUser && Array.isArray(turn.raw) && turn.rawModel === model ? replayable(turn.raw) : [];
+      if (raw.length) { input.push(...raw); return; }
+      if (turn.text) input.push({ role: 'assistant', content: turn.text });
+      for (const c of turn.calls || []) input.push({ type: 'function_call', call_id: c.id, name: c.name, arguments: JSON.stringify(c.args || {}) });
+    } else if (turn.role === 'tool') {
+      for (const r of turn.results) input.push({ type: 'function_call_output', call_id: r.id, output: String(r.content ?? '') });
+    }
+  });
+  const body = { model, instructions: system, input, store: false, include: ['reasoning.encrypted_content'] };
+  if (tools.length) body.tools = tools.map(t => ({ type: 'function', name: t.name, description: t.description, parameters: schemaOf(t), strict: false }));
+  if (EFFORTS.includes(effort)) body.reasoning = { effort };
+  return body;
+}
+
+function responsesReply(body) {
+  const output = Array.isArray(body?.output) ? body.output : null;
+  if (!output) throw new Error('The AI endpoint sent no reply.');
+  const text = output.filter(i => i?.type === 'message')
+    .flatMap(i => (Array.isArray(i.content) ? i.content : []))
+    .map(p => (p?.type === 'output_text' ? p.text || '' : p?.type === 'refusal' ? p.refusal || '' : '')).join('');
+  const fcs = output.filter(i => i?.type === 'function_call');
+  let cutCall = false;
+  const calls = fcs.map(c => {
+    let args = {};
+    try { args = JSON.parse(c.arguments || '{}'); } catch { args = {}; cutCall = true; }
+    return { id: c.call_id || `call_${crypto.randomBytes(4).toString('hex')}`, name: c.name, args };
+  });
+  const u = body.usage;
+  const incomplete = body.status === 'incomplete' ? String(body.incomplete_details?.reason || 'incomplete') : '';
+  // (or cut off in the middle of a call: it would run with its arguments missing)
+  if (incomplete && ((!text && !calls.length) || cutCall)) {
+    // Stopped while still thinking: no answer to show and nothing to send back.
+    throw new Error(`The model stopped before it answered (${incomplete}). Ask again, or lower Reasoning effort in Settings → AI assistant.`);
+  }
+  // (its output is kept to send back only when its calls have the ids it gave them)
+  const raw = fcs.every(c => c.call_id) ? output : undefined;
+  return {
+    text, calls, ...(raw ? { raw } : {}),
+    // input_tokens includes the cached ones (unlike servers that count them apart): not added twice.
+    usage: u ? { input: Number(u.input_tokens) || 0, output: Number(u.output_tokens) || 0 } : null,
+    ...(incomplete ? { incomplete } : {}),
+  };
 }
 
 const estimateTokens = text => Math.ceil(String(text || '').length / 4);
@@ -85,7 +172,7 @@ const estimateTokens = text => Math.ceil(String(text || '').length / 4);
 const schemaOf = t => ({ type: 'object', properties: t.params || {}, required: t.required || [] });
 
 /** The request body for an OpenAI-compatible chat completions endpoint. */
-function openaiRequest({ model, system, history, tools }) {
+function openaiRequest({ model, system, history, tools, effort = '' }) {
   const messages = [{ role: 'system', content: system }];
   for (const turn of history) {
     if (turn.role === 'user') messages.push({ role: 'user', content: turn.text });
@@ -100,6 +187,8 @@ function openaiRequest({ model, system, history, tools }) {
   const body = { model, messages };
   // An empty tools list is refused by some providers: leave it out.
   if (tools.length) body.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: schemaOf(t) } }));
+  // Only when one is chosen in Settings: servers that do not know the field get nothing new.
+  if (EFFORTS.includes(effort)) body.reasoning_effort = effort;
   return body;
 }
 
@@ -185,17 +274,45 @@ function postJson(url, headers, body, { signal, timeoutMs }) {
   });
 }
 
-async function callModel({ provider, endpoint, key, model, history, tools, signal, onSend, timeoutMs }) {
+async function callModel({ provider, endpoint, key, model, history, tools, signal, onSend, timeoutMs, effort = '' }) {
   if (!model) throw new Error('Set the AI model in Settings.');
   const url = endpointFor(provider, endpoint);
   const system = systemPrompt();
   const anthropic = provider === 'anthropic';
-  const body = anthropic ? anthropicRequest({ model, system, history, tools }) : openaiRequest({ model, system, history, tools });
-  // A first guess at the request's size (about 4 characters a token), shown until the reply says.
-  onSend?.(estimateTokens(JSON.stringify(body)));
+  const responses = usesResponses(provider, endpoint);
+  const build = ({ effort: e = effort, plain = false } = {}) => (anthropic ? anthropicRequest({ model, system, history, tools })
+    : responses ? responsesRequest({ model, system, history, tools, effort: e, plain }) : openaiRequest({ model, system, history, tools, effort: e }));
+  const body = build();
+  // A first guess at the request's size (about 4 characters a token), shown until the reply says
+  // (without the encrypted reasoning sent back, which the model does not read as text).
+  onSend?.(estimateTokens(JSON.stringify(body, (k, v) => (k === 'encrypted_content' ? undefined : v))));
   const headers = { 'Content-Type': 'application/json' };
   if (anthropic) { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; } else if (key) headers.Authorization = `Bearer ${key}`;
   const limit = Math.max(1, Number(timeoutMs) || DEFAULT_TIMEOUT_MS);
+  const post = b => postModel(url, headers, b, { signal, limit });
+  // Refused, and asked again without what it refused (each at most once): the reasoning effort, by a
+  // model that does not reason or not at this setting (remembered for this run of the app, so it is
+  // not refused on every step); reasoning sent back that it could not use (another key or account,
+  // say). The chat carries on.
+  const refusedKey = `${url}|${model}`;
+  let opts = { effort: EFFORTS.includes(effort) && !EFFORT_REFUSED.has(refusedKey) ? effort : '', plain: false };
+  let json;
+  for (let tries = 0; ; tries++) {
+    try {
+      json = await post(tries ? build(opts) : (opts.effort === effort ? body : build(opts)));
+      break;
+    } catch (err) {
+      if (anthropic || err.status !== 400 || tries >= 2) throw err;
+      const msg = String(err.message);
+      if (opts.effort && /reasoning[._ ]?effort|parameter[^.]*reasoning/i.test(msg)) { EFFORT_REFUSED.add(refusedKey); opts = { ...opts, effort: '' }; } else if (responses && !opts.plain && /encrypted|reasoning item|\brs_\w+/i.test(msg)) opts = { ...opts, plain: true }; else throw err;
+    }
+  }
+  return anthropic ? anthropicReply(json) : responses ? responsesReply(json) : openaiReply(json);
+}
+const EFFORT_REFUSED = new Set(); // endpoint|model pairs that refused the reasoning effort (this run)
+
+/** POST a request to the model's endpoint; its reply's JSON, or an error that says what went wrong (with .status). */
+async function postModel(url, headers, body, { signal, limit }) {
   let res;
   try {
     res = await postJson(url, headers, JSON.stringify(body), { signal, timeoutMs: limit });
@@ -209,14 +326,14 @@ async function callModel({ provider, endpoint, key, model, history, tools, signa
   }
   const json = res.json;
   // Some servers (llama.cpp through llama-swap) answer an error with HTTP 200 and an "error" object.
-  const bodyError = json?.error && !json?.choices && !json?.content;
+  const bodyError = json?.error && !json?.choices && !json?.content && !json?.output;
   if (!res.ok || bodyError) {
     const why = json?.error?.message || json?.error || json?.message || res.statusText;
     const status = res.ok ? Number(json?.error?.code) || res.status : res.status;
     const n = Number(json?.error?.n_ctx) || 0; // llama.cpp: { error: { type: 'exceed_context_size_error', n_ctx, n_prompt_tokens } }
     throw Object.assign(new Error(`The AI provider answered ${status}: ${typeof why === 'string' ? why : JSON.stringify(why)}`), { status, contextLimit: n, errorType: String(json?.error?.type || json?.error?.code || '') });
   }
-  return anthropic ? anthropicReply(json) : openaiReply(json);
+  return json;
 }
 
 // ---------------------------------------------------------------- the assistant
@@ -257,6 +374,9 @@ class Assistant extends EventEmitter {
     return (Number.isFinite(min) && min > 0 ? min : 5) * 60e3;
   }
 
+  /** Settings → AI assistant → Reasoning effort ('' : the model's own default). */
+  effort() { return String(this.settings.get('aiReasoning') || ''); }
+
   view() {
     return { configured: this.configured(), busy: this.busy, waiting: !!this.waiting, model: this.settings.get('aiModel') || '', transcript: this.state.transcript, usage: this.state.usage || null, context: this.contextView() };
   }
@@ -289,7 +409,8 @@ class Assistant extends EventEmitter {
 
   /** About how many characters the next request has (system prompt, tool list, chat). */
   requestChars(history = this.state.history) {
-    return systemPrompt().length + JSON.stringify(this.tools?.defs || []).length + JSON.stringify(history).length;
+    // (a reply's raw output is mostly its encrypted reasoning, which the model does not read as text)
+    return systemPrompt().length + JSON.stringify(this.tools?.defs || []).length + JSON.stringify(history, (k, v) => (k === 'raw' || k === 'rawModel' ? undefined : v)).length;
   }
 
   /** Characters → tokens, by what the provider counted last time (about 3.3 characters a token until then). */
@@ -349,7 +470,7 @@ class Assistant extends EventEmitter {
     try {
       const reply = await this.call({
         provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel'),
-        history: [{ role: 'user', text: `${ctx.SUMMARY_PROMPT}\n\n---\n\n${text}` }], tools: [], signal: this.abort?.signal, timeoutMs: this.timeoutMs(),
+        history: [{ role: 'user', text: `${ctx.SUMMARY_PROMPT}\n\n---\n\n${text}` }], tools: [], signal: this.abort?.signal, timeoutMs: this.timeoutMs(), // a summary: the model's own effort
         onSend: n => onUsage?.({ sending: n }),
       });
       const summary = String(reply.text || '').trim();
@@ -414,6 +535,9 @@ class Assistant extends EventEmitter {
     }
     this.show({ type: 'user', text: said });
     this.tools?.noteUserText?.(said); // addresses the user gives may be read
+    // A new question: earlier replies' raw output is never sent again (only the current question's
+    // steps are), so it is not kept (the saved chat stays small; text and calls remain).
+    for (const t of this.state.history) if (t.raw) { delete t.raw; delete t.rawModel; }
     this.state.history.push({ role: 'user', text: `${this.state.note}${said}` });
     this.state.note = '';
     this.busy = true;
@@ -441,7 +565,7 @@ class Assistant extends EventEmitter {
           return this.call({
             provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey,
             model: this.settings.get('aiModel'), history: this.state.history, tools: this.tools.defs, signal: this.abort.signal,
-            onSend: n => { guess = n; usage(n); }, timeoutMs: this.timeoutMs(),
+            onSend: n => { guess = n; usage(n); }, timeoutMs: this.timeoutMs(), effort: this.effort(),
           });
         };
         let win = await this.contextWindow();
@@ -472,7 +596,8 @@ class Assistant extends EventEmitter {
           } // else nothing could be shortened: the answer it gave is kept (and counted once, below)
         }
         // What the provider counted teaches how many characters make a token for this model.
-        if (reply.usage?.input && chars && !reply.cached && !ctx.wasCut(chars, reply.usage.input, this.state.tokPerChar)) this.state.tokPerChar = Math.min(0.6, Math.max(0.15, reply.usage.input / chars));
+        // (not from a step that sent reasoning back: its tokens are counted, its characters are not)
+        if (reply.usage?.input && chars && !reply.cached && !this.state.history.some(t => t.raw) && !ctx.wasCut(chars, reply.usage.input, this.state.tokPerChar)) this.state.tokPerChar = Math.min(0.6, Math.max(0.15, reply.usage.input / chars));
         // Providers that report no usage: count it roughly (about 4 characters a token).
         const used = reply.usage || { input: guess, output: estimateTokens(`${reply.text || ''}${JSON.stringify(reply.calls || [])}`) };
         if (!reply.usage) turn.estimated = true;
@@ -480,7 +605,8 @@ class Assistant extends EventEmitter {
         turn.output += used.output;
         turn.steps++;
         usage(0);
-        this.state.history.push({ role: 'assistant', text: reply.text || '', calls: reply.calls });
+        // (OpenAI's Responses API: its output word for word, for the next request to the same model)
+        this.state.history.push({ role: 'assistant', text: reply.text || '', calls: reply.calls, ...(reply.raw ? { raw: reply.raw, rawModel: this.settings.get('aiModel') } : {}) });
         // Some models loop: the same words again each step. Show them once.
         const text = reply.text?.trim();
         const fresh = text && !shownTexts.has(text);
@@ -616,7 +742,7 @@ class Assistant extends EventEmitter {
   async test() {
     const r = await this.call({
       provider: this.settings.get('aiProvider'), endpoint: this.settings.get('aiEndpoint'), key: this.settings.aiKey, model: this.settings.get('aiModel'),
-      history: [{ role: 'user', text: 'Reply with the single word: ready' }], tools: [], timeoutMs: this.timeoutMs(),
+      history: [{ role: 'user', text: 'Reply with the single word: ready' }], tools: [], timeoutMs: this.timeoutMs(), effort: this.effort(),
     });
     this.state.context = null; // ask the server again
     const win = await this.contextWindow();
@@ -624,4 +750,4 @@ class Assistant extends EventEmitter {
   }
 }
 
-module.exports = { Assistant, callModel, openaiRequest, openaiReply, anthropicRequest, anthropicReply, endpointFor, systemPrompt };
+module.exports = { Assistant, callModel, openaiRequest, openaiReply, responsesRequest, responsesReply, usesResponses, anthropicRequest, anthropicReply, endpointFor, systemPrompt };

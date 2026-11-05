@@ -1509,7 +1509,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1766,6 +1766,8 @@ function aiPlaceholders() {
   const ex = AI_EXAMPLES[$('#s-ai-provider').value] || AI_EXAMPLES.openai;
   $('#s-ai-endpoint').placeholder = ex.endpoint;
   $('#s-ai-model').placeholder = ex.model;
+  // Anthropic's thinking works differently (a token budget): the setting is for OpenAI-compatible models.
+  $('#s-ai-reasoning').closest('.set-row').hidden = $('#s-ai-provider').value === 'anthropic';
 }
 $('#s-ai-provider').addEventListener('change', aiPlaceholders);
 $('#s-ai-test').addEventListener('click', async () => {
@@ -1831,8 +1833,8 @@ async function loadSettings() {
   $('#s-apikey').placeholder = s.hasApiKey ? `Saved key ${s.apiKeyHint} — paste a new one to replace it` : 'Paste your personal API key';
   $('#s-ai-key').value = '';
   $('#s-ai-key').placeholder = s.hasAiKey ? `Saved key ${s.aiKeyHint} — paste a new one to replace it` : 'Paste your provider\'s API key (not needed for local models)';
-  aiPlaceholders();
   for (const [k, sel] of Object.entries(form)) { $(sel).value = s[k] ?? ''; $(sel).title = String(s[k] ?? ''); }
+  aiPlaceholders(); // (after the provider is filled in: it shows or hides the reasoning setting)
   if (!s.aiContext) { $('#s-ai-context').value = ''; $('#s-ai-context').title = ''; } // 0: automatic
   for (const [k, sel] of Object.entries(checks)) $(sel).checked = !!s[k];
   refreshNxm();
