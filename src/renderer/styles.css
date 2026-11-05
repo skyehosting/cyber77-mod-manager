@@ -1222,6 +1222,7 @@ fieldset.fgroup + fieldset.fgroup { margin-top: var(--sp-4); }
 .credit-quote { margin: 0 0 var(--sp-3); color: var(--text-2); font-style: italic; }
 .credit-thumb { display: block; width: 4rem; max-width: 100%; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: none; overflow: hidden; cursor: zoom-in; transition: width .25s var(--ease); }
 .credit-thumb:hover, .credit-thumb:focus-visible { width: min(26rem, 100%); }
+.credit-for { margin: var(--sp-3) 0 0; color: var(--muted); font-size: var(--fs-sm); }
 .credit-thumb img, .credit-view img { display: block; width: 100%; height: auto; }
 /* Dialogs don't size to their content (inline-size containment): as wide as the picture fits the window. */
 .modal.credit-view { width: min(1253px, calc(100vw - 2 * var(--sp-4)), calc((100vh - 2 * var(--sp-4) - 4.5rem) * 1253 / 1038)); }
