@@ -7,6 +7,7 @@ const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
 const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
+const { findGameProcess, isGameProcess } = require('./core/gameProcess');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { PlayHistory } = require('./core/plays');
@@ -55,11 +56,7 @@ const appStartedAt = Date.now(); // a game already running when the app opens is
  */
 function gameRunningNow() {
   if (Date.now() - gameExitedAt < 20000) return Promise.resolve(true);
-  return new Promise(resolve => {
-    require('child_process').execFile('tasklist', ['/FI', 'IMAGENAME eq Cyberpunk2077.exe', '/FO', 'CSV', '/NH'], { windowsHide: true, timeout: 15000 }, (err, stdout) => {
-      resolve(err ? true : /"Cyberpunk2077\.exe"/i.test(String(stdout)));
-    });
-  });
+  return findGameProcess().then(proc => !!proc, () => true);
 }
 
 function pushSnapshot() {
@@ -480,6 +477,19 @@ async function boot() {
   handle('game:stop', async () => {
     const pid = gameLogs.status().pid;
     if (!pid) throw new Error('Cyberpunk 2077 is not running.');
+    if (process.platform !== 'win32') {
+      // Linux (a Wine process): asked to end, then made to after 5 s; checked to still be the game.
+      const now = (await findGameProcess({ known: pid }).catch(() => null))?.pid;
+      if (!now) throw new Error('Cyberpunk 2077 is not running.');
+      const signal = sig => isGameProcess(now).then(game => { if (game) process.kill(now, sig); });
+      await signal('SIGTERM');
+      for (let i = 0; i < 10 && await isGameProcess(now); i++) await new Promise(r => setTimeout(r, 500));
+      await signal('SIGKILL');
+      await new Promise(r => setTimeout(r, 500));
+      if (await isGameProcess(now)) throw new Error('Cyberpunk 2077 did not close. Close it from Steam.');
+      logger.info('Closed Cyberpunk 2077 (Stop)');
+      return true;
+    }
     const { execFile } = require('child_process');
     const kill = force => new Promise(r => execFile('taskkill', ['/PID', String(pid), '/T', ...(force ? ['/F'] : [])], { windowsHide: true }, () => r()));
     const alive = () => new Promise(r => execFile('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { windowsHide: true }, (_e, out) => r(String(out).includes(`"${pid}"`))));

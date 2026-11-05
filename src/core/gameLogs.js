@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { execFile } = require('child_process');
+const { findGameProcess } = require('./gameProcess');
 
 /*
  * Follows every log the game and its mods write — CET and its mods, RED4ext and its plugins,
@@ -18,7 +18,6 @@ const TAIL_BYTES = 64 * 1024;
 const HISTORY_MS = 24 * 3600 * 1000; // on start, show the last day of each log
 const MAX_ENTRIES = 8000;
 const STALE_MS = 3 * 24 * 3600 * 1000; // ignore logs not written for 3 days
-const GAME_EXE = 'Cyberpunk2077.exe';
 
 const LEVEL_WORDS = [
   [/^(critical|crit|fatal)$/i, 'error'],
@@ -440,14 +439,22 @@ class GameLogMonitor extends EventEmitter {
   status() { return { ...this.game, sources: this.files.size, followed: [...this.files.values()].filter(f => f.followed).length }; }
 
   checkGame() {
-    execFile('tasklist', ['/FI', `IMAGENAME eq ${GAME_EXE}`, '/FO', 'CSV', '/NH'], { windowsHide: true }, (err, stdout) => {
-      if (err) return;
-      const m = stdout.match(/"Cyberpunk2077\.exe","(\d+)"/i);
-      const running = !!m;
+    // One check at a time; not knowing (the check failed) changes nothing.
+    if (this.checking) return;
+    this.checking = true;
+    findGameProcess({ known: this.game.pid || 0 })
+      .then(proc => this.gameSeen(proc), () => {})
+      .catch(err => this.log?.warn?.('Could not follow the game', err.message))
+      .finally(() => { this.checking = false; });
+  }
+
+  gameSeen(proc) {
+    {
+      const running = !!proc;
       if (running === this.game.running) return;
       if (running) {
-        this.game = { running: true, since: Date.now(), pid: Number(m[1]) };
-        this.note('success', `Cyberpunk 2077 started (PID ${m[1]})`);
+        this.game = { running: true, since: Date.now(), pid: proc.pid };
+        this.note('success', `Cyberpunk 2077 started (PID ${proc.pid})`);
         this.snapshotCrashes();
         // What could be a log right now; anything that appears or grows during the run is one.
         this.baseline = null;
@@ -479,7 +486,7 @@ class GameLogMonitor extends EventEmitter {
       }
       this.flush();
       this.emit('game', this.status());
-    });
+    }
   }
 
   /** The game's crash reporter drops a folder per crash under %LOCALAPPDATA%\REDEngine\ReportQueue. */
