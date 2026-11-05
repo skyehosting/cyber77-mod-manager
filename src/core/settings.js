@@ -16,7 +16,7 @@ class Settings {
       apiKeyPlain: '',
       gamePath: '',
       dataDir: path.join(userDataDir, 'data'),
-      sevenZipPath: DEFAULT_SEVEN_ZIP,
+      sevenZipPath: process.platform === 'win32' ? DEFAULT_SEVEN_ZIP : '', // Linux: found on PATH (manager.js sevenZip)
       concurrentDownloads: 4,
       categories: ['MAIN'], // the file categories ticked for you when you download a mod
       categoriesV2: false, // the old default (every category but old and archived) was moved to Main only
@@ -142,7 +142,10 @@ class Settings {
     }
     if (typeof patch.sevenZipPath === 'string') {
       const v = patch.sevenZipPath.trim();
-      if (v && !/(^|[\\/])7z[az]?\.exe$/i.test(v)) throw new Error('Choose 7-Zip\'s program: 7z.exe.');
+      // Windows: 7z.exe. Linux: 7-Zip's 7zz, or p7zip's 7z / 7za (no .exe).
+      if (v && !(process.platform === 'win32' ? /(^|[\\/])7z[az]?\.exe$/i : /(^|\/)(7zz|7z|7za)$/).test(v)) {
+        throw new Error(process.platform === 'win32' ? 'Choose 7-Zip\'s program: 7z.exe.' : 'Choose 7-Zip\'s program: 7zz (or 7z).');
+      }
       d.sevenZipPath = v;
     }
     if ('autoEnable' in patch) d.autoEnable = !!patch.autoEnable;

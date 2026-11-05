@@ -11,6 +11,7 @@ const { Downloader } = require('./downloader');
 const { Installer, isSafeRel } = require('./installer');
 const { Deployer } = require('./deployer');
 const { isGameDir, gameWindowsFolders } = require('./gameFinder');
+const { caseResolver } = require('./fileCase');
 const { sanitizeName } = require('./layout');
 const { ownerRoot } = require('./gameLogs');
 const { findUpdate } = require('./updates');
@@ -53,6 +54,16 @@ const plainText = t => String(t || '').replace(/<br\s*\/?>/gi, '\n').replace(/\[
   .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
 function sevenZip(configured) {
   if (configured && fs.existsSync(configured)) return configured;
+  if (process.platform !== 'win32') {
+    // Linux: a bundled 7zz, else 7-Zip's own 7zz or p7zip's 7z/7za from PATH.
+    const bundled = process.resourcesPath ? path.join(process.resourcesPath, '7zip', '7zz') : '';
+    if (bundled && fs.existsSync(bundled)) return bundled;
+    const runnable = p => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
+    for (const dir of String(process.env.PATH || '').split(path.delimiter).filter(d => path.isAbsolute(d))) {
+      for (const name of ['7zz', '7z', '7za']) if (runnable(path.join(dir, name))) return path.join(dir, name);
+    }
+    return configured;
+  }
   const bundled = process.resourcesPath ? path.join(process.resourcesPath, '7zip', '7z.exe') : '';
   return bundled && fs.existsSync(bundled) ? bundled : configured;
 }
@@ -2890,13 +2901,14 @@ const squash = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
  */
 function foundInGame(gameDir, req) {
   if (!gameDir || !isGameDir(gameDir)) return '';
+  const where = caseResolver(gameDir); // Linux: the game finds files whatever their case; so does this
   const marker = FRAMEWORK_MARKERS[req.modId];
-  if (marker) return fs.existsSync(path.join(gameDir, marker)) ? marker : '';
+  if (marker) return where.exists(marker) ? marker : '';
   const want = squash(req.modName);
   if (want.length < 4) return '';
   for (const rel of MOD_FOLDERS) {
     let entries = [];
-    try { entries = fs.readdirSync(path.join(gameDir, rel)); } catch { continue; }
+    try { entries = fs.readdirSync(path.join(gameDir, where.resolve(rel, false))); } catch { continue; }
     const hit = entries.find(e => squash(e) === want);
     if (hit) return `${rel}/${hit}`;
   }
@@ -2915,4 +2927,4 @@ function removeEmptyParents(dir, stopAt) {
   }
 }
 
-module.exports = { ModManager, pickMainFiles, foundInGame, matchNexusFile };
+module.exports = { ModManager, pickMainFiles, foundInGame, matchNexusFile, sevenZip };

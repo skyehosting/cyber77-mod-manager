@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { extract, listFiles } = require('./archive');
 const { planLayout, describeType } = require('./layout');
 const { loadFomod } = require('./fomodParse');
+const { caseResolver } = require('./fileCase');
 const Fomod = require('../shared/fomod');
 
 const isSafeRel = p => !!p && !path.isAbsolute(p) && !/^[a-z]:/i.test(p) && !p.split('/').includes('..');
@@ -44,12 +45,15 @@ class Installer {
   /** FOMOD file states: whether files a dependency names exist in the game folder. */
   fileStates(session, gameDir) {
     const states = {};
+    const where = gameDir ? caseResolver(gameDir) : null; // whatever case the installer spells it in
     const walk = c => {
       if (!c) return;
       for (const it of c.items) {
         if (it.items) walk(it);
         else if ('file' in it && gameDir) {
-          states[it.file.toLowerCase()] = fs.existsSync(path.join(gameDir, it.file)) ? 'Active' : 'Missing';
+          // Only paths inside the game folder are looked at (an installer's XML names them).
+          const rel = String(it.file).replace(/\\/g, '/');
+          states[it.file.toLowerCase()] = isSafeRel(rel) && where.exists(rel) ? 'Active' : 'Missing';
         }
       }
     };

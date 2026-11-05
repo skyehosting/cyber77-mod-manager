@@ -8,7 +8,7 @@ const { execFileSync } = require('child_process');
 const { Settings } = require('../src/core/settings');
 const { ModManager } = require('../src/core/manager');
 
-const SEVEN_ZIP = 'C:\\Program Files\\7-Zip\\7z.exe';
+const SEVEN_ZIP = require('./seven-zip');
 const quiet = { info() {}, warn() {}, error() {}, success() {}, debug() {} };
 
 function makeArchive(dir, name, files) {

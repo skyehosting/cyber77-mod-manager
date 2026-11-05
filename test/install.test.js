@@ -9,7 +9,7 @@ const { Installer } = require('../src/core/installer');
 const { parseModuleConfig, decode } = require('../src/core/fomodParse');
 const Fomod = require('../src/shared/fomod');
 
-const SEVEN_ZIP = 'C:\\Program Files\\7-Zip\\7z.exe';
+const SEVEN_ZIP = require('./seven-zip');
 const quiet = { info() {}, warn() {}, error() {}, success() {}, debug() {} };
 const have7z = fs.existsSync(SEVEN_ZIP);
 

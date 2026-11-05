@@ -1803,9 +1803,11 @@ $('#s-data-browse').addEventListener('click', async () => {
   if (p) { $('#s-data').value = p; updateDirty(); }
 });
 $('#s-7z-browse').addEventListener('click', async () => {
-  const p = await run(api.pickFile('Select 7z.exe', [{ name: '7-Zip', extensions: ['exe'] }]));
+  // Linux: 7-Zip's 7zz (or p7zip's 7z) has no extension to filter by.
+  const p = await run(api.platform === 'win32' ? api.pickFile('Select 7z.exe', [{ name: '7-Zip', extensions: ['exe'] }]) : api.pickFile('Select the 7zz (or 7z) program', []));
   if (p && p[0]) { $('#s-7z').value = p[0]; updateDirty(); }
 });
+if (api.platform !== 'win32') $('#s-7z').closest('.set-row').querySelector('.set-desc').textContent = '7zz (or 7z), used for .zip, .7z and .rar archives. Found by itself when it is installed; .rar needs 7-Zip\'s own 7zz or the p7zip-rar package.';
 $$('[data-open]').forEach(b => b.addEventListener('click', () => run(api.openPath(b.dataset.open))));
 
 function renderStatus() {

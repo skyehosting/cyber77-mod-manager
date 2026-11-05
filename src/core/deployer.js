@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { JsonStore } = require('./jsonStore');
+const { caseResolver } = require('./fileCase');
 
 /**
  * Puts enabled mods' staged files into the game folder (hardlinks, or copies as a fallback) and
@@ -56,6 +57,13 @@ class Deployer {
         desired.set(dest.toLowerCase(), { dest, owner: mod.id, src: path.join(mod.stagingDir, dest) });
       }
     }
+    // Linux: each file goes where the game folder already has its folders, whatever case the mod
+    // spells them in (fileCase.js); the staged file is read as the mod has it.
+    const linux = process.platform !== 'win32';
+    if (linux) {
+      const where = caseResolver(gameDir);
+      for (const want of desired.values()) want.dest = where.resolve(want.dest);
+    }
 
     const result = { added: 0, removed: 0, restored: 0, errors: [] };
     const fail = (msg, err) => {
@@ -67,7 +75,8 @@ class Deployer {
       // 1. Take out files that are no longer wanted or now belong to another mod.
       for (const [key, entry] of Object.entries(data.deployed)) {
         const want = desired.get(key);
-        if (want && want.owner === entry.owner && this.isIntact(gameDir, entry)) continue;
+        // (Linux: a file placed under another spelling of its folders moves to the one the game sees.)
+        if (want && want.owner === entry.owner && this.isIntact(gameDir, entry) && (!linux || entry.dest === want.dest)) continue;
         try {
           this.removeFile(gameDir, entry);
           result.removed++;
@@ -223,7 +232,8 @@ class Deployer {
       const full = path.join(gameDir, cur);
       if (!fs.existsSync(full)) {
         fs.mkdirSync(full);
-        created.add(cur.toLowerCase());
+        // As made: Linux keeps names as they are (cleaning up finds it only so); Windows ignores case.
+        created.add(process.platform === 'win32' ? cur.toLowerCase() : cur);
       }
     }
     this.store.data.createdDirs = [...created];
