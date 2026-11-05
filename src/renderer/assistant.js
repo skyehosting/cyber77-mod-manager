@@ -482,7 +482,8 @@ async function sendText(text) {
   }
 }
 
-const growInput = () => { const i = $('#ai-input'); i.style.height = 'auto'; i.style.height = `${Math.min(i.scrollHeight + 2, 200)}px`; };
+// As tall as its text (padding included) plus its own borders: no stray pixels that push the text up.
+const growInput = () => { const i = $('#ai-input'); i.style.height = 'auto'; i.style.height = `${Math.min(i.scrollHeight + (i.offsetHeight - i.clientHeight), 200)}px`; };
 
 api.onAi(e => {
   if (e.type === 'reset') { ai.items = []; ai.cards.clear(); }

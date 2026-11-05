@@ -2513,6 +2513,14 @@ body.drawer-open .main { margin-right: var(--panel-w); }
 .ai-card-head { background: var(--surface-2); }
 .ai-compose { max-width: 62rem; width: 100%; margin: 0 auto; padding: 0.6rem; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; align-items: flex-end; }
 .ai-compose textarea { background: transparent; border: 0; box-shadow: none !important; }
+/* The message box: full-size text (not the small one of settings fields), and one line exactly as tall
+   as the Send button, the text in its middle; more lines grow it upwards. */
+#page-ai .ai-compose textarea {
+  font-size: 1rem;
+  line-height: 1.4;
+  min-height: var(--control-h);
+  padding-block: max(0px, calc((var(--control-h) - 1.4em) / 2));
+}
 .ai-setup { margin-top: 0; flex: 1; }
 
 /* Toolbars wrap onto a second line when the window is too narrow for them. */
