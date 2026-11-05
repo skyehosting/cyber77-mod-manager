@@ -25,8 +25,8 @@ class Settings {
       installDependencies: true,
       handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
-      updateEvery: 2, // how often the app looks for a new version of itself…
-      updateUnit: 'minutes', // …in 'minutes' | 'hours' | 'days'
+      updateEvery: 1, // how often the app looks for a new version of itself (also each time it opens)…
+      updateUnit: 'days', // …in 'minutes' | 'hours' | 'days'
       updateMode: 'auto', // 'auto' install with a restart | 'ask' before restarting | 'off' no checks by itself
       launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'steam': through Steam, with its overlay
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
@@ -61,6 +61,13 @@ class Settings {
     if (!d.categoriesV2) {
       if (Array.isArray(d.categories) && [...d.categories].sort().join() === 'MAIN,MISCELLANEOUS,OPTIONAL,UPDATE') d.categories = ['MAIN'];
       d.categoriesV2 = true;
+      this.store.save();
+    }
+    // The update check moved from every 2 minutes to once a day: copies still on the old default
+    // follow (one set to anything else keeps it). Once only, so a later choice of 2 minutes stays.
+    if (!d.updateDailyV1) {
+      if (d.updateEvery === 2 && d.updateUnit === 'minutes') { d.updateEvery = 1; d.updateUnit = 'days'; }
+      d.updateDailyV1 = true;
       this.store.save();
     }
     // The data folder in use: one chosen in Settings takes over after a restart (the library and the
@@ -154,7 +161,7 @@ class Settings {
     if ('installDependencies' in patch) d.installDependencies = !!patch.installDependencies;
     if ('handleNxm' in patch) d.handleNxm = !!patch.handleNxm;
     if ('blockAds' in patch) d.blockAds = !!patch.blockAds;
-    if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 2));
+    if ('updateEvery' in patch) d.updateEvery = Math.min(999, Math.max(1, parseInt(patch.updateEvery, 10) || 1));
     if ('updateUnit' in patch && ['minutes', 'hours', 'days'].includes(patch.updateUnit)) d.updateUnit = patch.updateUnit;
     if (['auto', 'ask', 'off'].includes(patch.updateMode)) d.updateMode = patch.updateMode;
     if ('launchMode' in patch && ['direct', 'steam', 'store'].includes(patch.launchMode)) d.launchMode = patch.launchMode === 'store' ? 'steam' : patch.launchMode;

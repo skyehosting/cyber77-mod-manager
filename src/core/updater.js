@@ -3,8 +3,8 @@ const { EventEmitter } = require('events');
 
 /*
  * Updates of the app itself, from the GitHub releases of the public repository (electron-updater
- * reads latest.yml there). While the app is open it checks on a schedule (every 2 minutes by
- * default, set in Settings) and downloads a new version by itself. The window shows it from the
+ * reads latest.yml there). It checks when the app opens, then on a schedule while it stays open
+ * (once a day by default, set in Settings), and downloads a new version by itself. The window shows it from the
  * moment it is found. How it installs follows Settings → App updates:
  *   'auto'   restart to install once nothing is in progress and the window is in view, after a
  *            notice the user can put off (it then installs when the app is next closed);
@@ -18,11 +18,15 @@ const MIN_MS = 60e3;
 const RESTART_DELAY_MS = 30e3;
 const MODES = ['auto', 'ask', 'off'];
 
-/** How long between checks, from the settings ({ value, unit }); never under a minute. */
+/**
+ * How long between checks, from the settings ({ value, unit }); never under a minute, and at most 24
+ * days (a timer cannot wait longer than about 24.8 days: past that it fires at once, again and again).
+ * Nonsense means the default, once a day.
+ */
 function intervalMs(every, unit) {
   const n = Number(every);
-  const ms = (Number.isFinite(n) && n > 0 ? n : 2) * (UNIT_MS[unit] || UNIT_MS.minutes);
-  return Math.min(Math.max(ms, MIN_MS), 30 * UNIT_MS.days);
+  const ms = Number.isFinite(n) && n > 0 && UNIT_MS[unit] ? n * UNIT_MS[unit] : UNIT_MS.days;
+  return Math.min(Math.max(ms, MIN_MS), 24 * UNIT_MS.days);
 }
 
 class AppUpdater extends EventEmitter {

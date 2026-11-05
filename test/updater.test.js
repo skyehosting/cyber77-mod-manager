@@ -10,9 +10,10 @@ test('the check interval follows the setting, never under a minute', () => {
   assert.strictEqual(intervalMs(2, 'minutes'), 120e3);
   assert.strictEqual(intervalMs(3, 'hours'), 3 * 3600e3);
   assert.strictEqual(intervalMs(1, 'days'), 86400e3);
-  assert.strictEqual(intervalMs(0, 'minutes'), 120e3, 'nonsense falls back to 2 minutes');
-  assert.strictEqual(intervalMs(5, 'weeks'), 5 * 60e3, 'an unknown unit counts as minutes');
-  assert.strictEqual(intervalMs(999, 'days'), 30 * 86400e3, 'at most 30 days');
+  assert.strictEqual(intervalMs(0, 'minutes'), 86400e3, 'nonsense falls back to the default, once a day');
+  assert.strictEqual(intervalMs(5, 'weeks'), 86400e3, 'an unknown unit too');
+  assert.strictEqual(intervalMs(999, 'days'), 24 * 86400e3, 'at most 24 days (a timer cannot wait longer)');
+  assert.ok(intervalMs(999, 'days') < 2 ** 31, 'within what setInterval can wait');
 });
 
 function fakeUpdater() {
@@ -177,4 +178,23 @@ test('Linux: a copy from the .deb never checks (its status says so); a release w
   assert.strictEqual(u.state.error, '');
   up.emit('error', new Error('net::ERR_INTERNET_DISCONNECTED'));
   assert.strictEqual(u.state.status, 'error', 'other failures still show');
+});
+
+test('the update check is once a day by default; copies still on the old 2-minute default move to it, once', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { Settings } = require('../src/core/settings');
+  const fresh = new Settings(fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-upd-')), null);
+  assert.deepStrictEqual([fresh.get('updateEvery'), fresh.get('updateUnit')], [1, 'days']);
+  // An older copy: settings.json saved with the old default, and one where the user chose 6 hours.
+  const old = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-upd-'));
+  fs.writeFileSync(path.join(old, 'settings.json'), JSON.stringify({ updateEvery: 2, updateUnit: 'minutes' }));
+  const moved = new Settings(old, null);
+  assert.deepStrictEqual([moved.get('updateEvery'), moved.get('updateUnit')], [1, 'days']);
+  moved.update({ updateEvery: 2, updateUnit: 'minutes' });
+  assert.deepStrictEqual([new Settings(old, null).get('updateEvery'), new Settings(old, null).get('updateUnit')], [2, 'minutes'], 'chosen again later: kept');
+  const chosen = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-upd-'));
+  fs.writeFileSync(path.join(chosen, 'settings.json'), JSON.stringify({ updateEvery: 6, updateUnit: 'hours' }));
+  assert.deepStrictEqual([new Settings(chosen, null).get('updateEvery'), new Settings(chosen, null).get('updateUnit')], [6, 'hours']);
 });
