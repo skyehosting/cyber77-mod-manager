@@ -124,6 +124,8 @@ contextBridge.exposeInMainWorld('api', {
   prioritize: ids => call('mods:prioritize', ids),
   modFiles: id => call('mods:files', id),
   modConflicts: id => call('mods:conflicts', id),
+  conflictPlan: ids => call('mods:conflictPlan', ids),
+  setFileChoices: choices => call('mods:fileChoices', choices),
   redeploy: () => call('mods:redeploy'),
   purge: () => call('mods:purge'),
   fomodSubmit: (token, selections) => call('fomod:submit', token, selections),

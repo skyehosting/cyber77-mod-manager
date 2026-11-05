@@ -809,6 +809,13 @@ async function setModsEnabled(ids, enabled) {
     const more = await offerRequirements(ids);
     if (more === null) return null;
     ids = [...ids, ...more];
+    // Files these share with enabled mods (or each other) that differ: whose copy loads.
+    const plan = (await api.conflictPlan(ids.filter(id => !isVx(id)))).ok || [];
+    if (plan.length) {
+      const picks = await fileChoiceBox(plan, { enabling: true });
+      if (picks === null) return null;
+      if (!(await run(api.setFileChoices(picks)))) return null;
+    }
   }
   const vx = ids.filter(isVx);
   // Enabling one of ours that Vortex also has switches Vortex's copy off: Vortex closes if open.
@@ -1135,13 +1142,87 @@ function conflictSection(m, conflicts) {
     ...conflicts.map(c => h('div', { class: 'conflict' },
       h('div', { class: 'conflict-head' },
         h('div', { class: 'cell-name' },
-          h('span', { class: `conflict-win ${c.weWin ? 'ok' : 'lose'}` }, c.weWin ? 'This mod wins' : `${c.name} wins`),
+          h('span', { class: `conflict-win ${c.weWin ? 'ok' : c.mixed ? 'split' : 'lose'}` }, c.weWin ? 'This mod wins' : c.mixed ? 'Some files from each' : `${c.name} wins`),
           h('span', { class: 'subname' }, `${plural(c.files.length, 'shared file')} with ${c.name}`)),
+        m.enabled ? h('button', {
+          class: 'btn btn-sm', dataset: { key: `pick:${c.id}` }, title: 'Choose whose copy of each shared file loads',
+          onclick: async () => {
+            // Every mod that has these files is offered (a third one too).
+            const files = (c.items || []).map(i => ({ file: i.file, providers: i.providers, winner: i.winner, same: i.same }));
+            const others = [...new Map(files.flatMap(f => f.providers).filter(p => p.id !== m.id).map(p => [p.id, p])).values()];
+            const picks = await fileChoiceBox([{ mod: { id: m.id, name: m.name }, others, files }]);
+            if (picks && (await run(api.setFileChoices(picks)))) toast('Saved: those files load from the mod you picked', 'success');
+          },
+        }, 'Choose files…') : null,
         c.weWin
           ? h('button', { class: 'btn btn-sm', dataset: { key: `let:${c.id}` }, title: `Move ${c.name} to the top priority, so it wins over this and every other mod`, onclick: () => modAction('prioritize', [c.id]) }, 'Let the other win')
           : h('button', { class: 'btn btn-sm btn-primary', dataset: { key: `win:${c.id}` }, title: 'Move this mod to the top priority, so it wins over every other mod', onclick: () => modAction('prioritize', [m.id]) }, 'Make this mod win')),
-      h('div', { class: 'conflict-files' }, c.files.slice(0, 50).map(f => h('div', {}, f)), c.files.length > 50 ? h('div', { class: 'muted' }, `…and ${c.files.length - 50} more`) : null))),
+      h('div', { class: 'conflict-files' }, (c.items || c.files.map(file => ({ file }))).slice(0, 50).map(f => h('div', {}, f.file,
+        f.same ? h('span', { class: 'muted' }, ' · identical') : f.winner ? h('span', { class: 'muted' }, ` · ${f.winner === m.id ? 'this mod\'s copy' : `${c.name}'s copy`}${f.chosen ? ' (picked)' : ''}`) : null)),
+      c.files.length > 50 ? h('div', { class: 'muted' }, `…and ${c.files.length - 50} more`) : null))),
   ];
+}
+
+/**
+ * Mods that share files: whose copy of each loads. groups: [{ mod, others, files: [{ file, providers,
+ * winner, same }] }] (mod, others, providers: { id, name }); a file is in one group only. All of one
+ * mod's copies at once, or file by file; identical copies need no choice. Resolves { path: { id,
+ * among } } for every file whose copies differ (among: the mods that have it), or null (cancelled).
+ */
+function fileChoiceBox(groups, { enabling = false } = {}) {
+  const picks = new Map(); // path → { id, among }
+  const sections = groups.map((g, gi) => {
+    const differ = g.files.filter(f => !f.same);
+    const same = g.files.filter(f => f.same);
+    const everyone = [g.mod, ...g.others];
+    for (const f of differ) picks.set(f.file, { id: f.winner, among: f.providers.map(p => p.id) });
+    const allFrom = id => differ.every(f => picks.get(f.file).id === id);
+    let mode = everyone.find(m => allFrom(m.id))?.id || 'files';
+    const sec = h('section', { class: 'fc-pair' });
+    const draw = () => keepFocus(sec, () => {
+      const opt = (value, label) => h('button', {
+        type: 'button', class: `seg-btn${mode === value ? ' active' : ''}`, 'aria-pressed': String(mode === value), title: label,
+        dataset: { key: `fc:${gi}:mode:${value}` },
+        onclick: () => {
+          // "X's files": every file X has comes from X; the list stays open if X lacks some of them.
+          if (value !== 'files') for (const f of differ) if (f.providers.some(p => p.id === value)) picks.get(f.file).id = value;
+          mode = value === 'files' || allFrom(value) ? value : 'files';
+          draw();
+        },
+      }, h('span', { class: 'fc-trunc' }, label));
+      const mixed = new Set(differ.map(f => picks.get(f.file).id)).size > 1;
+      const row = f => h('div', { class: 'fc-row' },
+        h('span', { class: 'fc-file', title: f.file }, f.file, f.decided ? h('span', { class: 'fc-note' }, ' · chosen before') : null),
+        h('span', { class: 'seg seg-sm', role: 'group', 'aria-label': `Whose ${f.file} loads` },
+          // (in the order of the buttons above)
+          ...[...f.providers].sort((x, y) => everyone.findIndex(e => e.id === x.id) - everyone.findIndex(e => e.id === y.id)).map(m => h('button', {
+            type: 'button', class: `seg-btn${picks.get(f.file).id === m.id ? ' active' : ''}`, 'aria-pressed': String(picks.get(f.file).id === m.id), title: m.name,
+            dataset: { key: `fc:${gi}:${f.file}:${m.id}` },
+            onclick: () => { picks.get(f.file).id = m.id; draw(); },
+          }, h('span', { class: 'fc-trunc' }, m.name)))));
+      sec.replaceChildren(...[
+        h('div', { class: 'fc-head' },
+          h('div', { class: 'fc-title' }, `${g.mod.name} and ${g.others.map(o => o.name).join(', ')}`),
+          h('div', { class: 'fc-sub' }, `${plural(differ.length, 'shared file')} differ${differ.length === 1 ? 's' : ''}${same.length ? ` · ${plural(same.length, 'identical file')}, no choice needed` : ''}`)),
+        h('div', { class: 'seg fc-mode', role: 'group', 'aria-label': 'Whose files load' },
+          ...everyone.map(m => opt(m.id, `${m.name}'s files`)), opt('files', 'Pick per file')),
+        mode === 'files' ? h('div', { class: 'fc-files' }, ...differ.map(row)) : null,
+        mixed ? h('p', { class: 'hint warn' }, 'Mixing files from two copies of the same mod can stop it loading. RED4ext, for one, needs bin/x64/winmm.dll and red4ext/RED4ext.dll from the same copy.') : null,
+        same.length && mode === 'files' ? h('p', { class: 'hint' }, `Identical in ${everyone.length > 2 ? 'every copy' : 'both'}: ${same.map(f => f.file).join(', ')}`) : null,
+      ].filter(Boolean));
+    });
+    draw();
+    return sec;
+  });
+  return modal({
+    title: enabling ? 'These mods share files' : 'Choose whose files load',
+    sub: 'Only one copy of each file can be in the game: pick whose loads',
+    body: h('div', { class: 'fc' }, ...sections),
+    buttons: [
+      { label: 'Cancel', value: false, safe: true },
+      { label: enabling ? 'Enable' : 'Save', value: true, kind: 'btn-primary' },
+    ],
+  }).then(ok => (ok ? Object.fromEntries(picks) : null));
 }
 
 $('#drawer-close').addEventListener('click', closeDrawer);

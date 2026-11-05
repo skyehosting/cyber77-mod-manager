@@ -30,6 +30,17 @@ const archiveTools = require('./archive');
 const MAX_PROFILE_MODS = 1000;
 
 /** FOMOD choices from a shared file: { step: { group: [optionIndex] } } with small integers only. */
+/** Each file (lower-case path) → the mods that have it, in the order given (lowest priority first). */
+function providersOf(mods) {
+  const providers = new Map();
+  for (const m of mods) for (const f of m.files) {
+    const k = f.toLowerCase();
+    if (!providers.has(k)) providers.set(k, []);
+    providers.get(k).push(m.id);
+  }
+  return providers;
+}
+
 function validChoices(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
   const out = {};
@@ -211,16 +222,11 @@ class ModManager extends EventEmitter {
   snapshot() {
     const mods = Object.values(this.data.mods).sort((a, b) => b.priority - a.priority);
     const enabled = mods.filter(m => m.enabled).sort((a, b) => a.priority - b.priority);
-    const providers = new Map();
-    for (const m of enabled) for (const f of m.files) {
-      const k = f.toLowerCase();
-      if (!providers.has(k)) providers.set(k, []);
-      providers.get(k).push(m.id);
-    }
+    const providers = providersOf(enabled);
     const conflicts = {};
-    for (const list of providers.values()) {
+    for (const [key, list] of providers) {
       if (list.length < 2) continue;
-      const winner = list[list.length - 1];
+      const winner = this.fileWinner(key, list);
       for (const id of list) {
         conflicts[id] ||= { wins: 0, loses: 0, with: new Set() };
         if (id === winner) conflicts[id].wins++; else conflicts[id].loses++;
@@ -257,22 +263,158 @@ class ModManager extends EventEmitter {
   }
 
   /**
+   * Which enabled mod's copy of a shared file goes into the game: the one picked in the conflict
+   * window (data.fileChoices: lower-case path → { id, among }) while that mod provides it, else the highest
+   * priority's. providers: the ids that have the file, lowest priority first.
+   */
+  fileWinner(key, providers) {
+    const pick = this.pickOf(key);
+    // A pick holds among the mods it was made among: one enabled since that also has the file (by a
+    // profile switch, say, without the window) is not outvoted by it; priority decides until asked.
+    const holds = pick && providers.includes(pick.id) && providers.every(x => pick.among.includes(x));
+    return holds ? pick.id : providers[providers.length - 1];
+  }
+
+  /** The pick for a file (lower-case path): { id, among } (the mods it was chosen among), or null. */
+  pickOf(key) {
+    const list = this.data.fileChoices;
+    const pick = list && Object.hasOwn(list, key) ? list[key] : null;
+    return pick && typeof pick.id === 'string' && Array.isArray(pick.among) ? pick : null;
+  }
+
+  /**
    * File conflicts between this mod and every other enabled mod: for each other mod, the shared
-   * files and which mod's copy is in the game. The higher priority wins.
+   * files, whose copy of each is in the game (`items`: { file, winner, chosen, same, providers }),
+   * and whether this mod wins all of them (weWin) or some (mixed).
    */
   conflictDetails(id) {
     const mod = this.data.mods[id];
     if (!mod) return [];
     const mine = new Set(mod.files.map(f => f.toLowerCase()));
+    const enabled = Object.values(this.data.mods).filter(m => m.enabled || m.id === id).sort((a, b) => a.priority - b.priority);
+    const providers = providersOf(enabled);
+    const named = ids => ids.map(x => ({ id: x, name: this.data.mods[x]?.name || x }));
     const out = [];
     for (const other of Object.values(this.data.mods)) {
       if (other.id === id || !other.enabled) continue;
-      const shared = other.files.filter(f => mine.has(f.toLowerCase()));
+      const shared = other.files.filter(f => mine.has(f.toLowerCase())).sort();
       if (!shared.length) continue;
-      const weWin = mod.priority > other.priority;
-      out.push({ id: other.id, name: other.name, priority: other.priority, weWin, files: shared.sort() });
+      const items = shared.map(f => {
+        const key = f.toLowerCase();
+        const list = providers.get(key);
+        const winner = this.fileWinner(key, list);
+        return { file: f, winner, chosen: this.pickOf(key)?.id === winner, same: this.sameCopies(list, key), providers: named(list) };
+      });
+      const ours = items.filter(x => x.winner === id).length;
+      out.push({ id: other.id, name: other.name, priority: other.priority, weWin: ours === items.length, mixed: ours > 0 && ours < items.length, files: shared, items });
     }
     return out.sort((a, b) => b.files.length - a.files.length);
+  }
+
+  /**
+   * Files that mods about to be enabled (ids) share with the mods enabled now (or each other), for the
+   * window that asks whose copy loads: one group per such mod, [{ mod, others, files: [{ file,
+   * providers, winner, same }] }] (mod and each provider: { id, name }). A group is there only when
+   * one of its files has copies that differ and no pick made among all the mods that have it now.
+   * Each file is in one group only.
+   */
+  conflictPlan(ids) {
+    const want = [...new Set((Array.isArray(ids) ? ids : []).map(String))].filter(id => Object.hasOwn(this.data.mods, id)).map(id => this.data.mods[id]).filter(m => !m.enabled);
+    if (!want.length) return [];
+    const after = [...Object.values(this.data.mods).filter(m => m.enabled), ...want].sort((a, b) => a.priority - b.priority);
+    const providers = providersOf(after);
+    const named = list => list.map(x => ({ id: x, name: this.data.mods[x].name }));
+    const out = [];
+    const seen = new Set();
+    for (const a of want) {
+      const files = [];
+      for (const f of a.files) {
+        const key = f.toLowerCase();
+        const list = providers.get(key);
+        if (list.length < 2 || seen.has(key)) continue;
+        seen.add(key);
+        const pick = this.pickOf(key);
+        const decided = pick && list.includes(pick.id) && list.every(x => pick.among.includes(x));
+        // Identical copies need no choice; files already decided among these same mods are not asked again.
+        files.push({ file: f, key, providers: named(list), winner: this.fileWinner(key, list), decided });
+      }
+      for (const f of files) f.same = f.decided ? false : this.sameCopies(f.providers.map(p => p.id), f.key);
+      if (!files.some(f => !f.same && !f.decided)) continue;
+      const others = [...new Set(files.flatMap(f => f.providers.map(p => p.id)))].filter(x => x !== a.id);
+      out.push({ mod: { id: a.id, name: a.name }, others: named(others), files: files.map(({ key, ...f }) => f).sort((x, y) => x.file.localeCompare(y.file)) });
+    }
+    return out;
+  }
+
+  /**
+   * Whose copy of shared files loads: choices is { path: { id, among } } (among: the mods the choice
+   * was made among, the picked one included), or { path: null } to forget it (the highest priority
+   * wins again). Only mods that have that file count. Redeploys; nothing is kept if that fails.
+   */
+  setFileChoices(choices) {
+    return this.op(async () => {
+      const before = JSON.parse(JSON.stringify(this.data.fileChoices || {}));
+      const list = (this.data.fileChoices ||= {});
+      const hasFile = (id, key) => Object.hasOwn(this.data.mods, id) && this.data.mods[id].files.some(f => f.toLowerCase() === key);
+      let n = 0;
+      for (const [file, pick] of Object.entries(choices && typeof choices === 'object' ? choices : {}).slice(0, 20000)) {
+        const key = String(file).toLowerCase();
+        if (key === '__proto__') continue; // never a game file; would reach the object's prototype
+        if (pick === null) { if (Object.hasOwn(list, key)) { delete list[key]; n++; } continue; }
+        const id = String(pick?.id ?? '');
+        if (!hasFile(id, key)) continue;
+        const among = [...new Set([id, ...(Array.isArray(pick.among) ? pick.among.map(String) : [])])].filter(x => hasFile(x, key)).slice(0, 100);
+        list[key] = { id, among };
+        n++;
+      }
+      if (n) {
+        try {
+          this.deploy();
+        } catch (err) {
+          this.data.fileChoices = before;
+          throw err;
+        }
+        this.log.success(`Saved whose copy loads for ${plural(n, 'shared file')}`);
+      }
+      return { saved: n };
+    });
+  }
+
+  /**
+   * Are all these mods' staged copies of a file the same bytes (so nothing needs choosing)? Size
+   * first, then a hash. Files over 16 MB (archives: reading them would hold up the app) or unreadable
+   * count as different. Hashes are remembered per copy.
+   */
+  sameCopies(ids, key) {
+    const files = ids.map(id => {
+      const m = this.data.mods[id];
+      const rel = m?.files.find(f => f.toLowerCase() === key);
+      return rel ? path.join(this.settings.stagingDir, m.id, rel) : '';
+    });
+    if (files.length < 2 || files.some(f => !f)) return false;
+    try {
+      const stats = files.map(f => fs.statSync(f));
+      if (stats.some(s => s.size !== stats[0].size) || stats[0].size > 16 * 1024 * 1024) return false;
+      const first = this.stagedHash(files[0], stats[0]);
+      return files.every((f, i) => this.stagedHash(f, stats[i]) === first);
+    } catch {
+      return false;
+    }
+  }
+
+  stagedHash(file, st) {
+    this.hashCache ||= new Map();
+    const tag = `${file}|${st.size}|${st.mtimeMs}`;
+    if (this.hashCache.has(tag)) {
+      const v = this.hashCache.get(tag);
+      this.hashCache.delete(tag); // most recently used last
+      this.hashCache.set(tag, v);
+      return v;
+    }
+    const v = crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+    this.hashCache.set(tag, v);
+    if (this.hashCache.size > 5000) this.hashCache.delete(this.hashCache.keys().next().value);
+    return v;
   }
 
   modFiles(id) {
@@ -690,6 +832,12 @@ class ModManager extends EventEmitter {
       mod.enabled = prev.enabled;
       delete this.data.mods[prev.id];
       for (const [vid, own] of Object.entries(this.data.vortexAdopted || {})) if (own === prev.id) this.data.vortexAdopted[vid] = id;
+      // Its picks in the conflict window carry over to the new version (for the files it still has).
+      const has = new Set(files.map(f => f.toLowerCase()));
+      for (const [file, pick] of Object.entries(this.data.fileChoices || {})) {
+        if (pick.among?.includes(prev.id)) pick.among = pick.among.map(x => (x === prev.id ? id : x));
+        if (pick.id === prev.id) { if (has.has(file)) pick.id = id; else delete this.data.fileChoices[file]; }
+      }
       delete this.data.updates?.[prev.id];
       for (const p of Object.values(this.data.profiles?.list || {})) {
         p.enabled = p.enabled.map(x => (x === prev.id ? id : x));
@@ -2717,8 +2865,11 @@ class ModManager extends EventEmitter {
       }
       return null;
     }
+    // A shared file goes in from one mod only: the one picked for it, else the highest priority.
+    const providers = providersOf(enabled);
+    const placed = m => m.files.filter(f => { const k = f.toLowerCase(); const list = providers.get(k); return list.length < 2 || this.fileWinner(k, list) === m.id; });
     const res = this.deployer.sync(game, enabled.map(m => ({
-      id: m.id, stagingDir: path.join(this.settings.stagingDir, m.id), files: m.files,
+      id: m.id, stagingDir: path.join(this.settings.stagingDir, m.id), files: placed(m),
     })), this.settings.get('deployMethod'));
     if (this.data.loadOrder?.length) {
       try { this.data.loadOrder = loadOrder.keepAbsent(this.data.loadOrder, loadOrder.writeOrder(game, this.data.loadOrder)); } catch (err) { this.log.warn('Could not update the archive load order', err.message); }
@@ -2800,6 +2951,11 @@ class ModManager extends EventEmitter {
   prioritize(ids) {
     return this.op(async () => {
       for (const id of ids) if (this.data.mods[id]) this.data.mods[id].priority = this.data.nextPriority++;
+      // "Make this mod win": all of its files, so picks of another mod's copy for them go.
+      for (const id of ids) for (const f of this.data.mods[id]?.files || []) {
+        const k = f.toLowerCase();
+        if (this.pickOf(k) && this.pickOf(k).id !== id) delete this.data.fileChoices[k];
+      }
       this.deploy();
       this.log.info(`${ids.length} mod(s) now win their file conflicts`);
     });
@@ -2820,6 +2976,8 @@ class ModManager extends EventEmitter {
       delete this.data.mods[m.id];
       // A mod moved from Vortex: Vortex lists its own copy again.
       for (const [vid, own] of Object.entries(this.data.vortexAdopted || {})) if (own === m.id) delete this.data.vortexAdopted[vid];
+      // Its picks in the conflict window go with it.
+      for (const [file, pick] of Object.entries(this.data.fileChoices || {})) if (pick?.id === m.id) delete this.data.fileChoices[file];
       this.log.success(`Uninstalled ${m.name}${stuck}`);
     }
     this.library.save();

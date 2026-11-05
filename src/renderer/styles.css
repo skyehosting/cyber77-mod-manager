@@ -1090,6 +1090,24 @@ body.console-open .console-toggle .chevron { transform: none; }
 .conflict-win { font-weight: var(--fw-bold); }
 .conflict-win.ok { color: var(--ok); }
 .conflict-win.lose { color: var(--warn); }
+.conflict-win.split { color: var(--accent); }
+
+/* Whose copy of shared files loads (fileChoiceBox): one section per pair of mods. */
+.fc { display: grid; gap: var(--sp-3); }
+.fc-pair { border: 1px solid var(--line); border-radius: var(--r); padding: var(--sp-3); display: grid; gap: var(--sp-2); min-width: 0; }
+.fc-title { font-weight: var(--fw-bold); overflow-wrap: anywhere; }
+.fc-sub { color: var(--muted); font-size: var(--fs-sm); }
+.fc-mode { max-width: 100%; height: auto; flex-wrap: wrap; }
+.fc-mode .seg-btn { min-height: calc(var(--control-h) - 0.4rem); max-width: 100%; }
+.fc-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16rem; }
+.fc-files { display: grid; gap: var(--sp-1); max-height: 16rem; overflow: auto; }
+.fc-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.fc-file { flex: 1 1 auto; min-width: 0; font: var(--fs-xs)/1.4 var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
+.fc-row .seg { flex: none; height: auto; }
+.fc-row .seg-btn { min-height: 1.7rem; font-size: var(--fs-xs); }
+.fc-row .fc-trunc { max-width: 9rem; }
+.fc .hint.warn { color: var(--warn); margin-top: 0; }
+.fc-note { font-family: var(--font); color: var(--muted); }
 .conflict-files { font: var(--fs-xs)/1.5 var(--mono); color: var(--text-2); padding: var(--sp-2) var(--sp-3); max-height: 7.5rem; overflow: auto; }
 .conflict-files div { overflow-wrap: anywhere; }
 

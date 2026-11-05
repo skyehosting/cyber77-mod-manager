@@ -835,6 +835,8 @@ async function boot() {
   handle('mods:prioritize', ids => manager.prioritize(ids));
   handle('mods:files', id => manager.modFiles(id));
   handle('mods:conflicts', id => manager.conflictDetails(id));
+  handle('mods:conflictPlan', ids => manager.conflictPlan(Array.isArray(ids) ? ids.map(String).slice(0, 1000) : []));
+  handle('mods:fileChoices', choices => manager.setFileChoices(choices && typeof choices === 'object' ? choices : {}));
   handle('mods:redeploy', () => manager.redeploy());
   handle('mods:purge', () => manager.purge());
   handle('fomod:submit', (token, selections) => manager.fomodSubmit(token, selections));
