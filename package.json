@@ -4,6 +4,7 @@
   "version": "1.1.0",
   "description": "Nexus Mods downloader and mod manager for Cyberpunk 2077",
   "main": "src/main.js",
+  "desktopName": "edgerunners-mod-manager.desktop",
   "private": true,
   "scripts": {
     "start": "electron .",
@@ -51,23 +52,23 @@
       { "from": "LICENSE.md", "to": "LICENSE.md" },
       { "from": "NOTICE.md", "to": "NOTICE.md" }
     ],
-    "extraResources": [
-      {
-        "from": "build/7zip",
-        "to": "7zip",
-        "filter": [
-          "7z.exe",
-          "7z.dll",
-          "License.txt"
-        ]
-      }
-    ],
     "win": {
       "target": [
         {
           "target": "nsis",
           "arch": [
             "x64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "build/7zip",
+          "to": "7zip",
+          "filter": [
+            "7z.exe",
+            "7z.dll",
+            "License.txt"
           ]
         }
       ],
@@ -81,6 +82,34 @@
       "deleteAppDataOnUninstall": false,
       "shortcutName": "Cyber Mod Manager",
       "uninstallDisplayName": "Edgerunners Mod Manager"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.png",
+      "category": "Game",
+      "executableName": "edgerunners-mod-manager",
+      "artifactName": "Edgerunners-Mod-Manager-${version}.${ext}",
+      "synopsis": "Mod manager for Cyberpunk 2077",
+      "description": "Nexus Mods downloader and mod manager for Cyberpunk 2077 (Steam, under Proton).",
+      "maintainer": "skyehosting <35385976+skyehosting@users.noreply.github.com>",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "Name": "Edgerunners Mod Manager",
+          "Comment": "Mod manager for Cyberpunk 2077"
+        }
+      }
+    },
+    "deb": {
+      "packageName": "edgerunners-mod-manager",
+      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "7zip | p7zip-full"],
+      "recommends": ["libappindicator3-1", "7zip-rar | p7zip-rar"]
+    },
+    "toolsets": {
+      "appimage": "1.0.3"
     },
     "publish": [
       {

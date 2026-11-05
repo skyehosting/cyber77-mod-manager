@@ -2,6 +2,10 @@
 const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session } = require('electron');
+// Linux AppImage: programs this app starts (Steam, protontricks, 7-Zip, xdg-open) get the computer's
+// own PATH and library path, not the AppImage's.
+const IS_APPIMAGE = process.platform === 'linux' && require('./core/hostEnv').runsAsAppImage();
+if (IS_APPIMAGE) require('./core/hostEnv').dropAppImagePaths(process.env);
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
@@ -300,8 +304,11 @@ async function boot() {
   manager.startMo2Watch();
   applyNxmSetting().catch(err => logger.error('Could not set the Nexus link handler', err.message));
   updater = new AppUpdater({
-    autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
-    enabled: app.isPackaged && !process.env.CMM_CAPTURE,
+    // Linux: the AppImage updates itself (latest-linux.yml); a .deb copy would need the password for
+    // each update, so its new versions come as a new .deb from the download page.
+    autoUpdater: app.isPackaged && (process.platform !== 'linux' || IS_APPIMAGE) ? require('electron-updater').autoUpdater : null,
+    enabled: app.isPackaged && !process.env.CMM_CAPTURE && (process.platform !== 'linux' || IS_APPIMAGE),
+    offStatus: app.isPackaged && process.platform === 'linux' && !IS_APPIMAGE ? 'package' : 'dev',
     getSchedule: () => ({ every: settings.get('updateEvery'), unit: settings.get('updateUnit'), mode: settings.get('updateMode') }),
     isBusy: () => manager.busy || !!redmodRunning || manager.exporting > 0, // a restart would cut these off
     aiBusy: () => !!(assistant?.busy || assistant?.waiting),

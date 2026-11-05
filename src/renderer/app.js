@@ -1440,6 +1440,7 @@ function renderUpdate(st) {
   const when = upd.lastCheck ? `last checked ${new Date(upd.lastCheck).toLocaleTimeString()}` : '';
   const line = {
     dev: `Version ${upd.current}. Updates are checked in the installed app only (this copy runs from its source folder).`,
+    package: `Version ${upd.current}, installed from the .deb package. A new version comes as a new .deb on the download page (or use the AppImage, which updates itself).`,
     idle: upd.mode === 'off' ? `Version ${upd.current}. Automatic update checks are off.` : `Version ${upd.current}.`,
     checking: `Version ${upd.current} · checking…`,
     current: `Version ${upd.current} is the newest${when ? ` · ${when}` : ''}${upd.heldForGame ? ' · checks wait while the game runs' : ''}.`,
@@ -1450,7 +1451,10 @@ function renderUpdate(st) {
   const el = $('#s-upd-state');
   el.textContent = line;
   el.className = `hint${upd.status === 'error' ? ' bad' : upd.status === 'ready' ? ' ok' : ''}`;
-  $('#s-upd-check').disabled = upd.status === 'dev' || upd.status === 'checking' || upd.status === 'downloading';
+  $('#s-upd-check').disabled = ['dev', 'package', 'checking', 'downloading'].includes(upd.status);
+  // Installed from the .deb: no checks of its own, so nothing to schedule.
+  $('#s-upd-check').closest('.set-ctl').hidden = upd.status === 'package';
+  $('#s-upd-mode').closest('.set-row').hidden = upd.status === 'package';
 
   // The bar: from the moment a new version is found, until it installs.
   const bar = $('#update-bar');

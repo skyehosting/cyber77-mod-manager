@@ -165,3 +165,16 @@ test('a restart waits while the AI assistant is answering, also when it starts d
   t.mock.timers.tick(RESTART_DELAY_MS + 1);
   assert.ok(up.installed);
 });
+
+test('Linux: a copy from the .deb never checks (its status says so); a release without its AppImage yet is no error', () => {
+  const deb = new AppUpdater({ autoUpdater: null, enabled: false, offStatus: 'package', getSchedule: () => ({}), isBusy: () => false, log: quiet });
+  deb.start();
+  assert.strictEqual(deb.state.status, 'package');
+  const up = fakeUpdater();
+  const u = new AppUpdater({ autoUpdater: up, enabled: true, getSchedule: () => ({ mode: 'off' }), isBusy: () => false, log: quiet });
+  up.emit('error', new Error('Cannot find latest-linux.yml in the latest release artifacts (https://github.com/o/r/releases/download/v1.1.90/latest-linux.yml): HttpError: 404'));
+  assert.strictEqual(u.state.status, 'current');
+  assert.strictEqual(u.state.error, '');
+  up.emit('error', new Error('net::ERR_INTERNET_DISCONNECTED'));
+  assert.strictEqual(u.state.status, 'error', 'other failures still show');
+});

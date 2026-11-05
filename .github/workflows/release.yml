@@ -74,3 +74,54 @@ jobs:
             --title "Edgerunners Mod Manager $env:VERSION" `
             --notes "$env:NOTES" `
             --latest
+
+  # Linux (Steam, under Proton): a .deb and an AppImage, added to the release the job above made. A
+  # failure here never holds back the Windows release. The AppImage updates itself (latest-linux.yml).
+  linux:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      VERSION: 1.1.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The whole suite ran on Windows above; here the Linux parts.
+      - name: Test (Linux)
+        run: node --require ./test/setup.cjs --test test/linux-*.test.js test/host-env.test.js
+
+      - name: Check for keys in the source
+        run: node tools/check-secrets.js
+
+      - name: Set the version
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Build
+        run: npx electron-builder --linux --publish never
+
+      - name: Check for keys in the built app
+        run: |
+          npx @electron/asar extract dist/linux-unpacked/resources/app.asar dist/asar-check
+          node tools/check-secrets.js dist/asar-check dist/linux-unpacked/resources
+
+      - name: Add to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base="dist/Edgerunners-Mod-Manager-$VERSION"
+          # Fixed names too: .../releases/latest/download/Edgerunners-Mod-Manager.deb (and .AppImage)
+          # always downloads the newest version.
+          cp "$base.deb" dist/Edgerunners-Mod-Manager.deb
+          cp "$base.AppImage" dist/Edgerunners-Mod-Manager.AppImage
+          gh release upload "v$VERSION" "$base.deb" "$base.AppImage" dist/latest-linux.yml \
+            dist/Edgerunners-Mod-Manager.deb dist/Edgerunners-Mod-Manager.AppImage --clobber

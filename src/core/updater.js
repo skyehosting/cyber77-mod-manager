@@ -30,8 +30,10 @@ class AppUpdater extends EventEmitter {
    * getSchedule(): { every, unit, mode }. isBusy(): true while something must not be cut off by a
    * restart. gameRunning(): the game is open. inView(): the window can be seen (not minimized), so
    * a restart is never a surprise. autoUpdater: electron-updater's (passed in so this stays testable).
+   * offStatus: the status shown when not enabled ('dev': run from source; 'package': installed from
+   * a Linux package, whose new versions come as a new package).
    */
-  constructor({ autoUpdater, getSchedule, isBusy, aiBusy = () => false, gameRunning = () => false, inView = () => true, log, enabled }) {
+  constructor({ autoUpdater, getSchedule, isBusy, aiBusy = () => false, gameRunning = () => false, inView = () => true, log, enabled, offStatus = 'dev' }) {
     super();
     this.up = autoUpdater;
     this.getSchedule = getSchedule;
@@ -44,7 +46,7 @@ class AppUpdater extends EventEmitter {
     this.timer = null;
     this.restartTimer = null;
     this.dueWhileGame = false;
-    this.state = { status: enabled ? 'idle' : 'dev', version: '', available: '', progress: 0, lastCheck: 0, error: '', restartAt: 0, mode: this.mode() };
+    this.state = { status: enabled ? 'idle' : offStatus, version: '', available: '', progress: 0, lastCheck: 0, error: '', restartAt: 0, mode: this.mode() };
     if (!enabled) return;
     this.up.autoDownload = true;
     this.up.autoInstallOnAppQuit = true;
@@ -62,7 +64,11 @@ class AppUpdater extends EventEmitter {
       this.scheduleRestart();
     });
     this.up.on('error', err => {
-      this.set({ status: 'error', error: String(err?.message || err).split('\n')[0], lastCheck: Date.now() });
+      const message = String(err?.message || err);
+      // Linux: the newest release has no AppImage yet (its Linux build comes minutes after the
+      // Windows one, or failed): nothing newer for this copy, not an error.
+      if (/Cannot find latest-linux\.yml/i.test(message)) { this.set({ status: 'current', error: '', lastCheck: Date.now() }); return; }
+      this.set({ status: 'error', error: message.split('\n')[0], lastCheck: Date.now() });
     });
   }
 
