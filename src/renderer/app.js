@@ -167,8 +167,14 @@ const CREDIT_IMG = 'https://skyehosting.github.io/edgerunners-mod-manager/assets
   const img = thumb.querySelector('img');
   img.addEventListener('load', () => { thumb.hidden = false; });
   img.addEventListener('error', () => { thumb.hidden = true; });
-  thumb.hidden = false; // shown while loading, so the lazy load can see it
-  img.src = CREDIT_IMG;
+  thumb.hidden = false; // an empty frame while it loads
+  // Fetched once the section comes near (loading="lazy" starts late inside the scrolling column).
+  const near = new IntersectionObserver(seen => {
+    if (!seen.some(e => e.isIntersecting)) return;
+    near.disconnect();
+    img.src = CREDIT_IMG;
+  }, { root: $('#set-body'), rootMargin: '0px 0px 600px 0px' });
+  near.observe(thumb);
   let open = false;
   thumb.addEventListener('click', () => {
     if (open || !img.complete || !img.naturalWidth) return; // not loaded (yet), or already shown
