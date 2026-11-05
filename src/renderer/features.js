@@ -825,6 +825,11 @@ function importReview(plan) {
           toDownload ? h('span', {}, h('b', {}, String(toDownload)), ` to download${downloadSize ? ` (${fmtSize(downloadSize)})` : ''}`) : null,
           count(['downloaded']) ? h('span', {}, h('b', {}, String(count(['downloaded']))), ' to install') : null,
           count(['local', 'unavailable']) ? h('span', {}, h('b', {}, String(count(['local', 'unavailable']))), ' not available') : null),
+        // What else comes with it: the sender's archive load order and their picks of whose file loads.
+        plan.archives || plan.picks ? h('p', { class: 'hint' }, `Also brings the sender's ${[
+          plan.archives ? `archive load order (${plural(plan.archives, 'archive')}; the load order is shared by all your profiles)` : '',
+          plan.picks ? `choices of whose copy loads for ${plural(plan.picks, 'shared file')} (where you already chose, your choice stays)` : '',
+        ].filter(Boolean).join(' and ')}.`) : null,
         h('div', { class: 'dep-list imp-list' }, rows.map(x => {
           const st = IMPORT_STATUS[x.status] || { label: x.status, tag: '', ok: false };
           return h('div', { class: `dep${st.ok ? '' : ' dep-done'}` },

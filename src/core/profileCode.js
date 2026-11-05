@@ -15,6 +15,10 @@ const crypto = require('crypto');
  *     Nexus mod id, Nexus file id, flags (1 = FOMOD installer, 2 = installer choices follow)
  *     [choices length, choices (UTF-8 JSON)]
  *   count of the sender's local-file mods (not in the code: they are not on Nexus)
+ *   then, optional (codes from before they existed end here; older apps stop reading here):
+ *   archive count, archive names (the sender's archive load order for these mods)
+ *   pick count, then per pick: file path, the picked mod's place in the mod list,
+ *     how many mods it was picked among, their places
  *
  * Mod names are not stored (they would make codes several times longer): the importer reads them
  * from Nexus and from what is already installed.
@@ -23,6 +27,9 @@ const crypto = require('crypto');
 const PREFIX = 'CMM1-';
 const MAX_CODE_CHARS = 200000;
 const MAX_PAYLOAD = 2 * 1024 * 1024;
+const MAX_ARCHIVES = 5000;
+const MAX_PICKS = 20000;
+const MAX_AMONG = 100;
 
 function writeVarint(out, n) {
   let v = Math.max(0, Math.floor(Number(n) || 0));
@@ -54,7 +61,28 @@ function encode(doc) {
     if (choices) writeText(out, choices);
   }
   writeVarint(out, (doc.mods || []).length - nexus.length);
-  return PREFIX + zlib.deflateRawSync(Buffer.from(out), { level: 9 }).toString('base64url');
+  // Picks name mods by place: the place in the code's own list (local mods are not in it).
+  const place = new Map();
+  (doc.mods || []).forEach((m, i) => { const k = nexus.indexOf(m); if (k >= 0) place.set(i, k); });
+  // Within what decode() takes (it refuses more).
+  const picks = (doc.fileChoices || []).map(p => ({ file: p.file, mod: place.get(p.mod), among: (p.among || []).map(i => place.get(i)).filter(i => i !== undefined) }))
+    .filter(p => p.mod !== undefined && p.among.length > 1 && p.among.length <= MAX_AMONG).slice(0, MAX_PICKS);
+  const order = (doc.loadOrder || []).slice(0, MAX_ARCHIVES);
+  const base = out.length;
+  if (order.length || picks.length) {
+    writeVarint(out, order.length);
+    for (const n of order) writeText(out, n);
+    writeVarint(out, picks.length);
+    for (const p of picks) {
+      writeText(out, p.file);
+      writeVarint(out, p.mod);
+      writeVarint(out, p.among.length);
+      for (const i of p.among) writeVarint(out, i);
+    }
+  }
+  const code = PREFIX + zlib.deflateRawSync(Buffer.from(out), { level: 9 }).toString('base64url');
+  // Too long to be read back: the code without the order and picks (the mods matter most).
+  return code.length > MAX_CODE_CHARS && out.length > base ? PREFIX + zlib.deflateRawSync(Buffer.from(out.slice(0, base)), { level: 9 }).toString('base64url') : code;
 }
 
 /** A share code back into the export format the importer reads. Throws on anything malformed. */
@@ -105,7 +133,28 @@ function decode(code) {
     mods.push({ modId, fileId, fomod: !!(flags & 1), fomodChoices, game: 'cyberpunk2077', source: 'nexus' });
   }
   const localCount = i < buf.length ? varint() : 0;
-  return { format: 'cyber-mod-manager-profile', version: 1, name, game: 'cyberpunk2077', mods, localCount, fromCode: true };
+  const loadOrder = [];
+  const fileChoices = [];
+  if (i < buf.length) {
+    const archives = varint();
+    if (archives > MAX_ARCHIVES) throw new Error('That code lists too many archives to be a profile.');
+    for (let n = 0; n < archives; n++) loadOrder.push(textField());
+    const picks = varint();
+    if (picks > MAX_PICKS) throw new Error('That code lists too many file choices to be a profile.');
+    for (let n = 0; n < picks; n++) {
+      const file = textField();
+      const mod = varint();
+      const among = varint();
+      if (among > MAX_AMONG) throw new Error('That profile code is damaged.');
+      const list = [];
+      for (let k = 0; k < among; k++) list.push(varint());
+      fileChoices.push({ file, mod, among: list });
+    }
+  }
+  return {
+    format: 'cyber-mod-manager-profile', version: 1, name, game: 'cyberpunk2077', mods, localCount, fromCode: true,
+    ...(loadOrder.length ? { loadOrder } : {}), ...(fileChoices.length ? { fileChoices } : {}),
+  };
 }
 
 /** A short tag that changes whenever the code does, for the profile card. */

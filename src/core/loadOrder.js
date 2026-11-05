@@ -43,11 +43,12 @@ function currentOrder(gameDir) {
 
 /**
  * A saved order with archives added since put where they would sort by name among the others,
- * and archives that are gone left out.
+ * and archives that are gone left out. Saved names match ignoring case (a shared profile's
+ * spelling), and come out as the files are spelled.
  */
 function mergeOrder(saved, names) {
-  const have = new Set(names);
-  const out = saved.filter(n => have.has(n));
+  const spell = new Map(names.map(n => [n.toLowerCase(), n]));
+  const out = [...new Set(saved.map(n => spell.get(String(n).toLowerCase())).filter(Boolean))];
   const known = new Set(out);
   for (const n of names.filter(x => !known.has(x)).sort(ascii)) {
     const at = out.findIndex(x => ascii(x, n) > 0);
@@ -89,17 +90,34 @@ function autoSort(order, owner, needs) {
  */
 function keepAbsent(saved, current) {
   const out = [...current];
-  const have = new Set(out);
+  const lc = n => String(n).toLowerCase();
+  const have = new Set(out.map(lc));
   let prev = null;
   for (const n of saved || []) {
-    if (!have.has(n)) {
-      const at = prev === null ? 0 : out.indexOf(prev) + 1;
+    if (!have.has(lc(n))) {
+      const at = prev === null ? 0 : out.findIndex(x => lc(x) === lc(prev)) + 1;
       out.splice(at, 0, n);
-      have.add(n);
+      have.add(lc(n));
     }
     prev = n;
   }
   return out;
+}
+
+/**
+ * A shared profile's order taken in: the archives of `wanted` that `base` has go in wanted's order,
+ * into the places they hold now (every other archive keeps its place); those `base` lacks (mods still
+ * downloading) are put after the archive before them in `wanted`. Names match ignoring case.
+ */
+function adoptOrder(base, wanted) {
+  const spell = new Map(base.map(n => [n.toLowerCase(), n]));
+  const want = [...new Set(wanted.map(n => spell.get(n.toLowerCase()) || n))];
+  const inWant = new Set(want);
+  const present = want.filter(n => spell.get(n.toLowerCase()) === n);
+  const out = [...base];
+  let k = 0;
+  base.forEach((n, i) => { if (inWant.has(n)) out[i] = present[k++]; });
+  return keepAbsent(want, out);
 }
 
 /** Write modlist.txt naming every archive (the previous one is kept once as a backup). */
@@ -120,4 +138,4 @@ function resetOrder(gameDir) {
 }
 
 module.exports = {
-  keepAbsent, listArchives, currentOrder, mergeOrder, autoSort, writeOrder, resetOrder, modlistFile, ascii };
+  adoptOrder, keepAbsent, listArchives, currentOrder, mergeOrder, autoSort, writeOrder, resetOrder, modlistFile, ascii };

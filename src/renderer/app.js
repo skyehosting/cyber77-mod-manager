@@ -159,6 +159,36 @@ function spySettings() {
 $('#set-body').addEventListener('scroll', () => spySettings(), { passive: true });
 $$('.set-nav-item').forEach(btn => btn.addEventListener('click', () => showSettingsSection(btn.dataset.sec)));
 
+// Credits: the picture lives on the project site (no page there shows it). It loads when the section
+// is scrolled near, and stays hidden if it can't load (offline).
+const CREDIT_IMG = 'https://skyehosting.github.io/edgerunners-mod-manager/assets/credits/tadpole.png';
+{
+  const thumb = $('#credit-thumb');
+  const img = thumb.querySelector('img');
+  img.addEventListener('load', () => { thumb.hidden = false; });
+  img.addEventListener('error', () => { thumb.hidden = true; });
+  thumb.hidden = false; // shown while loading, so the lazy load can see it
+  img.src = CREDIT_IMG;
+  let open = false;
+  thumb.addEventListener('click', () => {
+    if (open || !img.complete || !img.naturalWidth) return; // not loaded (yet), or already shown
+    open = true;
+    showCreditImage().finally(() => { open = false; });
+  });
+  const showCreditImage = () => withModal(() => new Promise(resolve => {
+    const m = $('#modal');
+    m.className = 'modal credit-view';
+    m.setAttribute('aria-labelledby', 'credit-view-title');
+    const close = () => { hide(); resolve(); };
+    m.replaceChildren(
+      h('h3', { id: 'credit-view-title', class: 'sr-only' }, 'Credits picture'),
+      h('img', { referrerpolicy: 'no-referrer', alt: img.alt, src: img.currentSrc || img.src, onclick: () => close() }),
+      h('div', { class: 'modal-foot' }, h('button', { type: 'button', class: 'btn btn-primary', onclick: () => close() }, 'Close')),
+    );
+    const hide = showModal({ onDismiss: close });
+  }));
+}
+
 $$('.nav-item').forEach(btn => btn.addEventListener('click', () => goTo(btn.dataset.page)));
 document.addEventListener('click', ev => {
   const go = ev.target.closest('[data-goto]');

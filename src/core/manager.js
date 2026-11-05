@@ -28,8 +28,9 @@ const PROFILE_FORMAT = 'cyber-mod-manager-profile';
 const profileCode = require('./profileCode');
 const archiveTools = require('./archive');
 const MAX_PROFILE_MODS = 1000;
+const MAX_PROFILE_ARCHIVES = 5000;
+const MAX_PROFILE_PICKS = 20000;
 
-/** FOMOD choices from a shared file: { step: { group: [optionIndex] } } with small integers only. */
 /** Each file (lower-case path) → the mods that have it, in the order given (lowest priority first). */
 function providersOf(mods) {
   const providers = new Map();
@@ -41,6 +42,34 @@ function providersOf(mods) {
   return providers;
 }
 
+/** A shared profile's archive load order: plain .archive file names only (no folders), each once. */
+function validOrder(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  return list.slice(0, MAX_PROFILE_ARCHIVES).map(String)
+    .filter(n => n.length <= 250 && n === n.trim() && /^[^\\/:*?"<>|\x00-\x1f]+\.archive$/i.test(n) && !/^\.+$/.test(n.slice(0, -8)) && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+}
+
+/**
+ * A shared profile's file picks: [{ file, mod, among }] with mod and among as places in its mod
+ * list (count: how many mods it lists). file: a relative game path, lower case, forward slashes.
+ */
+function validPicks(list, count) {
+  if (!Array.isArray(list)) return [];
+  const place = x => (Number.isInteger(x) && x >= 0 && x < count ? x : -1);
+  const out = new Map();
+  for (const raw of list.slice(0, MAX_PROFILE_PICKS)) {
+    if (!raw || typeof raw !== 'object' || typeof raw.file !== 'string' || raw.file.length > 400) continue;
+    const file = raw.file.replace(/\\/g, '/').toLowerCase();
+    if (!isSafeRel(file) || file === '__proto__') continue;
+    const mod = place(raw.mod);
+    const among = [...new Set([mod, ...(Array.isArray(raw.among) ? raw.among.slice(0, 100).map(place) : [])])].filter(x => x >= 0);
+    if (mod >= 0 && among.length > 1) out.set(file, { file, mod, among });
+  }
+  return [...out.values()];
+}
+
+/** FOMOD choices from a shared file: { step: { group: [optionIndex] } } with small integers only. */
 function validChoices(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
   const out = {};
@@ -2498,6 +2527,19 @@ class ModManager extends EventEmitter {
     const p = this.data.profiles.list[id];
     if (!p) throw new Error('That profile no longer exists.');
     const mods = p.enabled.map(mid => this.data.mods[mid]).filter(Boolean).sort((a, b) => a.priority - b.priority);
+    const at = new Map(mods.map((m, i) => [m.id, i]));
+    // The archive load order set here (if any), for this profile's archives only.
+    const own = new Set(mods.flatMap(m => m.files.map(f => /^archive\/pc\/mod\/([^/]+\.archive)$/i.exec(f)?.[1]?.toLowerCase()).filter(Boolean)));
+    const order = (this.data.loadOrder || []).filter(n => own.has(n.toLowerCase())).slice(0, MAX_PROFILE_ARCHIVES);
+    // Whose copy of a shared file loads (the conflict window's picks) among this profile's mods: by
+    // their place in `mods`.
+    const picks = [];
+    for (const file of Object.keys(this.data.fileChoices || {})) {
+      const pick = this.pickOf(file);
+      if (!pick || !at.has(pick.id)) continue;
+      const among = [...new Set([pick.id, ...pick.among])].filter(x => at.has(x)).map(x => at.get(x)).slice(0, 100);
+      if (among.length > 1) picks.push({ file, mod: at.get(pick.id), among });
+    }
     return {
       format: PROFILE_FORMAT,
       version: 1,
@@ -2516,6 +2558,8 @@ class ModManager extends EventEmitter {
         fomodChoices: m.fomodChoices || undefined,
         source: Number(m.modId) > 0 ? 'nexus' : 'local',
       })),
+      loadOrder: order.length > 1 ? order : undefined,
+      fileChoices: picks.length ? picks.slice(0, MAX_PROFILE_PICKS) : undefined,
     };
   }
 
@@ -2608,8 +2652,11 @@ class ModManager extends EventEmitter {
     for (const r of rows.filter(x => x.status === 'bundled')) {
       try { r.programs = (await archiveTools.list(sevenZip(this.settings.get('sevenZipPath')), r.archive)).filter(f => /\.(dll|asi|exe)$/i.test(f)).slice(0, 20); } catch { r.programs = []; }
     }
+    // The sender's archive load order and file picks, taken in with the profile.
+    const loadOrderIn = validOrder(doc.loadOrder);
+    const picks = validPicks(doc.fileChoices, doc.mods.length);
     const token = crypto.randomBytes(6).toString('hex');
-    this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows, bundleDir });
+    this.profileImports.set(token, { name: String(doc.name || 'Imported profile').slice(0, 60), rows, bundleDir, loadOrder: loadOrderIn, picks });
     // Older pending imports are dropped, with the folder their zip was unpacked into.
     while (this.profileImports.size > 3) this.cancelProfileImport(this.profileImports.keys().next().value);
     return {
@@ -2617,6 +2664,8 @@ class ModManager extends EventEmitter {
       name: String(doc.name || 'Imported profile').slice(0, 60),
       // Mods the sender installed from local files: a code cannot carry them.
       localCount: Number(doc.localCount) > 0 ? Math.min(9999, Number(doc.localCount)) : 0,
+      archives: loadOrderIn.length,
+      picks: picks.length,
       mods: rows.map(r => ({ name: r.name, modName: r.modName, version: r.version, status: r.status, detail: r.detail || '', size: r.size || 0, fomod: r.fomod, choices: !!r.fomodChoices && r.status !== 'newer', programs: r.programs || undefined })),
     };
   }
@@ -2642,6 +2691,12 @@ class ModManager extends EventEmitter {
       const savesFrom = this.settings.get('perProfileSaves') ? this.savesOwner() : '';
       if (savesFrom && await this.gameRunning()) throw new Error(GAME_RUNNING_SAVES);
       const before = Object.values(this.data.mods).map(m => [m, m.enabled, m.priority]);
+      const orderBefore = this.data.loadOrder ? [...this.data.loadOrder] : null;
+      // modlist.txt itself too: a deploy that wrote the new order and then failed leaves it behind.
+      const listFile = isGameDir(this.gameDir()) ? loadOrder.modlistFile(this.gameDir()) : '';
+      let listBefore = null;
+      try { listBefore = listFile ? fs.readFileSync(listFile) : null; } catch { /* none */ }
+      const picksBefore = JSON.parse(JSON.stringify(this.data.fileChoices || {}));
       const prevActive = this.data.profiles.active;
       this.syncActiveProfile(); // the profile being left keeps its exact state
       this.data.profiles.list[id] = { id, name: clean, enabled: [], priorities: {}, created: Date.now(), importOrder: order };
@@ -2658,9 +2713,13 @@ class ModManager extends EventEmitter {
         this.data.profiles.list[id].priorities = Object.fromEntries(Object.values(this.data.mods).map(m => [m.id, m.priority]));
         this.applyImportOrder(id);
         this.applyProfilePriorities(this.data.profiles.list[id]);
+        this.takeImportExtras(plan);
         this.deploy();
       } catch (err) {
         for (const [m, en, prio] of before) { m.enabled = en; m.priority = prio; }
+        if (orderBefore) this.data.loadOrder = orderBefore; else delete this.data.loadOrder;
+        try { if (listFile) { if (listBefore) fs.writeFileSync(listFile, listBefore); else loadOrder.resetOrder(this.gameDir()); } } catch { /* the folder is unusable: the deploy below says so */ }
+        this.data.fileChoices = picksBefore;
         this.data.profiles.active = prevActive;
         const savesBack = !swapped || await this.swapSavesTo(savesFrom).then(() => true, e => { this.log.error('Could not put the saves back after the failed import (they are in the backup made before it)', e.message); return false; });
         // The new profile stays while the game's saves are recorded as its own (switching to the old profile brings them back).
@@ -2709,6 +2768,29 @@ class ModManager extends EventEmitter {
       summary.installing = toInstall.length + bundled.length;
       return summary;
     });
+  }
+
+  /**
+   * A shared profile's archive load order and file picks, made this app's own: the sender's
+   * archives go in their order (in the one load order every profile here shares), and their picks
+   * name the mods by the key each has or will have here. Mods still downloading count: their
+   * archives and picks take effect when they arrive. Picks are shared by every profile too, so a
+   * file the user already chose for keeps their choice.
+   */
+  takeImportExtras(plan) {
+    const keyOf = r => r?.key || (r?.file ? String(r.file.file_id) : null);
+    const byOrder = new Map(plan.rows.map(r => [r.order, r]));
+    if (plan.loadOrder?.length) {
+      const game = this.gameDir();
+      const base = this.data.loadOrder?.length ? this.data.loadOrder : (isGameDir(game) ? loadOrder.currentOrder(game).order : []);
+      this.data.loadOrder = loadOrder.adoptOrder(base, plan.loadOrder);
+    }
+    for (const p of plan.picks || []) {
+      const id = keyOf(byOrder.get(p.mod));
+      const among = [...new Set(p.among.map(i => keyOf(byOrder.get(i))).filter(Boolean))];
+      if (!id || among.length < 2 || Object.hasOwn(this.data.mods, this.pickOf(p.file)?.id ?? '')) continue; // the user's own pick (of a mod still here) stays
+      (this.data.fileChoices ||= {})[p.file] = { id, among };
+    }
   }
 
   cancelProfileImport(token) {
