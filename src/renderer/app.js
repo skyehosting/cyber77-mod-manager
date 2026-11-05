@@ -1981,6 +1981,29 @@ function renderPlay() {
 let stopArmed = false;
 let stopTimer = 0;
 /**
+ * Linux: the Windows components the mod loaders need in the game's Proton folder, and the command
+ * that puts them there. Resolves 'again', 'anyway' (also: not asked again for this folder) or false.
+ */
+function prereqsBox({ missing, loaders, command, installed }) {
+  const copy = h('button', { class: 'btn btn-sm', onclick: async () => { await navigator.clipboard.writeText(command); copy.lastChild.textContent = 'Copied'; } }, icon('copy'), h('span', {}, 'Copy'));
+  return modal({
+    title: 'Install what the mod loaders need',
+    sub: `${loaders.join(' and ')} under Proton`,
+    body: h('div', { class: 'steam-opts' },
+      h('p', {}, `${loaders.join(' and ')} may need ${missing.join(' and ')} in the game's Proton folder, and protontricks has not put ${missing.length === 1 ? 'it' : 'them'} there. Without ${missing.length === 1 ? 'it' : 'them'} the mod loaders may not start.`),
+      installed ? null : h('p', {}, 'First install protontricks (your software centre has it, or Flathub).'),
+      h('p', {}, 'Run this in a terminal, once:'),
+      h('div', { class: 'steam-opts-line' }, h('code', {}, command), copy),
+      h('p', { class: 'hint' }, 'Then press Check again. If vcrun2022 fails to install, add --force before it. Already there another way (your Proton build has it)? Start anyway: this is not asked again.')),
+    buttons: [
+      { label: 'Cancel', value: false, safe: true },
+      { label: 'Start anyway', value: 'anyway' },
+      { label: 'Check again', value: 'again', kind: 'btn-primary' },
+    ],
+  });
+}
+
+/**
  * Play through Steam needs the game's Steam launch options to skip the launcher and load REDmods
  * (Steam asks to confirm arguments another program passes, so they cannot come from here).
  * Resolves 'again' (check again), 'anyway' (start as they are) or false.
@@ -2047,10 +2070,13 @@ $('#play-btn').addEventListener('click', async () => {
   btn.disabled = true;
   $('#play-label').textContent = 'Starting…';
   let r = await run(api.launchGame());
-  // Through Steam: Steam's launch options for the game must skip the launcher and load REDmods.
-  while (r?.steamOptions) {
-    const go = await steamOptionsBox(r.steamOptions);
-    r = go ? await run(api.launchGame({ skipDeploy: true, skipSteamCheck: go === 'anyway' })) : null;
+  // Through Steam: Steam's launch options for the game must skip the launcher and load REDmods;
+  // on Linux also what the mod loaders need in the Proton folder. "Start anyway" holds for the rest.
+  const skip = { skipDeploy: true };
+  while (r?.steamOptions || r?.prereqs) {
+    const go = r.steamOptions ? await steamOptionsBox(r.steamOptions) : await prereqsBox(r.prereqs);
+    if (go === 'anyway') skip[r.steamOptions ? 'skipSteamCheck' : 'skipPrereqs'] = true;
+    r = go ? await run(api.launchGame(skip)) : null;
   }
   // No REDmod tools: say how to get them, once per session; after that Play just starts the game.
   if (r?.deployFailed && r.missingTools) {

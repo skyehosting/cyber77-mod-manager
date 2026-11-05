@@ -82,4 +82,37 @@ function steamPrefix(gameDir, libraries, appId) {
   return found[0];
 }
 
-module.exports = { isPrefix, prefixUser, prefixFolders, prefixFromPath, steamPrefix };
+/** Windows components put into a prefix with winetricks or protontricks (its winetricks.log). */
+function prefixComponents(pfx) {
+  try {
+    const file = path.join(pfx, 'winetricks.log');
+    if (fs.statSync(file).size > 1 << 20) return new Set(); // a log that big is not one (and is not read whole)
+    return new Set(fs.readFileSync(file, 'utf8').split(/\r?\n/).map(l => l.trim().toLowerCase()).filter(Boolean));
+  } catch { return new Set(); }
+}
+
+/**
+ * What the mod loaders need in the game's prefix and it lacks: Cyber Engine Tweaks needs the Visual
+ * C++ 2022 runtime and d3dcompiler_47 (its overlay), RED4ext the runtime (the RED modding wiki's
+ * Linux page; the Nexus Mods App checks the same). loaders: 'cet' / 'red4ext'.
+ */
+function missingComponents(pfx, loaders) {
+  const need = new Set();
+  if (loaders.includes('cet')) { need.add('vcrun2022'); need.add('d3dcompiler_47'); }
+  if (loaders.includes('red4ext')) need.add('vcrun2022');
+  const have = prefixComponents(pfx);
+  return [...need].filter(c => !have.has(c));
+}
+
+/**
+ * The command that installs components into a Steam game's prefix: protontricks (installed, or its
+ * Flatpak), else protontricks with a note that it needs installing first.
+ */
+function protontricksCommand(appId, components, { home = os.homedir(), pathEnv = process.env.PATH || '' } = {}) {
+  const onPath = String(pathEnv).split(path.delimiter).some(d => path.isAbsolute(d) && fs.existsSync(path.join(d, 'protontricks')));
+  const flatpak = !onPath && ['/var/lib/flatpak/app/com.github.Matoking.protontricks', path.join(home, '.local', 'share', 'flatpak', 'app', 'com.github.Matoking.protontricks')].some(p => fs.existsSync(p));
+  const cmd = `${flatpak ? 'flatpak run com.github.Matoking.protontricks' : 'protontricks'} ${appId} ${components.join(' ')}`;
+  return { command: cmd, installed: onPath || flatpak };
+}
+
+module.exports = { isPrefix, prefixUser, prefixFolders, prefixFromPath, steamPrefix, prefixComponents, missingComponents, protontricksCommand };

@@ -8,6 +8,8 @@ const { ModManager } = require('./core/manager');
 const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, linuxLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
 const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
 const { findGameProcess, isGameProcess } = require('./core/gameProcess');
+const { missingComponents, protontricksCommand } = require('./core/wine');
+const { caseResolver } = require('./core/fileCase');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
 const { PlayHistory } = require('./core/plays');
@@ -71,7 +73,26 @@ function launchOptionsCheck(dir, options) {
   }
   const dlls = ['version', 'winmm'].filter(d => !!dir && fs.existsSync(path.join(dir, 'bin', 'x64', `${d}.dll`)));
   const { missing, suggested, wine } = linuxLaunchOptions(options, { modded: true, dlls });
-  return { missing, suggested, note: wine ? 'Without the Wine setting, Cyber Engine Tweaks and RED4ext do not load under Proton; without the rest, the CD Projekt launcher opens.' : '' };
+  const loaders = dlls.map(d => (d === 'version' ? 'Cyber Engine Tweaks' : 'RED4ext')).join(' and ');
+  return { missing, suggested, note: wine ? `Without the Wine setting, ${loaders} ${dlls.length === 1 ? 'does' : 'do'} not load under Proton; without the rest, the CD Projekt launcher opens.` : '' };
+}
+
+/**
+ * Linux: the Windows components Cyber Engine Tweaks and RED4ext need in the game's Proton folder
+ * and it lacks ({ missing, loaders, command, installed }), or null (none needed, all there, or the
+ * folder not made yet: the game makes it at its first launch).
+ */
+function prefixPrereqs(dir) {
+  // CET by its own plugin (version.dll alone is any ASI loader's), RED4ext by its loader.
+  const loaders = [['cet', 'bin/x64/plugins/cyber_engine_tweaks.asi'], ['red4ext', 'red4ext/RED4ext.dll']]
+    .filter(([, file]) => caseResolver(dir).exists(file)).map(([l]) => l);
+  const pfx = manager.gameFolders()?.prefix;
+  if (!loaders.length || !pfx) return null;
+  // "Start anyway" for this Proton folder, once: its components came another way (a Proton build, by hand).
+  if ((settings.get('prereqsWaived') || []).includes(pfx)) return null;
+  const missing = missingComponents(pfx, loaders);
+  if (!missing.length) return null;
+  return { missing, prefix: pfx, loaders: loaders.map(l => (l === 'cet' ? 'Cyber Engine Tweaks' : 'RED4ext')), ...protontricksCommand(STEAM_APP_ID, missing) };
 }
 
 function pushSnapshot() {
@@ -396,7 +417,7 @@ async function boot() {
   });
   handle('steam:openGame', () => shell.openExternal(`steam://nav/games/details/${STEAM_APP_ID}`));
   // Play: REDmod deploy first when the REDmods changed since the last one, then the game.
-  handle('game:launch', async ({ skipDeploy = false, skipSteamCheck = false } = {}) => {
+  handle('game:launch', async ({ skipDeploy = false, skipSteamCheck = false, skipPrereqs = false } = {}) => {
     const dir = settings.get('gamePath');
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
     if (process.platform !== 'win32') {
@@ -412,6 +433,13 @@ async function boot() {
       const found = await steamLaunchOptions();
       const check = launchOptionsCheck(dir, found?.options);
       if (check.missing.length) return { steamOptions: { current: found?.options || '', ...check } };
+    }
+    // Linux: the Windows components the mod loaders need in the game's Proton folder.
+    if (process.platform !== 'win32' && store.store === 'steam') {
+      const need = prefixPrereqs(dir);
+      // Started anyway: not asked again for this Proton folder.
+      if (need && skipPrereqs) settings.update({ prereqsWaived: [...new Set([...(settings.get('prereqsWaived') || []), need.prefix])].slice(-20) });
+      else if (need) return { prereqs: need };
     }
     // Never start the game while saves are being restored (or backed up by hand).
     if (manager.saves.busy) throw new Error('Your saves are being backed up or restored. Press Play again in a moment.');

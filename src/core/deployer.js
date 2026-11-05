@@ -208,12 +208,15 @@ class Deployer {
           kind = 'link';
         } catch (err) {
           if (!this.warnedLink) {
-            this.log.warn(`Hardlink failed (${err.code}); copying files instead. Put the data folder on the game's drive for hardlinks.`);
+            this.log.warn(process.platform === 'win32'
+              ? `Hardlink failed (${err.code}); copying files instead. Put the data folder on the game's drive for hardlinks.`
+              : `Hardlink failed (${err.code}); copying files instead. Hardlinks need the data folder on the same file system (partition) as the game.`);
             this.warnedLink = true;
           }
         }
       }
-      if (kind === 'copy') fs.copyFileSync(want.src, full);
+      // Linux: a reflink where the file system can (btrfs, XFS: no extra space), else a plain copy.
+      if (kind === 'copy') fs.copyFileSync(want.src, full, process.platform === 'win32' ? 0 : fs.constants.COPYFILE_FICLONE);
     } catch (err) {
       // The mod's file could not be placed: the file that was there goes back.
       if (movedAside) { try { moveFile(movedAside, full); } catch { /* it stays in the backup folder */ } }
