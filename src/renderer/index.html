@@ -200,11 +200,18 @@
             <button class="seg-btn" data-f="problems">Problems <span class="seg-count" id="mods-prob-count" title="Mods with missing files, install warnings or game-log errors"></span></button>
           </div>
           <button type="button" class="btn btn-ghost btn-sm" id="mods-req-all" hidden title="Show or hide the requirements under every mod"><svg class="i"><use href="#i-updown"/></svg><span>Collapse all</span></button>
+          <label class="sort-pick cat-pick" title="Show only the mods in one Nexus category">
+            <span class="sort-label">Category</span>
+            <select id="mods-cat" aria-label="Category">
+              <option value="">All categories</option>
+            </select>
+          </label>
           <label class="sort-pick" title="Sort the list (the recent ones show when each change happened)">
             <span class="sort-label">Sort</span>
             <select id="mods-sort" aria-label="Sort mods">
               <option value="az">A to Z</option>
               <option value="za">Z to A</option>
+              <option value="category" title="By Nexus category, then A to Z">Category</option>
               <option value="installed" title="Recently installed or updated">Recently installed</option>
               <option value="enabled">Recently enabled</option>
               <option value="disabled">Recently disabled</option>
@@ -772,10 +779,14 @@
               <h2 class="set-title" id="sh-vortex"><svg class="i"><use href="#i-vortex"/></svg>Vortex</h2>
               <div class="set-card" id="s-vx-block">
                 <div class="set-row">
+                  <div class="set-label"><label for="s-vx-exe">Vortex program</label><p class="set-desc" id="s-vx-exe-text">Vortex.exe, used to switch Vortex's mods on and off. Found by itself; choose it if Vortex is installed somewhere else.</p></div>
+                  <div class="set-ctl"><div class="field-row"><input id="s-vx-exe" class="path mono" type="text" spellcheck="false" placeholder="Found by itself"><button type="button" class="btn" id="s-vx-exe-find" title="Look for Vortex.exe again (in the registry, then the usual folders)">Find</button><button type="button" class="btn" id="s-vx-exe-browse">Change</button></div></div>
+                </div>
+                <div class="set-row" id="s-vx-mods-row">
                   <div class="set-label"><span class="set-name">Vortex mods</span><p class="set-desc" id="s-vx-text"></p></div>
                   <div class="set-ctl set-ctl-auto"><button type="button" class="btn" id="s-vx-move"><svg class="i"><use href="#i-vortex"/></svg><span>Move my Vortex mods here</span></button></div>
                 </div>
-                <div class="set-row">
+                <div class="set-row" id="s-vx-auto-row">
                   <div class="set-label"><label for="s-vx-auto">Mods added in Vortex</label><p class="set-desc">Profiles and share codes cover this app's mods only. Moving switches them off in Vortex (it keeps them) and links their files: no downloads.</p></div>
                   <div class="set-ctl">
                     <select id="s-vx-auto">

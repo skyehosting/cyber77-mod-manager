@@ -384,7 +384,12 @@ async function boot() {
   manager.on('job', job => send('job', job));
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
-  manager.startVortexWatch();
+  // Vortex.exe wherever it was installed (the registry knows), unless one was chosen in Settings;
+  // the Vortex watch starts after, so moving Vortex's mods never runs before Vortex.exe is known.
+  manager.vortex.findExe()
+    .then(found => { if (found) pushSnapshot(); })
+    .catch(err => logger.warn('Could not look for Vortex in the registry', err.message))
+    .finally(() => manager.startVortexWatch());
   // Vortex files an older version put back after Vortex's copy was switched off (they still loaded).
   manager.clearVortexLeftovers().catch(err => logger.warn('Could not check the game folder for files Vortex left behind', err.message));
   manager.startMo2Watch();
@@ -736,6 +741,8 @@ async function boot() {
   });
   handle('browse:search', opts => manager.nexus.searchMods(opts || {}));
   handle('browse:categories', () => manager.nexus.modCategories());
+  // The Mods page's Category filter: quietly none when Nexus can't be reached (it keeps its own list then).
+  handle('mods:categories', () => manager.nexus.modCategories().catch(() => []));
   handle('browse:open', url => { if (NEXUS_PAGE.test(String(url))) shell.openExternal(String(url)); });
   handle('export:json', async () => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
@@ -757,9 +764,15 @@ async function boot() {
     logger.success(`Exported a report (${doc.summary.errors} errors, ${doc.summary.warnings} warnings, ${doc.summary.mods} mods) to ${r.filePath}`);
     return { file: r.filePath, ...doc.summary };
   });
+  // Settings and the setup wizard: look for Vortex.exe again (the registry and the usual places).
+  handle('vortex:findExe', async () => {
+    await manager.vortex.findExe();
+    pushSnapshot();
+    return manager.vortex.exeInfo();
+  });
   handle('vortex:open', () => {
     const exe = manager.vortex.exePath();
-    if (!exe) throw new Error('Vortex.exe was not found.');
+    if (!exe) throw new Error('Vortex.exe was not found. Choose it in Settings > Vortex.');
     require('child_process').spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
   });
   handle('updates:check', () => manager.checkUpdates());

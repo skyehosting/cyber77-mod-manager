@@ -4,6 +4,8 @@ const GRAPHQL = 'https://api.nexusmods.com/v2/graphql';
 // Nexus's GraphQL answers at most 20 mods per request (it reports more found, but returns 20): asking
 // for more left the rest out, and those were taken as mods with no requirements.
 const GRAPHQL_PAGE = 20;
+/** A Nexus category name as shown: one line, no control characters, at most 80 characters. */
+const categoryName = v => String(v || '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim().slice(0, 80);
 /** Browse's "Adult (18+)" entry: only mods flagged as adult content. */
 const ADULT_ONLY = '__adult';
 // Browse's time filter: how many days back each choice reaches.
@@ -145,10 +147,12 @@ class NexusClient {
   /**
    * Every requirement of many mods at once, with names and links (the Mods page lists them):
    * Map modId → [{ modId, name, url, notes, external }]. Public data: no API key needed.
+   * `cats` (a Map), if given, gets each mod's Nexus category name (modId → "Appearance") from the same answer.
    */
-  async requirementsMany(game, modIds) {
+  async requirementsMany(game, modIds, cats = null) {
     const out = new Map();
-    for (const n of await this.modsByIds(game, modIds, 'modRequirements { nexusRequirements { nodes { modId modName url notes externalRequirement } } }')) {
+    for (const n of await this.modsByIds(game, modIds, 'modCategory { name } modRequirements { nexusRequirements { nodes { modId modName url notes externalRequirement } } }')) {
+      cats?.set(Number(n.modId), categoryName(n.modCategory?.name));
       out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).map(r => requirementOnNexus({
         modId: Number(r.modId) || 0, name: String(r.modName || '').slice(0, 200), url: /^https?:\/\//i.test(r.url || '') ? r.url : '',
         notes: String(r.notes || '').slice(0, 300), external: !!r.externalRequirement,

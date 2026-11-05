@@ -454,20 +454,76 @@ function updateIdFor(id) {
   return row ? rowUpdateId(row) : (state.snap.updates?.[id] ? id : null);
 }
 
+/*
+ * Nexus mod categories (Appearance, Gameplay…): each mod's comes from Nexus with its requirements;
+ * the list in the Category filter is these, every category Nexus has for the game (read once a
+ * week), and any a mod here has. Mods with none known (local ones, or not read yet) are Unassigned.
+ */
+const DEFAULT_MOD_CATS = ['Animations', 'Appearance', 'Audio', 'Cyberpunk 2077', 'Gameplay', 'Miscellaneous',
+  'Modders Resources', 'User Interface', 'Utilities', 'Vehicles', 'Visuals and Graphics'];
+const NO_CAT = '__none';
+const modCatOf = m => {
+  const c = m.modId && state.snap.modCats && Object.hasOwn(state.snap.modCats, m.modId) ? state.snap.modCats[m.modId] : '';
+  return typeof c === 'string' ? c : '';
+};
+state.modCat = '';
+state.nexusCats = (() => {
+  const c = store.get('nexusModCats', null);
+  return c && Array.isArray(c.list) ? c.list.filter(n => typeof n === 'string' && n.length <= 80) : [];
+})();
+
+/** Every category Nexus has for the game, once a week (public: no key needed); kept if Nexus can't be reached. */
+async function loadNexusCats() {
+  const c = store.get('nexusModCats', null);
+  if (c && Date.now() - (Number(c.at) || 0) < 7 * 86400000) return;
+  const res = await api.nexusModCategories().catch(() => null);
+  if (!Array.isArray(res?.ok)) return;
+  const list = res.ok.filter(x => !x.value && typeof x.name === 'string' && x.name.trim()).map(x => x.name.trim().slice(0, 80));
+  if (!list.length) return;
+  state.nexusCats = list;
+  store.set('nexusModCats', { at: Date.now(), list });
+  if (state.snap) renderModCats();
+}
+
+/** The Category filter's choices, each with how many rows it would list (the search and the other filter as they are). */
+function renderModCats() {
+  const rows = groupedMods().filter(m => passesModFilters(m, false));
+  const count = new Map();
+  for (const m of rows) { const c = modCatOf(m) || NO_CAT; count.set(c, (count.get(c) || 0) + 1); }
+  // One entry per name whatever its case (Nexus's list and a mod's may differ): a mod's own spelling first.
+  const seen = new Map();
+  for (const n of [...[...count.keys()].filter(c => c !== NO_CAT), ...DEFAULT_MOD_CATS, ...state.nexusCats]) if (!seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n);
+  const names = [...seen.values()].sort(nameOrder.compare);
+  if (state.modCat && state.modCat !== NO_CAT && !names.includes(state.modCat)) names.push(state.modCat);
+  const opts = [['', `All categories (${rows.length})`], [NO_CAT, `Unassigned (${count.get(NO_CAT) || 0})`],
+    ...names.map(n => [n, `${n} (${count.get(n) || 0})`])];
+  const sel = $('#mods-cat');
+  // Rebuilt only when it changed: a list rebuilt while open would close under the pointer.
+  const sig = JSON.stringify(opts);
+  if (sel.dataset.sig === sig) return;
+  sel.dataset.sig = sig;
+  sel.replaceChildren(...opts.map(([value, text]) => h('option', { value }, text)));
+  sel.value = state.modCat;
+}
+
 function visibleMods() {
+  return groupedMods().filter(m => passesModFilters(m, true)).sort(SORTS[state.modSort] || byName);
+}
+
+/** Whether a row is listed: the search, the Category filter (when byCat) and the other filter. */
+function passesModFilters(m, byCat) {
   const q = $('#mods-search').value.trim().toLowerCase();
-  return groupedMods().filter(m => {
-    // By name only (its own and its Nexus mod's): a search for "red4ext" is not every RED4ext plugin.
-    if (q && ![m.name, m.modName].filter(Boolean).join(' ').toLowerCase().includes(q)) return false;
-    if (state.modFilter === 'enabled') return m.enabled;
-    if (state.modFilter === 'disabled') return !m.enabled;
-    if (state.modFilter === 'conflicts') return !!state.snap.conflicts[m.id];
-    if (state.modFilter === 'problems') return hasProblem(m);
-    if (state.modFilter === 'updates') return !!rowUpdateId(m);
-    if (state.modFilter === 'repair') return !!m.health;
-    if (state.modFilter === 'vortex') return !!m.vortex;
-    return true;
-  }).sort(SORTS[state.modSort] || byName);
+  // By name only (its own and its Nexus mod's): a search for "red4ext" is not every RED4ext plugin.
+  if (q && ![m.name, m.modName].filter(Boolean).join(' ').toLowerCase().includes(q)) return false;
+  if (byCat && state.modCat && (modCatOf(m) || NO_CAT) !== state.modCat) return false;
+  if (state.modFilter === 'enabled') return !!m.enabled;
+  if (state.modFilter === 'disabled') return !m.enabled;
+  if (state.modFilter === 'conflicts') return !!state.snap.conflicts[m.id];
+  if (state.modFilter === 'problems') return hasProblem(m);
+  if (state.modFilter === 'updates') return !!rowUpdateId(m);
+  if (state.modFilter === 'repair') return !!m.health;
+  if (state.modFilter === 'vortex') return !!m.vortex;
+  return true;
 }
 
 // The Mods list order (kept between sessions). The "recent" ones put the latest first and
@@ -479,6 +535,8 @@ const SORTS = {
   enabled: (a, b) => (b.enabledAt || 0) - (a.enabledAt || 0) || byName(a, b),
   disabled: (a, b) => (b.disabledAt || 0) - (a.disabledAt || 0) || byName(a, b),
   priority: (a, b) => (Number(b.priority) || -1) - (Number(a.priority) || -1) || byName(a, b),
+  // By Nexus category, Unassigned last, then A to Z within each.
+  category: (a, b) => (!modCatOf(a) - !modCatOf(b)) || nameOrder.compare(modCatOf(a), modCatOf(b)) || byName(a, b),
 };
 const SORT_TIME = { installed: ['installedAt', 'installed'], enabled: ['enabledAt', 'enabled'], disabled: ['disabledAt', 'disabled'] };
 state.modSort = store.get('modSort', 'az');
@@ -672,6 +730,7 @@ const hasProblem = m => !!(m.health || m.warnings?.length || state.modLogProblem
 
 function renderMods() {
   const all = allMods();
+  renderModCats();
   const mods = visibleMods();
   const ids = mods.map(m => m.id);
   for (const id of [...state.modSel]) if (!all.some(m => m.id === id)) state.modSel.delete(id);
@@ -704,7 +763,7 @@ function renderMods() {
     const when = SORT_TIME[state.modSort];
     const stamp = when && m[when[0]] ? `${when[1]} ${ago(m[when[0]])}` : when ? `not ${when[1]} since this was recorded` : '';
     const who = m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ');
-    const kind = [m.vortex ? 'Vortex' : '', m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
+    const kind = [m.vortex ? 'Vortex' : '', modCatOf(m), m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
     const sub = [who, kind, stamp].filter(Boolean).join(' · ');
     const needers = neededBy.get(m.id) || [];
     const reqIssue = reqProblem(m) ? reqsOf(m.id).find(q => q.state === 'missing' || q.state === 'official') ? 'missing' : 'off' : '';
@@ -846,6 +905,10 @@ $('#mods-search').addEventListener('input', debounce(() => { state.searchClosed.
 $('#mods-req-all').addEventListener('click', () => {
   const withReqs = visibleMods().filter(m => reqsOf(m.id).length).map(m => m.id); // the ones listed now
   setReqOpen(withReqs, !withReqs.every(reqIsOpen));
+});
+$('#mods-cat').addEventListener('change', ev => {
+  state.modCat = ev.target.value;
+  renderMods();
 });
 $('#mods-sort').value = state.modSort;
 $('#mods-sort').addEventListener('change', ev => {
@@ -1147,7 +1210,8 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
         kv('Status', !m.enabled ? h('span', { class: 'tag' }, 'Disabled')
           : m.health ? h('span', { class: 'tag tag-warn' }, 'Enabled · needs repair') : h('span', { class: 'tag tag-ok' }, 'Enabled')),
         kv('Type', m.type),
-        kv('Category', CAT_LABEL[m.category] || m.category),
+        kv('Category', modCatOf(m) || 'Unassigned'),
+        kv('File category', CAT_LABEL[m.category] || m.category),
         m.dependencyOf ? kv('Required by', m.dependencyOf) : null,
         kv('Priority', `${m.priority}${hasConflicts ? ' — higher wins file conflicts' : ''}`),
         kv('Installed', new Date(m.installedAt).toLocaleString()),
@@ -1200,6 +1264,7 @@ function openVortexDrawer(m, takeFocus = true) {
       h('dl', { class: 'kv' },
         kv('Status', m.enabled ? h('span', { class: 'tag tag-ok' }, 'Deployed by Vortex') : h('span', { class: 'tag' }, 'Disabled in Vortex')),
         kv('Vortex profile', vx.activeProfileName || '—'),
+        kv('Category', modCatOf(m) || 'Unassigned'),
         kv('Files in the game', String(m.fileCount)),
         m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
         kv('Changes', 'Switching it on or off here is done without opening Vortex (if Vortex is open, it closes for a moment). Move to this app to manage it here entirely.')),
@@ -1588,7 +1653,7 @@ $$('#dl-bulk [data-act]').forEach(b => b.addEventListener('click', async () => {
 
 const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
-  dataDir: '#s-data', sevenZipPath: '#s-7z',
+  dataDir: '#s-data', sevenZipPath: '#s-7z', vortexExe: '#s-vx-exe',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
   aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
@@ -1708,8 +1773,20 @@ $('#s-vx-move').addEventListener('click', () => moveFromVortex());
 
 function renderVortexMove() {
   const vx = state.snap.vortex;
-  $('#sec-vortex').hidden = !vx?.installed;
-  $('.set-nav-item[data-sec="vortex"]').hidden = !vx?.installed;
+  // Windows: always there, so Vortex.exe can be chosen even when it was not found. Linux: Vortex is a Windows program.
+  const win = api.platform === 'win32';
+  $('#sec-vortex').hidden = !win && !vx?.installed;
+  $('.set-nav-item[data-sec="vortex"]').hidden = !win && !vx?.installed;
+  $('#s-vx-exe').closest('.set-row').hidden = !win;
+  if (win) {
+    $('#s-vx-exe').placeholder = vx?.exeSource === 'found' ? vx.exe : 'Not found: choose Vortex.exe if you use Vortex';
+    $('#s-vx-exe-text').textContent = vx?.exeChosenMissing ? `The Vortex.exe chosen here is gone (moved or uninstalled), so it is not used${vx.exe ? `: using ${vx.exe} instead` : ''}. Choose it again, or empty the box and save to let the app find it.`
+      : vx?.exeSource === 'manual' ? 'Vortex.exe, as chosen here. Empty the box and save to let the app find it by itself.'
+      : vx?.exeSource === 'found' ? 'Vortex.exe, found by itself (shown in the box). Choose another one if that is not the Vortex you use.'
+        : 'Vortex.exe was not found. If you use Vortex, choose its Vortex.exe (or Find, after installing it).';
+  }
+  $('#s-vx-mods-row').hidden = !vx?.installed;
+  $('#s-vx-auto-row').hidden = !vx?.installed;
   if (!vx?.installed) return;
   const n = vx.mods?.length || 0;
   $('#s-vx-text').textContent = n
@@ -1983,6 +2060,19 @@ $('#s-game-detect').addEventListener('click', async () => {
 $('#s-data-browse').addEventListener('click', async () => {
   const p = await run(api.pickFolder('Select a data folder'));
   if (p) { $('#s-data').value = p; updateDirty(); }
+});
+$('#s-vx-exe-browse').addEventListener('click', async () => {
+  const p = await run(api.pickFile('Select Vortex.exe', [{ name: 'Vortex', extensions: ['exe'] }]));
+  if (p && p[0]) { $('#s-vx-exe').value = p[0]; updateDirty(); }
+});
+$('#s-vx-exe-find').addEventListener('click', async ev => {
+  const b = ev.currentTarget;
+  b.disabled = true;
+  const r = await run(api.findVortex());
+  b.disabled = false;
+  if (!r) return;
+  if (r.source === 'manual') toast(`Using the Vortex.exe chosen here: ${r.exe}`);
+  else toast(r.exe ? `Found Vortex: ${r.exe}` : 'Vortex.exe was not found. Choose it with Change.', r.exe ? 'success' : 'warn');
 });
 $('#s-7z-browse').addEventListener('click', async () => {
   // Linux: 7-Zip's 7zz (or p7zip's 7z) has no extension to filter by.
@@ -2731,4 +2821,5 @@ window.addEventListener('DOMContentLoaded', async () => {
   const snap = await run(api.snapshot());
   if (snap) applySnapshot(snap);
   refreshInstalls();
+  loadNexusCats();
 });

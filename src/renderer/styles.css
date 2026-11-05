@@ -1663,6 +1663,8 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .sort-label { color: var(--muted); font-size: var(--fs-sm); }
 .sort-pick select { height: var(--control-h); width: auto; font-size: var(--fs-sm); }
 .toolbar.selecting > .sort-pick { display: none; }
+/* Category, then Sort, at the right: the space before them is the Category one's. */
+.cat-pick + .sort-pick { margin-left: 0; }
 @container (max-width: 62rem) { .sort-label { display: none; } .sort-pick select { max-width: 7rem; } #mods-toolbar .search { width: 9rem; } }
 
 .card-subtitle { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
@@ -2564,6 +2566,8 @@ body.drawer-open .main { margin-right: var(--panel-w); }
 .tag.tag-icon { display: inline-grid; place-items: center; padding: 0; width: 1.65rem; }
 .tag.tag-icon .i { display: block; width: 0.9rem; }
 .toolbar .sort-pick select { max-width: none; }
+/* The Category box stays short: a long category name is cut in the closed box, never in its list. */
+.toolbar .cat-pick select { max-width: 12rem; }
 /* Versions: a picked version's text ends where the plain versions end, inside the column. */
 #mods-table col.w-version { width: 9.5rem; }
 #mods-table .ver-select { width: auto; max-width: 100%; padding-right: 1.7rem; }
@@ -2776,6 +2780,9 @@ html[data-setup="open"] #shell { visibility: hidden; }
 .su-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .su-row > input { flex: 1 1 14rem; min-width: 0; width: auto; }
 .su-link { align-self: flex-start; }
+/* The game step's Vortex line: set apart, quieter than the game's own. */
+.su-vortex { gap: 0.4rem; margin-top: 0.6rem; padding-top: 0.8rem; border-top: 1px solid var(--line); }
+.su-sub { color: var(--muted); font-size: var(--fs-xs); font-weight: var(--fw-bold); letter-spacing: 0.06em; text-transform: uppercase; }
 .su-how { margin: 0; padding-left: 1.2rem; color: var(--muted); font-size: var(--fs-sm); line-height: 1.7; }
 .su-status { display: flex; align-items: center; gap: 0.4rem; margin: 0; min-height: 1.4rem; color: var(--muted); font-size: var(--fs-sm); }
 .su-status .i { width: 1rem; flex: none; }

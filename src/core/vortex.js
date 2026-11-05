@@ -38,11 +38,57 @@ function parseFolderName(id) {
 
 const escapeKey = k => String(k).replace(/\\/g, '\\\\').replace(/\./g, '\\.');
 
+const NO_EXE = 'Vortex.exe was not found. Choose it in Settings > Vortex.';
+
+/** Vortex's uninstall entry (its installer's fixed id); its DisplayIcon is "<folder>\Vortex.exe,0". */
+const VORTEX_UNINSTALL = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\57979c68-f490-55b8-8fed-8b017a5af2fe';
+
+/**
+ * A path on a drive (C:\…, not a network share) to a file named Vortex.exe: the only program this
+ * app starts as Vortex. Shared with Settings, which checks the one chosen by hand the same way.
+ */
+const isVortexExe = p => typeof p === 'string' && /^[a-z]:[\\/]/i.test(p) && /[\\/]vortex\.exe$/i.test(p);
+
+const isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+
+/** %NAME% replaced by that environment variable (a REG_EXPAND_SZ value); an unknown one stays as it is. */
+const expandEnv = s => String(s).replace(/%([^%\s]+)%/g, (all, k) => {
+  const hit = Object.keys(process.env).find(e => e.toLowerCase() === k.toLowerCase());
+  return hit ? process.env[hit] : all;
+});
+
+/** One registry value (name '' = the key's default value); '' when there is none. Windows only. */
+function regValue(key, name) {
+  return new Promise(resolve => {
+    execFile('reg', ['query', key, ...(name ? ['/v', name] : ['/ve'])], { windowsHide: true, timeout: 10000 }, (err, stdout) => {
+      if (err) return resolve('');
+      const line = String(stdout).split(/\r?\n/).find(l => /\sREG_(?:EXPAND_)?SZ\s/.test(l));
+      if (!line) return resolve('');
+      const v = line.replace(/^.*?\sREG_(?:EXPAND_)?SZ\s+/, '').trim();
+      resolve(/\sREG_EXPAND_SZ\s/.test(line) ? expandEnv(v) : v);
+    });
+  });
+}
+
+/** The program a registry value names: a quoted or bare path, without an icon index (",0") or arguments. */
+function exeFromRegValue(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/^"([^"]+)"/) || s.match(/^(.*?\.exe)(?=$|[\s,])/i);
+  return m ? m[1].replace(/,\s*-?\d+$/, '').trim() : '';
+}
+
 class VortexBridge extends EventEmitter {
-  constructor({ getGameDir, log, appData = process.env.APPDATA || '' }) {
+  /**
+   * getExe: the Vortex.exe chosen in Settings ('' = find it). reg and platform are for tests.
+   */
+  constructor({ getGameDir, log, appData = process.env.APPDATA || '', getExe = () => '', reg = regValue, platform = process.platform }) {
     super();
     this.getGameDir = getGameDir;
     this.log = log;
+    this.getExe = getExe;
+    this.reg = reg;
+    this.platform = platform;
+    this.foundExe = ''; // found in the registry (findExe)
     this.root = path.join(appData, 'Vortex');
     this.cache = null;
     this.sig = '';
@@ -51,12 +97,52 @@ class VortexBridge extends EventEmitter {
 
   get installed() { return fs.existsSync(path.join(this.root, 'state.v2')); }
 
+  /** Vortex.exe ('' if not found). */
   exePath() {
-    const candidates = [
+    return this.exeInfo().exe;
+  }
+
+  /**
+   * { exe, source, chosenMissing }: the Vortex.exe chosen in Settings (source 'manual'); else the
+   * one found in the registry or in a usual place ('found'); else none (''). chosenMissing: one was
+   * chosen but is no longer there (moved, uninstalled), so it is not used. Vortex is a Windows
+   * program: none elsewhere.
+   */
+  exeInfo() {
+    if (this.platform !== 'win32') return { exe: '', source: '', chosenMissing: false };
+    const chosen = String(this.getExe() || '').trim();
+    if (chosen && isVortexExe(chosen) && isFile(chosen)) return { exe: chosen, source: 'manual', chosenMissing: false };
+    const exe = [
+      this.foundExe,
       path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Black Tree Gaming Ltd', 'Vortex', 'Vortex.exe'),
       path.join(process.env.LOCALAPPDATA || '', 'Programs', 'vortex', 'Vortex.exe'),
+    ].find(p => p && isVortexExe(p) && isFile(p)) || '';
+    return { exe, source: exe ? 'found' : '', chosenMissing: !!chosen };
+  }
+
+  /**
+   * Look for Vortex.exe in the registry, which knows where it was installed (any drive or folder):
+   * Vortex's own uninstall entry (for all users, or just this one), then the nxm:// link handler
+   * when Vortex has it. Kept in foundExe; returns it ('' if not found). Windows only.
+   */
+  async findExe() {
+    if (this.platform !== 'win32') return '';
+    const wow = VORTEX_UNINSTALL.replace('Software\\', 'Software\\WOW6432Node\\');
+    const tries = [
+      [`HKLM\\${VORTEX_UNINSTALL}`, 'DisplayIcon'], [`HKCU\\${VORTEX_UNINSTALL}`, 'DisplayIcon'], [`HKLM\\${wow}`, 'DisplayIcon'],
+      [`HKLM\\${VORTEX_UNINSTALL}`, 'InstallLocation'], [`HKCU\\${VORTEX_UNINSTALL}`, 'InstallLocation'],
+      ['HKCU\\Software\\Classes\\nxm\\shell\\open\\command', ''], ['HKCR\\nxm\\shell\\open\\command', ''],
     ];
-    return candidates.find(p => fs.existsSync(p)) || '';
+    // Asked all at once (each can take a moment); the first in this order that is there wins.
+    const values = await Promise.all(tries.map(([key, name]) => Promise.resolve().then(() => this.reg(key, name)).then(v => String(v || ''), () => '')));
+    for (const [i, [, name]] of tries.entries()) {
+      const v = values[i];
+      if (!v) continue;
+      const exe = name === 'InstallLocation' ? path.win32.join(v.replace(/^"|"$/g, ''), 'Vortex.exe') : exeFromRegValue(v);
+      if (isVortexExe(exe) && isFile(exe)) { this.foundExe = exe; return exe; }
+    }
+    this.foundExe = '';
+    return '';
   }
 
   isRunning() {
@@ -200,7 +286,7 @@ class VortexBridge extends EventEmitter {
   async apply(changes) {
     if (this.busy) throw new Error('A change to Vortex is already being applied.');
     const exe = this.exePath();
-    if (!exe) throw new Error('Vortex.exe was not found.');
+    if (!exe) throw new Error(NO_EXE);
     const data = this.read();
     if (!data.activeProfile) throw new Error('Vortex has no active Cyberpunk 2077 profile.');
     this.busy = true;
@@ -268,7 +354,7 @@ class VortexBridge extends EventEmitter {
   /** Ask Vortex to install a file (an update). Works whether or not Vortex is open. */
   installUrl(url) {
     const exe = this.exePath();
-    if (!exe) throw new Error('Vortex.exe was not found.');
+    if (!exe) throw new Error(NO_EXE);
     spawn(exe, ['-i', url], { detached: true, stdio: 'ignore' }).unref();
   }
 
@@ -325,4 +411,4 @@ class VortexBridge extends EventEmitter {
   }
 }
 
-module.exports = { VortexBridge, escapeKey, parseFolderName };
+module.exports = { VortexBridge, escapeKey, parseFolderName, isVortexExe, exeFromRegValue, expandEnv, NO_EXE };

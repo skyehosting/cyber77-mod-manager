@@ -177,7 +177,7 @@ class ModManager extends EventEmitter {
     this.profileImports = new Map();
     this.ensureProfiles();
     // CMM_VORTEX_APPDATA points tests (and the screenshot harness) away from the real Vortex.
-    this.vortex = new VortexBridge({ getGameDir: () => this.gameDir(), log, appData: process.env.CMM_VORTEX_APPDATA ?? process.env.APPDATA });
+    this.vortex = new VortexBridge({ getGameDir: () => this.gameDir(), log, appData: process.env.CMM_VORTEX_APPDATA ?? process.env.APPDATA, getExe: () => settings.get('vortexExe') });
     this.vortex.on('changed', () => this.emit('changed'));
     // CMM_MO2_LOCALAPPDATA / CMM_MO2_SCAN=off keep tests away from the real Mod Organizer 2.
     this.mo2 = new Mo2Bridge({
@@ -295,7 +295,17 @@ class ModManager extends EventEmitter {
       vortex,
       mo2: this.mo2View(),
       reqs: this.requirementsView(vortex),
+      modCats: this.categoriesView(),
     };
+  }
+
+  /** Each Nexus mod's category as Nexus has it (modId → "Appearance"), for the ones known. */
+  categoriesView() {
+    const out = {};
+    for (const [id, e] of Object.entries(this.data.modCategories || {})) {
+      if (/^[1-9]\d{0,9}$/.test(id) && e && typeof e.name === 'string' && e.name) out[id] = e.name;
+    }
+    return out;
   }
 
   /**
@@ -1460,9 +1470,11 @@ class ModManager extends EventEmitter {
 
   /** Vortex's mods for the UI, plus every place where our enabled files and Vortex's files meet. */
   vortexView() {
+    // Vortex.exe: where it is, and whether it was chosen in Settings or found (Settings and the wizard show it).
+    const { exe, source: exeSource, chosenMissing: exeChosenMissing } = this.vortex.exeInfo();
     let data;
-    try { data = this.vortex.read(); } catch (err) { return { installed: true, error: err.message, mods: [] }; }
-    if (!data.installed) return { installed: false, mods: [] };
+    try { data = this.vortex.read(); } catch (err) { return { installed: true, error: err.message, mods: [], exe, exeSource, exeChosenMissing }; }
+    if (!data.installed) return { installed: false, mods: [], exe, exeSource, exeChosenMissing };
     const adopted = this.data.vortexAdopted || {};
     // A mod in both apps shows once: as this app's, marked as also being in Vortex.
     const twins = this.vortexTwins(data);
@@ -1489,6 +1501,9 @@ class ModManager extends EventEmitter {
       adopted: Object.keys(adopted).length,
       twins: twinOf,
       overlaps,
+      exe,
+      exeSource,
+      exeChosenMissing,
     };
   }
 
@@ -2181,7 +2196,7 @@ class ModManager extends EventEmitter {
       const list = [];
       const seen = new Set(r.modId ? [r.modId] : []);
       const entry = r.modId ? cache[r.modId] : null;
-      if (r.modId && !entry) unknown.push(r.modId);
+      if (r.modId && (!entry || !Object.hasOwn(this.data.modCategories || {}, r.modId))) unknown.push(r.modId);
       for (const raw of entry?.list || []) {
         const q = this.reqOnNexus(raw);
         if (q.external && !q.official && !this.reqNameLooked(q.name)) lookup = true;
@@ -2291,22 +2306,35 @@ class ModManager extends EventEmitter {
     this.reqTimer.unref?.();
   }
 
-  /** Fetch requirements for mods never looked up, or looked up over 3 days ago (all with force). */
+  /**
+   * Fetch requirements for mods never looked up, or looked up over 3 days ago (all with force), and
+   * each mod's Nexus category (the Mods page's Category filter) with them: one answer has both, so a
+   * mod whose category is unknown or over 7 days old is asked again too.
+   */
   async refreshRequirements({ force = false } = {}) {
     if (this.reqFetching) return 0;
     this.reqFetching = true;
     try {
       this.data.requirements ||= {};
+      this.data.modCategories ||= {};
       const cache = this.data.requirements;
+      const cats = this.data.modCategories;
       let vx = [];
       try { vx = this.vortex.read().mods || []; } catch { /* no Vortex */ }
       const ids = [...new Set([...Object.values(this.data.mods), ...vx].map(m => Number(m.modId)).filter(n => n > 0))];
-      const stale = ids.filter(id => force || !cache[id] || Date.now() - cache[id].at > 3 * 86400000);
+      const stale = ids.filter(id => force || !cache[id] || Date.now() - cache[id].at > 3 * 86400000
+        || !Object.hasOwn(cats, id) || Date.now() - cats[id].at > 7 * 86400000);
       if (stale.length) {
-        const got = await this.nexus.requirementsMany('cyberpunk2077', stale);
+        const names = new Map();
+        const got = await this.nexus.requirementsMany('cyberpunk2077', stale, names);
         const at = Date.now();
-        // A mod Nexus no longer has gets an empty list, so it is not asked again for 3 days.
-        for (const id of stale) cache[id] = { at, list: got.get(id) || [] };
+        // A mod Nexus no longer has gets an empty list (and no category), so it is not asked again for 3 days.
+        for (const id of stale) {
+          cache[id] = { at, list: got.get(id) || [] };
+          // Left out of this answer (a short reply): the category known before stays.
+          const name = names.has(id) ? names.get(id) : cats[id]?.name;
+          cats[id] = { at, name: typeof name === 'string' ? name : '' };
+        }
       }
       const named = await this.matchRequirementNames(); // never throws: a failed round backs off by itself
       if (!stale.length && !named) return 0;

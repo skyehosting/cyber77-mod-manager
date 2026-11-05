@@ -131,6 +131,33 @@ const setStatus = (el, kind, text) => {
   el.replaceChildren(...(ico ? [icon(ico)] : []), h('span', {}, text));
 };
 
+/**
+ * The game step's Vortex line (Windows): where Vortex.exe is, found by itself (the registry, then
+ * the usual folders) or chosen here. Only for those who use Vortex: nothing to do otherwise.
+ */
+function vortexPart() {
+  const status = statusLine();
+  const paint = async () => {
+    const vx = (await api.snapshot()).ok?.vortex || {};
+    if (vx.exe) setStatus(status, 'ok', `Vortex: ${vx.exe}`);
+    else setStatus(status, '', vx.installed ? 'Vortex\'s mods are here, but not Vortex.exe: find it, or choose it' : 'Vortex was not found. Only needed if you use Vortex too.');
+  };
+  paint();
+  const find = h('button', { type: 'button', class: 'btn btn-sm' }, icon('search'), h('span', {}, 'Find Vortex'));
+  find.onclick = async () => { find.disabled = true; setStatus(status, '', 'Looking for Vortex…'); await api.findVortex(); await paint(); find.disabled = false; };
+  const pick = h('button', { type: 'button', class: 'btn btn-sm' }, icon('folder'), h('span', {}, 'Choose Vortex.exe…'));
+  pick.onclick = async () => {
+    const p = await run(api.pickFile('Select Vortex.exe', [{ name: 'Vortex', extensions: ['exe'] }]));
+    if (!p?.[0]) return;
+    const r = await api.setSettings({ vortexExe: p[0] });
+    if (r.error) { setStatus(status, 'bad', r.error); return; }
+    state.settings = r.ok;
+    await paint();
+  };
+  return h('div', { class: 'su-ctl su-vortex', role: 'group', 'aria-label': 'Vortex (optional)' },
+    h('span', { class: 'su-sub' }, 'Vortex (only if you use it)'), status, h('div', { class: 'su-row' }, find, pick));
+}
+
 // Pictures of what each step is for, drawn in the theme's own colours.
 const ART = {
   game() {
@@ -189,7 +216,7 @@ const SETUP_BUILD = {
     return stepParts({
       kicker: 'Step 1 of 5 · Your game', title: 'Where is Cyberpunk 2077?',
       text: 'Mods go into the game\'s folder. The app usually finds it by itself; check it here, or point to it.',
-      body: h('div', { class: 'su-ctl' }, status, h('div', { class: 'su-row' }, find, pick)),
+      body: h('div', { class: 'su-ctl' }, status, h('div', { class: 'su-row' }, find, pick), api.platform === 'win32' ? vortexPart() : null),
       art: ART.game(), primary: primaryBtn('Continue', next), skip: { label: 'Skip for now', fn: next },
     });
   },

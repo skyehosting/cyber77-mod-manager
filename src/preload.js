@@ -75,6 +75,8 @@ contextBridge.exposeInMainWorld('api', {
   exportJson: () => call('export:json'),
   searchMods: opts => call('browse:search', opts),
   modCategories: () => call('browse:categories'),
+  nexusModCategories: () => call('mods:categories'),
+  findVortex: () => call('vortex:findExe'),
   openNexusPage: url => call('browse:open', url),
   onBrowseDownload: on('browse:download'),
   openVortex: () => call('vortex:open'),

@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const { JsonStore } = require('./jsonStore');
 const { backupDirProblem } = require('./saves');
@@ -35,6 +36,7 @@ class Settings {
       prereqsWaived: [], // Linux: Proton folders where Play goes on without asking for vcrun2022 / d3dcompiler_47
       tzHintOff: false, // Linux: never suggest TZ=UTC after the game closes right after starting
       redmodLast: null, // the last REDmod deploy this app ran: { ok, at, reason }
+      vortexExe: '', // Vortex.exe chosen by hand ('' = found by itself: the registry, then the usual places)
       vortexAutoMove: 'ask', // Vortex's mods: 'on' move into this app automatically | 'ask' once | 'off' leave them
       // Save manager: automatic backups of the game's saves (before Play, or when the game starts).
       saveAutoBackup: true,
@@ -246,6 +248,20 @@ class Settings {
     if (Array.isArray(patch.prereqsWaived)) d.prereqsWaived = patch.prereqsWaived.filter(p => typeof p === 'string' && path.isAbsolute(p)).slice(-20);
     if ('tzHintOff' in patch) d.tzHintOff = !!patch.tzHintOff;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
+    // Vortex.exe is run (to switch its mods), so a newly chosen one must be a path on a drive to a
+    // file named Vortex.exe that is there (as vortex.js isVortexExe, which checks it again on every
+    // use). The one saved before comes back with every Save: a Vortex moved since must not block
+    // saving the rest.
+    if (typeof patch.vortexExe === 'string') {
+      const v = patch.vortexExe.trim();
+      if (v && v !== d.vortexExe) {
+        if (!(/^[a-z]:[\\/]/i.test(v) && /[\\/]vortex\.exe$/i.test(v))) throw new Error('Choose Vortex\'s program: Vortex.exe (usually in C:\\Program Files\\Black Tree Gaming Ltd\\Vortex).');
+        let ok = false;
+        try { ok = fs.statSync(v).isFile(); } catch { /* not there */ }
+        if (!ok) throw new Error(`There is no Vortex.exe at ${v}.`);
+      }
+      d.vortexExe = v;
+    }
     if (['open', 'collapsed'].includes(patch.reqView)) d.reqView = patch.reqView;
     if ('saveAutoBackup' in patch) d.saveAutoBackup = !!patch.saveAutoBackup;
     if ('perProfileSaves' in patch) d.perProfileSaves = !!patch.perProfileSaves;

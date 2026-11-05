@@ -42,6 +42,8 @@ function setup() {
     600: { at, list: [{ modId: 4197, name: 'TweakXL' }, { modId: 8000, name: 'Native Settings UI', notes: 'For the menu' }] },
     700: { at, list: [{ modId: 0, name: 'Some Tool', url: 'https://example.com/tool', external: true }] },
   };
+  // Their Nexus categories, read with the requirements.
+  mgr.data.modCategories = Object.fromEntries([4198, 4197, 500, 600, 700].map(id => [id, { at, name: id === 500 ? 'Appearance' : 'Modders Resources' }]));
   // Nexus: never really asked in tests.
   mgr.nexus.requirementsMany = async () => { throw new Error('Nexus must not be asked'); };
   mgr.nexus.findModsByName = async () => { throw new Error('Nexus must not be asked'); };
