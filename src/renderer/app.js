@@ -1985,7 +1985,7 @@ let stopTimer = 0;
  * that puts them there. Resolves 'again', 'anyway' (also: not asked again for this folder) or false.
  */
 function prereqsBox({ missing, loaders, command, installed }) {
-  const copy = h('button', { class: 'btn btn-sm', onclick: async () => { await navigator.clipboard.writeText(command); copy.lastChild.textContent = 'Copied'; } }, icon('copy'), h('span', {}, 'Copy'));
+  const copy = h('button', { class: 'btn btn-sm', onclick: async () => { try { await navigator.clipboard.writeText(command); copy.lastChild.textContent = 'Copied'; } catch { toast('Could not copy: select the line and copy it by hand', 'warn'); } } }, icon('copy'), h('span', {}, 'Copy'));
   return modal({
     title: 'Install what the mod loaders need',
     sub: `${loaders.join(' and ')} under Proton`,
@@ -2009,7 +2009,7 @@ function prereqsBox({ missing, loaders, command, installed }) {
  * Resolves 'again' (check again), 'anyway' (start as they are) or false.
  */
 function steamOptionsBox({ current, missing, suggested, note = '' }) {
-  const copy = h('button', { class: 'btn btn-sm', onclick: async () => { await navigator.clipboard.writeText(suggested); copy.lastChild.textContent = 'Copied'; } }, icon('copy'), h('span', {}, 'Copy'));
+  const copy = h('button', { class: 'btn btn-sm', onclick: async () => { try { await navigator.clipboard.writeText(suggested); copy.lastChild.textContent = 'Copied'; } catch { toast('Could not copy: select the line and copy it by hand', 'warn'); } } }, icon('copy'), h('span', {}, 'Copy'));
   return modal({
     title: 'Set the Steam launch options once',
     sub: 'So Steam starts Cyberpunk 2077 modded, without its launcher',
@@ -2046,8 +2046,44 @@ $('#s-launch').addEventListener('change', refreshSteamHint);
 if (api.platform !== 'win32') {
   // Linux: the game always starts through Steam (Proton): nothing to choose here.
   $('#s-launch').closest('.set-ctl').hidden = true;
-  $('#s-launch').closest('.set-row').querySelector('.set-desc').textContent = 'On Linux the game starts through Steam (Proton). REDmod deploy does not run on Linux yet.';
+  $('#s-launch').closest('.set-row').querySelector('.set-desc').textContent = 'On Linux the game starts through Steam (Proton). REDmod deploy runs in the game\'s Proton folder, through protontricks.';
 }
+
+/*
+ * Linux: the game closed or crashed right after starting, with RED4ext installed: under Proton that
+ * is often the time-zone crash (the script compiler aborts when Wine cannot match the time zone).
+ * TZ=UTC in the game's Steam launch options fixes it.
+ */
+api.onTzHint(({ current, suggested }) => {
+  const copy = h('button', {
+    class: 'btn btn-sm',
+    onclick: async () => {
+      try { await navigator.clipboard.writeText(suggested); copy.lastChild.textContent = 'Copied'; } catch { toast('Could not copy: select the line and copy it by hand', 'warn'); }
+    },
+  }, icon('copy'), h('span', {}, 'Copy'));
+  const show = () => modal({
+    title: 'Cyberpunk 2077 closed right after starting',
+    sub: 'A known problem under Proton, with a one-line fix',
+    body: h('div', { class: 'steam-opts' },
+      h('p', {}, 'With RED4ext installed, the game\'s script compiler crashes at start when Wine cannot match your computer\'s time zone (an open RED4ext and redscript issue). Giving the game a time zone it knows fixes it.'),
+      h('ol', {},
+        h('li', {}, 'In Steam, right-click Cyberpunk 2077 → Properties → General.'),
+        h('li', {}, 'Replace what is under Launch Options with:'),
+      ),
+      h('div', { class: 'steam-opts-line' }, h('code', {}, suggested.split(' ').flatMap((o, i) => [i ? ' ' : null, h('span', {}, o)])), copy),
+      current ? h('p', { class: 'hint' }, `Now: ${current}`) : null,
+      h('p', { class: 'hint' }, 'The game\'s clock then shows UTC. A city with your offset that Wine knows works too (TZ=America/Los_Angeles, say).')),
+    buttons: [
+      { label: 'Don\'t suggest again', value: 'off' },
+      { label: 'Open in Steam', value: 'open' },
+      { label: 'Close', value: false, kind: 'btn-primary', safe: true },
+    ],
+  }).then(async v => {
+    if (v === 'off') await run(api.setSettings({ tzHintOff: true }));
+    if (v === 'open') { await run(api.openSteamGame()); show(); }
+  });
+  show();
+});
 
 $('#play-btn').addEventListener('click', async () => {
   const btn = $('#play-btn');
@@ -2070,25 +2106,30 @@ $('#play-btn').addEventListener('click', async () => {
   btn.disabled = true;
   $('#play-label').textContent = 'Starting…';
   let r = await run(api.launchGame());
+  const skip = { skipDeploy: true };
+  // REDmod deploy (first, before the other checks) did not happen: say why, and let the player decide.
+  if (r?.deployFailed) {
+    let go;
+    if (r.missingTools) {
+      // No REDmod tools: say how to get them, once per session; after that Play just starts the game.
+      const pick = redmodToolsAsked ? 'launch' : await redmodToolsBox(true);
+      redmodToolsAsked = true;
+      if (pick === 'get') await run(api.getRedmodTools());
+      go = pick === 'launch';
+    } else if (r.cannotRun) {
+      // Linux: no protontricks, or not a Steam copy (asked once per run of the app).
+      go = await confirmBox('Your REDmods cannot be deployed here yet', r.reason, 'Start without them');
+    } else {
+      go = await confirmBox('REDmod deploy failed', `Your REDmods may not load (the game uses what was last deployed successfully).\n\n${r.reason}\n\nThe full output is in Game log → Manager.`, 'Launch anyway');
+    }
+    r = go ? await run(api.launchGame(skip)) : null;
+  }
   // Through Steam: Steam's launch options for the game must skip the launcher and load REDmods;
   // on Linux also what the mod loaders need in the Proton folder. "Start anyway" holds for the rest.
-  const skip = { skipDeploy: true };
   while (r?.steamOptions || r?.prereqs) {
     const go = r.steamOptions ? await steamOptionsBox(r.steamOptions) : await prereqsBox(r.prereqs);
     if (go === 'anyway') skip[r.steamOptions ? 'skipSteamCheck' : 'skipPrereqs'] = true;
     r = go ? await run(api.launchGame(skip)) : null;
-  }
-  // No REDmod tools: say how to get them, once per session; after that Play just starts the game.
-  if (r?.deployFailed && r.missingTools) {
-    const go = redmodToolsAsked ? 'launch' : await redmodToolsBox(true);
-    redmodToolsAsked = true;
-    if (go === 'get') await run(api.getRedmodTools());
-    r = go === 'launch' ? await run(api.launchGame({ skipDeploy: true })) : null;
-  }
-  // REDmod deploy failed: say why, and let the player decide.
-  if (r?.deployFailed) {
-    const go = await confirmBox('REDmod deploy failed', `Your REDmods may not load (the game uses what was last deployed successfully).\n\n${r.reason}\n\nThe full output is in Game log → Manager.`, 'Launch anyway');
-    r = go ? await run(api.launchGame({ skipDeploy: true })) : null;
   }
   if (r && !r.deployFailed) toast(`Starting Cyberpunk 2077 through ${r.via}`, 'success');
   setTimeout(renderPlay, 4000);
@@ -2142,6 +2183,7 @@ $('#mods-redmod').addEventListener('click', async () => {
   const r = res.ok;
   if (r === null) toast('There are no REDmods in the game folder');
   else if (r?.missingTools) { if (await redmodToolsBox(false) === 'get') await run(api.getRedmodTools()); }
+  else if (r?.cannotRun) modal({ title: 'Your REDmods cannot be deployed here yet', body: h('p', { class: 'pre-wrap' }, r.reason), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
   else if (r && !r.ok) modal({ title: 'REDmod deploy failed', body: h('p', { class: 'pre-wrap' }, `${r.reason}\n\nThe full output is in Game log → Manager.`), buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }] });
 });
 
@@ -2158,10 +2200,11 @@ async function refreshRedmod(st) {
   const when = s.last?.at ? new Date(s.last.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
   const failed = s.last && !s.last.ok;
   const missing = s.tools === false && !s.upToDate;
-  const mode = s.running ? 'running' : missing ? 'missing' : failed ? 'failed' : s.upToDate ? 'ok' : 'waiting';
+  const needs = s.protontricks === false && !s.upToDate; // Linux: nothing to run REDmod deploy with
+  const mode = s.running ? 'running' : missing ? 'missing' : needs ? 'needs' : failed ? 'failed' : s.upToDate ? 'ok' : 'waiting';
   btn.dataset.state = mode;
   btn.disabled = s.running;
-  $('#mods-redmod-label').textContent = { running: 'Deploying REDmods…', missing: 'REDmod tools missing', failed: 'REDmod deploy failed', ok: 'REDmods deployed', waiting: 'Deploy REDmods' }[mode];
+  $('#mods-redmod-label').textContent = { running: 'Deploying REDmods…', missing: 'REDmod tools missing', needs: 'REDmod needs protontricks', failed: 'REDmod deploy failed', ok: 'REDmods deployed', waiting: 'Deploy REDmods' }[mode];
   // Once per session: REDmods are here (just installed, say) but nothing can deploy them.
   if (missing && !redmodToolsWarned) {
     redmodToolsWarned = true;
@@ -2170,6 +2213,7 @@ async function refreshRedmod(st) {
   btn.title = {
     running: 'REDmod deploy is running',
     missing: 'This copy of the game has no REDmod tools (a free DLC from CD Projekt), so REDmods cannot be deployed. Click to see how to get them.',
+    needs: 'REDmod deploy is a Windows program: on Linux it runs in the game\'s Proton folder through protontricks, which is not installed. Click for how to get it.',
     failed: `The last REDmod deploy failed${when ? ` (${when})` : ''}. Click to try again; Play also tries before starting the game.\n\n${s.last?.reason || ''}`,
     ok: `${s.count} REDmods, deployed${when ? ` ${when}` : ''}. Play deploys again by itself when they change. Click to deploy now anyway.`,
     waiting: `Your REDmods changed since the last deploy: Play deploys them before starting the game, or click to do it now.`,

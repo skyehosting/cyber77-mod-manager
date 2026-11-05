@@ -142,6 +142,7 @@ contextBridge.exposeInMainWorld('api', {
   crashDetails: id => call('crash:details', id),
   crashOpen: id => call('crash:open', id),
   onCrash: on('crash'),
+  onTzHint: on('tz-hint'),
   crashDelete: ids => call('crash:delete', ids),
   playsList: () => call('plays:list'),
   playGet: id => call('plays:get', id),

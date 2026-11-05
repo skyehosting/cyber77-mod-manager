@@ -31,6 +31,7 @@ class Settings {
       launchMode: 'direct', // 'direct': the game's own program (no Steam prompt, no launcher) | 'steam': through Steam, with its overlay
       redmodDeployed: '', // fingerprint of the REDmods at the last successful REDmod deploy
       prereqsWaived: [], // Linux: Proton folders where Play goes on without asking for vcrun2022 / d3dcompiler_47
+      tzHintOff: false, // Linux: never suggest TZ=UTC after the game closes right after starting
       redmodLast: null, // the last REDmod deploy this app ran: { ok, at, reason }
       vortexAutoMove: 'ask', // Vortex's mods: 'on' move into this app automatically | 'ask' once | 'off' leave them
       // Save manager: automatic backups of the game's saves (before Play, or when the game starts).
@@ -160,6 +161,7 @@ class Settings {
     if (typeof patch.redmodDeployed === 'string') d.redmodDeployed = patch.redmodDeployed;
     // Linux: Proton folders whose missing mod-loader components the player chose to start without.
     if (Array.isArray(patch.prereqsWaived)) d.prereqsWaived = patch.prereqsWaived.filter(p => typeof p === 'string' && path.isAbsolute(p)).slice(-20);
+    if ('tzHintOff' in patch) d.tzHintOff = !!patch.tzHintOff;
     if (['on', 'ask', 'off'].includes(patch.vortexAutoMove)) d.vortexAutoMove = patch.vortexAutoMove;
     if (['open', 'collapsed'].includes(patch.reqView)) d.reqView = patch.reqView;
     if ('saveAutoBackup' in patch) d.saveAutoBackup = !!patch.saveAutoBackup;

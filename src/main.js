@@ -5,10 +5,10 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
-const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, linuxLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
+const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, linuxLaunchOptions, setsTimezone, STEAM_APP_ID } = require('./core/gameFinder');
 const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
 const { findGameProcess, isGameProcess } = require('./core/gameProcess');
-const { missingComponents, protontricksCommand } = require('./core/wine');
+const { missingComponents, protontricksCommand, protontricksLaunch } = require('./core/wine');
 const { caseResolver } = require('./core/fileCase');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
 const { GameLogMonitor, ownerRoot } = require('./core/gameLogs');
@@ -71,10 +71,58 @@ function launchOptionsCheck(dir, options) {
     const missing = missingLaunchOptions(options, true);
     return { missing, suggested: [options, ...missing].filter(Boolean).join(' '), note: '' };
   }
-  const dlls = ['version', 'winmm'].filter(d => !!dir && fs.existsSync(path.join(dir, 'bin', 'x64', `${d}.dll`)));
+  const dlls = loaderDlls(dir);
   const { missing, suggested, wine } = linuxLaunchOptions(options, { modded: true, dlls });
   const loaders = dlls.map(d => (d === 'version' ? 'Cyber Engine Tweaks' : 'RED4ext')).join(' and ');
   return { missing, suggested, note: wine ? `Without the Wine setting, ${loaders} ${dlls.length === 1 ? 'does' : 'do'} not load under Proton; without the rest, the CD Projekt launcher opens.` : '' };
+}
+/** Linux: the mod loaders' proxy DLLs in bin/x64 (whatever their case). */
+const loaderDlls = dir => ['version', 'winmm'].filter(d => !!dir && caseResolver(dir).exists(`bin/x64/${d}.dll`));
+
+/*
+ * Linux: a start-up crash with a known fix. Under Proton, with RED4ext loaded, the game's script
+ * compiler (scc_lib.dll) aborts 1-2 seconds after start when Wine cannot match the computer's time
+ * zone (RED4ext issue 164, redscript issue 200; open in November 2026). TZ=UTC in the launch options
+ * fixes it. Suggested once per run of the app, after the game closed or crashed right after starting.
+ */
+let tzHintShown = false;
+let gameStartedAt = 0;
+async function timezoneHint(why) {
+  if (process.platform === 'win32' || tzHintShown || settings.get('tzHintOff')) return;
+  tzHintShown = true; // at once: a crash and a quick exit can both ask within the same second
+  let shown = false;
+  try {
+    const dir = settings.get('gamePath');
+    if (!isGameDir(dir) || !caseResolver(dir).exists('red4ext/RED4ext.dll')) return;
+    if ((await storeOf(dir)).store !== 'steam') return;
+    const current = (await steamLaunchOptions())?.options || '';
+    if (setsTimezone(current)) return;
+    const { suggested } = linuxLaunchOptions(current, { modded: true, dlls: loaderDlls(dir), tz: 'UTC' });
+    logger.warn('Cyberpunk 2077 closed right after it started: under Proton this is often the time-zone crash with RED4ext. Adding TZ=UTC to the game\'s Steam launch options fixes it', `Suggested launch options: ${suggested}`);
+    send('tz-hint', { why, current, suggested });
+    shown = true;
+  } finally {
+    if (!shown) tzHintShown = false; // not this time: a later one may still be
+  }
+}
+/** A crash in the script compiler (scc_lib.dll): the time-zone crash's mark. */
+const sccCrash = c => /^scc_lib\.dll$/i.test(path.win32.basename(c?.module?.path || c?.module?.name || ''));
+/** The newest crash report, if the game's crash reporter wrote it at or after `since`. */
+function crashSince(since) {
+  const c = crashes?.list(1)[0];
+  try { return c && fs.statSync(c.folder).mtimeMs >= since ? c : null; } catch { return null; }
+}
+/**
+ * Linux: the game was gone within a minute of starting. The time-zone crash, unless a crash report
+ * (written up to ~10 s later) says another module crashed. A game already running when the app
+ * opened does not count: its start time is not known.
+ */
+function quickExit(startedAt) {
+  if (process.platform === 'win32' || startedAt - appStartedAt < 10e3) return;
+  setTimeout(() => {
+    const c = crashSince(startedAt);
+    if (!c || sccCrash(c)) timezoneHint('quick-exit').catch(() => {});
+  }, 12e3).unref?.();
 }
 
 /**
@@ -288,7 +336,12 @@ async function boot() {
     if (status.running && !gameWasRunning && Date.now() - launchedFromApp > 120000 && Date.now() - appStartedAt > 15000) {
       manager.autoBackupSaves('game-start').catch(err => logger.warn('Could not back up your saves when the game started', err.message));
     }
-    if (gameWasRunning && !status.running) gameExitedAt = Date.now();
+    if (status.running && !gameWasRunning) gameStartedAt = status.since || Date.now();
+    if (gameWasRunning && !status.running) {
+      gameExitedAt = Date.now();
+      // Linux: gone within a minute of starting (the time-zone crash leaves no report at times).
+      if (gameExitedAt - gameStartedAt < 60e3) quickExit(gameStartedAt);
+    }
     gameWasRunning = !!status.running;
   });
   gameLogs.on('reset', () => send('gamelog-reset'));
@@ -312,7 +365,11 @@ async function boot() {
   const gameFiles = new GameFiles({ getGameDir: () => manager.gameDir(), owners: () => manager.fileOwners(), ownerRoot });
   crashes = new CrashReports({ dir: () => manager.crashDir(), gameDir: () => manager.gameDir(), gameLogs, files: gameFiles });
   // A crash: the window says so wherever the user is, and the Crashes view shows it.
-  gameLogs.on('crash', id => send('crash', crashes.list(1)[0] || { id }));
+  gameLogs.on('crash', id => {
+    const c = crashes.list(5).find(x => x.id === id);
+    send('crash', c || crashes.list(1)[0] || { id });
+    if (sccCrash(c)) timezoneHint('crash').catch(() => {}); // this crash's report only, never an older one
+  });
   modConfig = new ModConfig({ manager, files: gameFiles, ownerRoot, backupDir: path.join(app.getPath('userData'), 'edited-originals') });
   const tools = makeTools({
     manager, gameLogs, logger, web: new WebReader(), files: gameFiles, config: modConfig, crashes, plays,
@@ -420,12 +477,13 @@ async function boot() {
   handle('game:launch', async ({ skipDeploy = false, skipSteamCheck = false, skipPrereqs = false } = {}) => {
     const dir = settings.get('gamePath');
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
-    if (process.platform !== 'win32') {
-      // Linux: REDmod deploy (a Windows program) cannot run from here yet; REDmods load once deployed another way.
-      if (hasRedmods(dir) && !redmodLinuxNoted) { logger.warn('REDmod deploy does not run on Linux yet: REDmods load only if they were deployed another way'); redmodLinuxNoted = true; }
-    } else if (!skipDeploy) {
+    if (!skipDeploy) {
       const r = await runRedmodDeploy(dir, false);
-      if (r && !r.ok) return { deployFailed: true, missingTools: !!r.missingTools, reason: r.reason };
+      // Linux: no protontricks, or not a Steam copy: said once per run, and Play goes on.
+      if (r && !r.ok && r.cannotRun) {
+        if (!redmodLinuxNoted) { redmodLinuxNoted = true; return { deployFailed: true, cannotRun: true, protontricks: !!r.protontricks, reason: r.reason }; }
+        send('toast', { text: 'Starting without your REDmods: they cannot be deployed here yet (Mods → REDmod button says why)', kind: 'warn' });
+      } else if (r && !r.ok) return { deployFailed: true, missingTools: !!r.missingTools, reason: r.reason };
     }
     const store = await storeOf(dir);
     // Through Steam: the game's Steam launch options must skip the launcher (and load REDmods).
@@ -463,6 +521,14 @@ async function boot() {
       throw err;
     }
     logger.success(`Launching Cyberpunk 2077 through ${r.via}${r.args.length ? ` (${r.args.join(' ')}, for REDmod)` : ''}`);
+    if (process.platform !== 'win32') {
+      // Linux: a run too short for the 3-second process check to see can still leave a crash report.
+      const at = launchedFromApp;
+      setTimeout(() => {
+        if (gameStartedAt >= at || launchedFromApp !== at) return; // seen (the exit check covers it), or Play again
+        if (sccCrash(crashSince(at))) timezoneHint('crash').catch(() => {});
+      }, 120e3).unref?.();
+    }
     return r;
   });
   handle('redmod:deploy', () => runRedmodDeploy(settings.get('gamePath'), true));
@@ -843,17 +909,20 @@ let redmodRunning = null;
  * since the last successful deploy means Play deploys first), and how this app's last deploy went.
  */
 function redmodStatus(dir = settings.get('gamePath')) {
-  if (!isGameDir(dir)) return { count: 0, upToDate: true, last: null, tools: true };
+  if (!isGameDir(dir)) return { count: 0, upToDate: true, last: null, tools: true, protontricks: true };
   const count = hasRedmods(dir) ? redmodFolders(dir).length : 0;
   return {
     count, upToDate: !count || redmodFingerprint(dir) === settings.get('redmodDeployed'), running: !!redmodRunning,
     last: settings.get('redmodLast') || null, tools: redmodToolsInstalled(dir),
+    // Linux: REDmod deploy runs through protontricks; without it nothing here can deploy.
+    protontricks: process.platform === 'win32' || !!protontricksLaunch(STEAM_APP_ID, ''),
   };
 }
 
 const REDMOD_MISSING = 'The REDmod tools are not installed (tools\\redmod\\bin\\redMod.exe). They are a free DLC from CD Projekt for Cyberpunk 2077: without them REDmods cannot be deployed, by this app or any other.';
 let redmodMissingNoted = false;
 let redmodLinuxNoted = false;
+let redmodRunnerSaid = '';
 
 /*
  * Getting the REDmod tools, per store (CD Projekt's modding page, cyberpunk.net/en/modding-support).
@@ -878,6 +947,25 @@ const REDMOD_HELP = {
   },
 };
 
+/**
+ * Linux: how REDmod deploy runs for this copy: { prefix, launch, via }, or { reason } (with
+ * protontricks: the command that installs it) when it cannot: not a Steam copy, no Proton folder
+ * yet, or no protontricks.
+ */
+async function redmodLinuxRunner(dir) {
+  const store = await storeOf(dir);
+  if (store.store !== 'steam') {
+    return { reason: 'On Linux this app deploys REDmods for Steam copies of the game. In Heroic, turn on REDmod for the game in its settings (Heroic runs REDmod deploy before each start).' };
+  }
+  const prefix = manager.gameFolders()?.prefix;
+  if (!prefix) return { reason: 'The game\'s Proton folder is not made yet: start the game once from Steam, then press Play here again.' };
+  const probe = protontricksLaunch(STEAM_APP_ID, '');
+  if (!probe) {
+    return { protontricks: true, reason: 'REDmod deploy is a Windows program: on Linux it runs in the game\'s Proton folder through protontricks, which is not installed. Install protontricks (sudo apt install protontricks, or "Protontricks" from Flathub), then press Play again. Until then the game starts without your REDmods.' };
+  }
+  return { prefix, via: probe.via, launch: (target, args) => protontricksLaunch(STEAM_APP_ID, target, args) };
+}
+
 async function runRedmodDeploy(dir, force) {
   if (!isGameDir(dir) || !hasRedmods(dir)) return null;
   const fp = redmodFingerprint(dir);
@@ -887,11 +975,22 @@ async function runRedmodDeploy(dir, force) {
     if (!redmodMissingNoted) { logger.warn('REDmod tools are missing: your REDmods are not deployed', REDMOD_MISSING); redmodMissingNoted = true; }
     return { ok: false, missingTools: true, reason: REDMOD_MISSING };
   }
+  // Linux: redMod.exe runs inside the game's Proton folder through protontricks (Steam copies).
+  let linux = null;
+  if (process.platform !== 'win32') {
+    const runner = await redmodLinuxRunner(dir);
+    if (runner.reason) {
+      if (redmodRunnerSaid !== runner.reason) logger.warn('REDmod deploy cannot run here: your REDmods are not deployed', runner.reason);
+      redmodRunnerSaid = runner.reason;
+      return { ok: false, cannotRun: true, protontricks: !!runner.protontricks, reason: runner.reason };
+    }
+    linux = runner;
+  }
   if (redmodRunning) return redmodRunning;
   redmodRunning = (async () => {
-    logger.info(`Deploying ${redmodFolders(dir).length} REDmods (REDmod deploy)…`);
+    logger.info(`Deploying ${redmodFolders(dir).length} REDmods (REDmod deploy${linux ? `, through ${linux.via}` : ''})…`);
     send('redmod', { stage: 'deploying' });
-    const res = await deployRedmods(dir, { onLine: line => { if (/stage|deploy|error/i.test(line)) send('redmod', { stage: 'deploying', line }); } });
+    const res = await deployRedmods(dir, { linux, onLine: line => { if (/stage|deploy|error/i.test(line)) send('redmod', { stage: 'deploying', line }); } });
     if (res.ok) {
       settings.update({ redmodDeployed: fp, redmodLast: { ok: true, at: Date.now() } });
       logger.success('REDmods deployed');

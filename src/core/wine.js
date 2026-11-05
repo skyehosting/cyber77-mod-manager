@@ -109,10 +109,38 @@ function missingComponents(pfx, loaders) {
  * Flatpak), else protontricks with a note that it needs installing first.
  */
 function protontricksCommand(appId, components, { home = os.homedir(), pathEnv = process.env.PATH || '' } = {}) {
-  const onPath = String(pathEnv).split(path.delimiter).some(d => path.isAbsolute(d) && fs.existsSync(path.join(d, 'protontricks')));
-  const flatpak = !onPath && ['/var/lib/flatpak/app/com.github.Matoking.protontricks', path.join(home, '.local', 'share', 'flatpak', 'app', 'com.github.Matoking.protontricks')].some(p => fs.existsSync(p));
-  const cmd = `${flatpak ? 'flatpak run com.github.Matoking.protontricks' : 'protontricks'} ${appId} ${components.join(' ')}`;
+  const onPath = !!onPathFile('protontricks', pathEnv);
+  const flatpak = !onPath && protontricksFlatpak(home);
+  const cmd = `${flatpak ? `flatpak run ${PROTONTRICKS_FLATPAK}` : 'protontricks'} ${appId} ${components.join(' ')}`;
   return { command: cmd, installed: onPath || flatpak };
 }
 
-module.exports = { isPrefix, prefixUser, prefixFolders, prefixFromPath, steamPrefix, prefixComponents, missingComponents, protontricksCommand };
+const PROTONTRICKS_FLATPAK = 'com.github.Matoking.protontricks';
+/** A program in one of PATH's (absolute) folders: its full path, or ''. */
+function onPathFile(name, pathEnv = process.env.PATH || '') {
+  for (const d of String(pathEnv).split(path.delimiter)) {
+    if (!path.isAbsolute(d)) continue;
+    const f = path.join(d, name);
+    try { if (fs.statSync(f).isFile()) return f; } catch { /* not here */ }
+  }
+  return '';
+}
+const protontricksFlatpak = home => ['/var/lib/flatpak/app', path.join(home, '.local', 'share', 'flatpak', 'app')]
+  .some(d => fs.existsSync(path.join(d, PROTONTRICKS_FLATPAK)));
+
+/**
+ * How to run a Windows program inside a Steam game's Proton folder: protontricks-launch (installed,
+ * or the Flatpak's), as { file, args } to spawn, or null when protontricks is not installed.
+ * `target` is the program's Linux path; `args` go to it.
+ */
+function protontricksLaunch(appId, target, args = [], { home = os.homedir(), pathEnv = process.env.PATH || '' } = {}) {
+  const native = onPathFile('protontricks-launch', pathEnv);
+  if (native) return { file: native, args: ['--appid', String(appId), target, ...args], via: 'protontricks' };
+  const flatpak = onPathFile('flatpak', pathEnv);
+  if (flatpak && protontricksFlatpak(home)) {
+    return { file: flatpak, args: ['run', `--command=protontricks-launch`, PROTONTRICKS_FLATPAK, '--appid', String(appId), target, ...args], via: 'protontricks (Flatpak)' };
+  }
+  return null;
+}
+
+module.exports = { isPrefix, prefixUser, prefixFolders, prefixFromPath, steamPrefix, prefixComponents, missingComponents, protontricksCommand, protontricksLaunch };

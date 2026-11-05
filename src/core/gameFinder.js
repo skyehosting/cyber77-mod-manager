@@ -329,6 +329,13 @@ function missingLaunchOptions(options, needsModded) {
   return ['--launcher-skip', needsModded ? '-modded' : ''].filter(o => o && !have.includes(o));
 }
 
+/** Whether a Steam launch options line gives the game a time zone (TZ=… before %command%). */
+function setsTimezone(line) {
+  const words = optionWords(line);
+  const at = words.indexOf('%command%');
+  return (at >= 0 ? words.slice(0, at) : words).some(w => /^TZ=\S/.test(w));
+}
+
 /** Words of a launch-options line, quotes kept with their word (FOO="a b" stays one). */
 function optionWords(line) {
   return String(line || '').match(/(?:[^\s"']+|"[^"]*"?|'[^']*'?)+/g) || [];
@@ -357,8 +364,9 @@ function parseDllOverrides(value) {
  * DLLs mods load through (version.dll for Cyber Engine Tweaks, winmm.dll for RED4ext) only load
  * when Wine is told to prefer them: WINEDLLOVERRIDES="winmm,version=n,b" before %command%; the
  * game's own arguments go after it. Everything already there is kept (other overrides too).
+ * tz: a time zone for the game (TZ=…), when the line sets none (the start-up crash fix).
  */
-function linuxLaunchOptions(current, { modded = true, dlls = [] } = {}) {
+function linuxLaunchOptions(current, { modded = true, dlls = [], tz = '' } = {}) {
   const line = String(current || '').trim();
   // A line this cannot safely edit (an unclosed quote, %command% inside quotes or spelt otherwise,
   // ; after a value): its parts are not kept; a clean line replaces it (the current one stays shown).
@@ -380,9 +388,12 @@ function linuxLaunchOptions(current, { modded = true, dlls = [] } = {}) {
   if (lacking.length) missing.push(`the Wine setting for ${lacking.map(d => MOD_OF[d] || `${d}.dll`).join(' and ')}`);
   const have = args.map(a => a.toLowerCase());
   for (const a of ['--launcher-skip', modded ? '-modded' : '']) if (a && !have.includes(a)) { missing.push(a); args.push(a); }
+  const needTz = !!tz && !env.some(w => /^TZ=\S/.test(w));
+  if (needTz) missing.push(`TZ=${tz}`);
   if (!missing.length && !odd) return { missing, suggested: line, wine: false };
   if (odd && !missing.length) missing.push('a launch options line Steam can read');
   const keep = env.filter(x => !x.startsWith('WINEDLLOVERRIDES='));
+  if (needTz) keep.unshift(`TZ=${tz}`);
   if (lacking.length || Object.keys(overrides).length) {
     for (const d of lacking) overrides[d] = 'n,b';
     // Wine's short form, the DLLs that share modes grouped: winmm,version=n,b;dxgi=n,b
@@ -397,5 +408,5 @@ function linuxLaunchOptions(current, { modded = true, dlls = [] } = {}) {
 module.exports = {
   findCyberpunk, findInstalls, storeOf, isGameDir, STEAM_APP_ID, GOG_GAME_ID, STORE_LABEL, parseLaunchOptions, steamLaunchOptions, missingLaunchOptions,
   installingNow, gameWindowsFolders, linuxSteamRoots, linuxSteamLibraries, linuxSteamGames, parseLibraryFolders,
-  parseDllOverrides, linuxLaunchOptions,
+  parseDllOverrides, linuxLaunchOptions, setsTimezone,
 };
