@@ -17,6 +17,7 @@ const br = {
   perPage: store.get('browse.perPage', 20),
   adult: true, // adult mods are always included
   page: 1,
+  seed: Math.floor(Math.random() * 2147483646) + 1, // Random's order: the same on every page, new each time it is picked
   result: null,
   seq: 0,          // a newer search makes an older answer stale
   loaded: false,   // the first search runs when the page is first opened
@@ -36,7 +37,7 @@ async function search() {
   const status = $('#browse-status');
   status.textContent = 'Searching…';
   status.classList.add('busy');
-  const res = await api.searchMods({ query: br.q, category: br.category, sort: br.sort, period: br.period, adult: br.adult, page: br.page, perPage: br.perPage });
+  const res = await api.searchMods({ query: br.q, category: br.category, sort: br.sort, period: br.period, adult: br.adult, page: br.page, perPage: br.perPage, seed: br.seed });
   if (seq !== br.seq) return; // the user typed on; a newer search is on its way
   status.classList.remove('busy');
   if (res.error) {
@@ -243,7 +244,13 @@ $('#browse-q').addEventListener('input', ev => {
 });
 $('#browse-q').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); br.page = 1; search(); } });
 $('#browse-cat').addEventListener('change', ev => { br.category = ev.target.value; br.page = 1; search(); });
-$('#browse-sort').addEventListener('change', ev => { br.sort = ev.target.value; store.set('browse.sort', br.sort); br.page = 1; search(); });
+$('#browse-sort').addEventListener('change', ev => {
+  br.sort = ev.target.value;
+  store.set('browse.sort', br.sort);
+  if (br.sort === 'random') br.seed = Math.floor(Math.random() * 2147483646) + 1; // a fresh shuffle
+  br.page = 1;
+  search();
+});
 $('#browse-period').addEventListener('change', ev => { br.period = ev.target.value; store.set('browse.period', br.period); br.page = 1; search(); });
 $('#browse-per').addEventListener('change', ev => { br.perPage = Number(ev.target.value); store.set('browse.perPage', br.perPage); br.page = 1; search(); });
 const turn = d => { br.page = Math.max(1, br.page + d); search().then(() => { $('#page-browse').scrollTop = 0; }); };

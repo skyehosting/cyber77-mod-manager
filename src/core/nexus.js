@@ -10,6 +10,21 @@ const categoryName = v => String(v || '').replace(/[\u0000-\u001f\u007f-\u009f]+
 const ADULT_ONLY = '__adult';
 // Browse's time filter: how many days back each choice reaches.
 const PERIOD_DAYS = { day: 1, week: 7, month: 30, year: 365 };
+// Browse's sort choices: [Nexus's ModsSort field, direction] (random takes a seed instead).
+const BROWSE_SORTS = {
+  endorsements: ['endorsements', 'DESC'],
+  downloads: ['downloads', 'DESC'],
+  uniqueDownloads: ['uniqueDownloads', 'DESC'],
+  updatedAt: ['updatedAt', 'DESC'],
+  createdAt: ['createdAt', 'DESC'],
+  createdAtAsc: ['createdAt', 'ASC'],
+  lastComment: ['lastComment', 'DESC'],
+  size: ['size', 'DESC'],
+  relevance: ['relevance', 'DESC'],
+  name: ['name', 'ASC'],
+  nameDesc: ['name', 'DESC'],
+  random: ['random', ''],
+};
 const APP_NAME = 'CyberModManager';
 const APP_VERSION = '1.0.0';
 
@@ -225,13 +240,11 @@ class NexusClient {
   /**
    * Search a game's mods like the site does. `query` matches words of mod names as typed (prefix
    * match); a number is also looked up as a mod id, which comes first.
-   * sort: endorsements | downloads | updatedAt | createdAt | name | relevance
-   */
-  /**
+   * sort: a BROWSE_SORTS key (random: in the order `seed` gives).
    * period ('day' | 'week' | 'month' | 'year' | '' for all time) keeps mods from that time: updated
    * in it when sorted by last update, else published in it (as Nexus's own "time" filter).
    */
-  async searchMods({ game = 'cyberpunk2077', gameId = 3333, query = '', category = '', sort = 'endorsements', period = '', adult = false, page = 1, perPage = 20 } = {}) {
+  async searchMods({ game = 'cyberpunk2077', gameId = 3333, query = '', category = '', sort = 'endorsements', period = '', adult = false, page = 1, perPage = 20, seed = 1 } = {}) {
     const fields = 'modId name summary author version category adultContent downloads endorsements thumbnailUrl pictureUrl updatedAt createdAt uploader { name }';
     const q = String(query || '').trim().slice(0, 100);
     const filter = { gameDomainName: [{ value: game }] };
@@ -242,19 +255,21 @@ class NexusClient {
       if (category) filter.categoryName = [{ value: String(category) }];
       if (!adult) filter.adultContent = [{ value: false }];
     }
-    const SORTS = { endorsements: 'DESC', downloads: 'DESC', updatedAt: 'DESC', createdAt: 'DESC', name: 'ASC', relevance: 'DESC' };
-    const key = SORTS[sort] ? sort : 'endorsements';
+    const key = Object.hasOwn(BROWSE_SORTS, sort) ? sort : 'endorsements';
+    const [field, direction] = BROWSE_SORTS[key];
     const days = PERIOD_DAYS[period];
     if (days) {
       // Nexus wants Unix seconds here (an ISO date makes its search fail).
       const since = String(Math.floor((Date.now() - days * 86400000) / 1000));
-      filter[key === 'updatedAt' ? 'updatedAt' : 'createdAt'] = [{ value: since, op: 'GTE' }];
+      filter[field === 'updatedAt' ? 'updatedAt' : 'createdAt'] = [{ value: since, op: 'GTE' }];
     }
+    // Random takes a seed instead of a direction: the same seed gives the same order on every page.
+    const order = field === 'random' ? { random: { seed: Number.isSafeInteger(Number(seed)) ? Math.abs(Number(seed)) % 2147483647 : 1 } } : { [field]: { direction } };
     const count = Math.min(Math.max(Number(perPage) || 20, 1), 100);
     const offset = (Math.max(Number(page) || 1, 1) - 1) * count;
     const gql = `query($f: ModsFilter, $s: [ModsSort!], $count: Int, $offset: Int) {
       mods(filter: $f, sort: $s, count: $count, offset: $offset) { totalCount nodes { ${fields} } } }`;
-    const byName = this.graphql(gql, { f: filter, s: [{ [key]: { direction: SORTS[key] } }], count, offset }, 'search Nexus');
+    const byName = this.graphql(gql, { f: filter, s: [order], count, offset }, 'search Nexus');
     // "4198" is also mod 4198 (first page only).
     const byId = /^\d{1,7}$/.test(q) && offset === 0
       ? this.graphql(`query($f: ModsFilter) { mods(filter: $f, count: 1) { nodes { ${fields} } } }`,

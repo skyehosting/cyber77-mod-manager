@@ -177,6 +177,31 @@ test('mod search: names as typed, a number also as a mod id (first), filters and
   }
 });
 
+test('Browse sorts: release date both ways, unique downloads, comments, size, Z–A and a seeded random', async () => {
+  const { NexusClient } = require('../src/core/nexus');
+  const sent = [];
+  const realFetch = global.fetch;
+  global.fetch = async (_url, init) => { sent.push(JSON.parse(init.body).variables); return { ok: true, status: 200, json: async () => ({ data: { mods: { totalCount: 0, nodes: [] } } }) }; };
+  try {
+    const n = new NexusClient(() => '', { info() {} });
+    const sortOf = async opts => { sent.length = 0; await n.searchMods(opts); return sent[0].s; };
+    assert.deepStrictEqual(await sortOf({ sort: 'createdAtAsc' }), [{ createdAt: { direction: 'ASC' } }]);
+    assert.deepStrictEqual(await sortOf({ sort: 'uniqueDownloads' }), [{ uniqueDownloads: { direction: 'DESC' } }]);
+    assert.deepStrictEqual(await sortOf({ sort: 'lastComment' }), [{ lastComment: { direction: 'DESC' } }]);
+    assert.deepStrictEqual(await sortOf({ sort: 'size' }), [{ size: { direction: 'DESC' } }]);
+    assert.deepStrictEqual(await sortOf({ sort: 'nameDesc' }), [{ name: { direction: 'DESC' } }]);
+    assert.deepStrictEqual(await sortOf({ sort: 'random', seed: 12345 }), [{ random: { seed: 12345 } }], 'random takes a seed, not a direction');
+    assert.deepStrictEqual(await sortOf({ sort: 'random', seed: 'x' }), [{ random: { seed: 1 } }], 'a seed that is not a number is 1');
+    assert.deepStrictEqual(await sortOf({ sort: 'toString' }), [{ endorsements: { direction: 'DESC' } }], 'not an object\'s own key: the default');
+    // Oldest release within a time: published in it.
+    sent.length = 0;
+    await n.searchMods({ sort: 'createdAtAsc', period: 'week' });
+    assert.ok(sent[0].f.createdAt && !sent[0].f.updatedAt);
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
 test('the nxm handler is named from its registered command', () => {
   const { describe } = require('../src/core/nxmHandler');
   const own = String.raw`C:\Apps\Cyber Mod Manager\electron.exe`;
