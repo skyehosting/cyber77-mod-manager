@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, goTo, pageHooks, quickDownload, openMod, fmtCount, openEditor, modal */
+/* global api, $, h, icon, run, toast, goTo, pageHooks, quickDownload, openMod, fmtCount, openEditor */
 
 // ---------------------------------------------------------------- AI assistant
 
@@ -537,7 +537,7 @@ pageHooks.ai = () => loadAi().then(() => setTimeout(() => $('#ai-input')?.focus(
 // unless what is under the pointer scrolls by itself (the message box once it is long, a code block).
 $('#page-ai').addEventListener('wheel', ev => {
   const chat = $('#ai-chat');
-  if (ev.ctrlKey || chat.contains(ev.target) || $('#ai-main').hidden || ev.target.closest?.('#ai-side')) return;
+  if (ev.ctrlKey || chat.contains(ev.target) || $('#ai-main').hidden) return;
   for (let el = ev.target; el && el !== ev.currentTarget; el = el.parentElement) {
     if (el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(el).overflowY)) return;
   }
@@ -545,125 +545,22 @@ $('#page-ai').addEventListener('wheel', ev => {
   chat.scrollTop += dy;
 }, { passive: true });
 
-// ---------------------------------------------------------------- the AI settings column
+// ---------------------------------------------------------------- the AI settings window
 /*
- * A small tab at the top right of the chat opens a column with the AI settings: the same ones as
- * Settings → AI assistant (a change in either shows in both). Each change is saved at once. Saved
- * setups switch provider, model, endpoint, key and the rest in one click; keys stay in the main process.
+ * The gear in the AI page's header opens (or closes) the AI settings in a small window of their own
+ * (aipanel.html), which can be moved anywhere. The gear shows whether it is open.
  */
-const side = { presets: [] };
+$('#ai-settings').addEventListener('click', () => run(api.aiPanelToggle()));
+const showPanelState = st => {
+  const open = !!st?.open;
+  $('#ai-settings').setAttribute('aria-pressed', String(open));
+  $('#ai-settings').classList.toggle('active', open);
+};
+api.onAiPanel(showPanelState);
+api.aiPanelState().then(r => showPanelState(r.ok));
 
-function setSide(open, focus = true) {
-  $('#ai-side').hidden = !open;
-  $('#ai-side-tab').setAttribute('aria-expanded', String(open));
-  $('#page-ai').classList.toggle('side-open', open);
-  try { localStorage.setItem('ai.side', open ? '1' : '0'); } catch { /* not kept */ }
-  if (open) fillSide().then(() => { if (focus) $('#ai-p-preset').focus(); });
-  else if (focus) $('#ai-side-tab').focus();
-}
-
-/** The settings in use, the saved setups, and which one matches them (if any). */
-async function fillSide() {
-  const s = (await api.getSettings()).ok;
-  if (!s) return;
-  for (const el of $$('#ai-side [data-k]')) if (document.activeElement !== el) el.value = s[el.dataset.k] ?? '';
-  if (!s.aiContext && document.activeElement !== $('#ai-p-context')) $('#ai-p-context').value = '';
-  $('#ai-p-key').value = '';
-  $('#ai-p-key').placeholder = s.hasAiKey ? `Saved key ${s.aiKeyHint}` : 'Not needed for local models';
-  $('#ai-p-key-hint').textContent = s.hasAiKey ? 'Stored encrypted. Paste a new one to replace it.' : 'Stored encrypted.';
-  $('#ai-p-reasoning-row').hidden = s.aiProvider === 'anthropic';
-  side.presets = s.aiPresets || [];
-  const same = p => p.provider === s.aiProvider && p.endpoint === s.aiEndpoint && p.model === s.aiModel && (p.reasoning || '') === (s.aiReasoning || '');
-  const current = side.presets.find(same);
-  const sel = $('#ai-p-preset');
-  sel.replaceChildren(
-    h('option', { value: '' }, side.presets.length ? (current ? 'Choose a setup…' : 'Not saved') : 'None saved yet'),
-    ...side.presets.map(p => h('option', { value: p.id }, `${p.name}${p.model ? ` · ${p.model}` : ''}`)));
-  sel.value = current?.id || '';
-  $('#ai-p-preset-del').disabled = !current;
-}
-
-$('#ai-side-tab').addEventListener('click', () => setSide($('#ai-side').hidden));
-$('#ai-side-close').addEventListener('click', () => setSide(false));
-// Escape closes it from anywhere on the AI page (not while a dialog is open, nor from a dropdown's list).
-$('#page-ai').addEventListener('keydown', ev => {
-  if (ev.key !== 'Escape' || $('#ai-side').hidden || ev.defaultPrevented || document.querySelector('#modal-back:not([hidden])')) return;
-  ev.stopPropagation();
-  setSide(false);
-});
-
-// A field changed: saved at once (both this column and the Settings page then show it).
-for (const el of $$('#ai-side [data-k]')) {
-  el.addEventListener('change', async () => {
-    const k = el.dataset.k;
-    const value = k === 'aiContext' && el.value === '' ? 0 : el.value;
-    if (await run(api.setSettings({ [k]: value }))) { $('#ai-p-status').className = 'hint'; $('#ai-p-status').textContent = ''; }
-    if (k === 'aiProvider') $('#ai-p-reasoning-row').hidden = el.value === 'anthropic';
-  });
-}
-$('#ai-p-key').addEventListener('change', async ev => {
-  const v = ev.target.value.trim();
-  if (!v) return;
-  if (await run(api.setSettings({ aiKey: v }))) toast('API key saved');
-});
-
-// One click: a saved setup becomes the one in use. A key in use that no setup holds would be lost:
-// asked first, with the choice to save the settings in use before switching.
-$('#ai-p-preset').addEventListener('change', async ev => {
-  const id = ev.target.value;
-  if (!id) return;
-  const s = (await api.getSettings()).ok;
-  if (s && !s.aiKeySaved) {
-    const go = await modal({
-      title: 'Keep the key in use?',
-      body: h('p', {}, `The API key in use (${s.aiKeyHint}) is not in a saved setup. Switching replaces it with the setup's own key (or none), and it cannot be shown again.`),
-      buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Switch anyway', value: 'switch' }, { label: 'Save the current ones first', value: 'save', kind: 'btn-primary' }],
-    });
-    if (go === 'save' ? !(await savePreset()) : go !== 'switch') { await fillSide(); return; }
-  }
-  if (await run(api.aiPresetApply(id))) toast(`Using "${side.presets.find(p => p.id === id)?.name || 'the saved setup'}"`, 'success');
-  else await fillSide();
-});
-$('#ai-p-preset-save').addEventListener('click', () => savePreset());
-/** Save the settings in use as a setup, asking its name. Resolves whether it was saved. */
-async function savePreset() {
-  const input = h('input', { type: 'text', maxlength: '40', value: $('#ai-p-model').value.trim().slice(0, 40), 'aria-label': 'Name of the setup' });
-  input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); input.closest('.modal')?.querySelector('.btn-primary')?.click(); } });
-  setTimeout(() => input.select());
-  const ok = await modal({
-    title: 'Save these AI settings',
-    sub: 'Format, model, endpoint, key, reasoning, steps, time limit and context window, under one name',
-    body: h('div', { class: 'ai-field' }, h('label', {}, 'Name'), input, h('p', { class: 'hint' }, 'A setup of the same name is replaced. Its key is stored encrypted, like the one in use.')),
-    buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Save', value: true, kind: 'btn-primary' }],
-  });
-  if (!ok || !input.value.trim()) return false;
-  if (!(await run(api.aiPresetSave(input.value.trim())))) return false;
-  toast(`Saved "${input.value.trim()}"`, 'success');
-  return true;
-}
-$('#ai-p-preset-del').addEventListener('click', async () => {
-  const id = $('#ai-p-preset').value;
-  const p = side.presets.find(x => x.id === id);
-  if (!p) return;
-  const ok = await modal({
-    title: `Delete the setup "${p.name}"?`, body: h('p', {}, 'The settings in use stay as they are; only the saved setup (and its copy of the key) goes.'),
-    buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Delete', value: true, kind: 'btn-danger' }],
-  });
-  if (ok && await run(api.aiPresetDelete(id))) toast(`Deleted "${p.name}"`);
-});
-$('#ai-p-test').addEventListener('click', async () => {
-  const st = $('#ai-p-status');
-  st.className = 'hint';
-  st.textContent = 'Asking the model to reply…';
-  const r = await api.aiTest();
-  st.className = r.error ? 'hint bad' : 'hint ok';
-  st.textContent = r.error ? r.error : `Connected: ${r.ok}`;
-});
-
-// Changed here or in Settings (or a setup switched): the column and the chat's model line follow.
+// Changed there, in Settings, or a setup switched: the chat's model line follows.
 api.onSettingsChanged(() => {
-  if (!$('#ai-side').hidden) fillSide();
   // (not while it answers: the chat would be drawn again under the answer coming in)
   if ($('#page-ai').classList.contains('active') && !ai.busy) loadAi();
 });
-try { if (localStorage.getItem('ai.side') === '1') setSide(true, false); } catch { /* closed */ }

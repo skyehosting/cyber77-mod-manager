@@ -2943,40 +2943,28 @@ html[data-setup="open"] #shell { visibility: hidden; }
 .su-option-text span { color: var(--muted); font-size: var(--fs-sm); line-height: 1.5; }
 .sv-pt-acts { display: flex; justify-content: flex-end; padding: 0.4rem 1.3rem; border-top: 1px solid var(--line-soft); background: var(--surface-2); }
 
-/* ================================================================== AI settings column (the AI page)
-   The page is two columns: the chat, and the settings column when it is open. The tab sits on the
-   chat's upper right edge and stays beside the column while it is open. */
-#page-ai.active { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); --ai-side-w: 21rem; }
-#page-ai > .page-head { grid-column: 1 / -1; }
-#page-ai > .ai-main, #page-ai > .ai-setup { grid-column: 1; grid-row: 2; min-width: 0; }
-#page-ai > .ai-main:not([hidden]) { display: flex; }
-.ai-side-tab {
-  grid-column: 1; grid-row: 2; justify-self: end; align-self: start; position: relative; z-index: 3;
-  display: inline-flex; align-items: center; gap: var(--sp-1); height: 2rem; padding: 0 0.7rem;
-  border: 1px solid var(--line-strong); border-right: 0; border-radius: var(--r) 0 0 var(--r);
-  background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); cursor: pointer;
+/* ================================================================== AI settings window (aipanel.html)
+   A small frameless window of its own (the gear on the AI page opens it): its title bar drags it
+   anywhere, also off the app and onto another display. Each setting's name sits on top of its field. */
+#ai-settings.active { color: var(--accent); background: var(--surface-3); }
+body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border: 1px solid var(--line-strong); }
+.aip-head {
+  display: flex; align-items: center; gap: var(--sp-2); flex: none; height: 2.75rem; padding: 0 var(--sp-2) 0 var(--sp-3);
+  border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
+  -webkit-app-region: drag; user-select: none; cursor: grab;
 }
-.ai-side-tab:hover, .ai-side-tab[aria-expanded="true"] { color: var(--text); background: var(--surface-3); }
-.ai-side-tab .i { width: 0.95rem; height: 0.95rem; }
-/* (room for the tab above the first message) */
-#page-ai .ai-chat { padding-top: 2.6rem; }
-#page-ai > .ai-setup { margin-top: 2.6rem; }
-.ai-side {
-  grid-column: 2; grid-row: 2; width: var(--ai-side-w); min-height: 0; display: flex; flex-direction: column;
-  border: 1px solid var(--line-strong); border-radius: 0 var(--r-lg) var(--r-lg) var(--r-lg); background: var(--surface);
-}
-.ai-side[hidden] { display: none; }
-.ai-side-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--line); }
-.ai-side-head h2 { font-size: var(--fs-md); font-weight: var(--fw-bold); }
-.ai-side-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3) var(--sp-4) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
-/* A setting's name on top of its field. */
+.aip-head h1 { flex: 1; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
+.aip-head .btn { -webkit-app-region: no-drag; }
+.aip-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3) var(--sp-4) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
 .ai-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
 .ai-field > label { font-size: var(--fs-sm); font-weight: var(--fw-semibold, 600); color: var(--text); }
 .ai-field .hint { margin-top: 0; font-size: var(--fs-xs); }
 .ai-field .field-row > select { flex: 1; min-width: 0; }
 .ai-field > .btn { align-self: flex-start; }
-/* Narrow windows: the column covers the chat instead of squeezing it. */
-@media (max-width: 60rem) {
-  #page-ai.active { grid-template-columns: minmax(0, 1fr); }
-  .ai-side { grid-column: 1; grid-row: 2; justify-self: end; z-index: 4; max-width: 100%; box-shadow: var(--shadow); }
-}
+/* Its own small dialogs (naming a setup, keeping a key, deleting). */
+.aip-dialog-back { position: fixed; inset: 2.75rem 0 0; display: flex; align-items: flex-start; justify-content: center; padding: var(--sp-4); background: rgb(0 0 0 / 0.55); z-index: 10; }
+.aip-dialog-back[hidden] { display: none; }
+.aip-dialog { width: 100%; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.aip-dialog h2 { font-size: var(--fs-md); font-weight: var(--fw-bold); }
+.aip-dialog p { font-size: var(--fs-sm); color: var(--text-2); }
+.aip-dialog-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }

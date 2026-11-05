@@ -27,6 +27,7 @@ const { WebReader } = require('./core/web');
 const { GameFiles } = require('./core/gameFiles');
 const { ModConfig } = require('./core/modConfig');
 const { CrashReports } = require('./core/crashes');
+const panelPlace = require('./core/panelPlace');
 
 let win = null;
 let settings = null;
@@ -47,6 +48,90 @@ const cipher = {
 
 function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  // The floating AI settings window follows setting changes too.
+  if (channel === 'settings-changed' && aiPanel && !aiPanel.isDestroyed()) aiPanel.webContents.send(channel, payload);
+}
+
+// ---------------------------------------------------------------- the floating AI settings window
+/*
+ * The AI chat's settings, in a small frameless window of its own (the gear on the AI page opens it):
+ * dragged by its title bar anywhere, also off the app's window and onto another display. It stays
+ * above the app's window (it belongs to it) and closes with it. Its place is kept; one no display
+ * shows any more (a monitor unplugged) puts it back beside the app, as its Reset button does.
+ */
+let aiPanel = null;
+const aiPanelFile = () => path.join(app.getPath('userData'), 'ai-panel.json');
+
+/** The app's zoom (Settings → Display): the window's sizes grow with it, as its contents do. */
+const appZoom = () => (win && !win.isDestroyed() ? win.webContents.getZoomFactor() : 1) || 1;
+const aiPanelMin = () => ({ width: Math.round(300 * appZoom()), height: Math.round(360 * appZoom()) });
+
+/** Beside the app's right edge, inside the display the app is on. */
+function aiPanelHome() {
+  const wb = win && !win.isDestroyed() ? win.getBounds() : screen.getPrimaryDisplay().workArea;
+  const z = appZoom();
+  return panelPlace.homeBounds(wb, screen.getDisplayMatching(wb).workArea, { width: Math.round(panelPlace.SIZE.width * z), height: Math.round(panelPlace.SIZE.height * z) });
+}
+
+/** Whether a connected display shows enough of it to grab it. */
+const aiPanelVisible = b => panelPlace.onScreen(b, screen.getAllDisplays().map(d => d.workArea));
+
+/** Its kept place, made to fit the display it is on; home when none, or no display shows it now. */
+function aiPanelBounds() {
+  try {
+    const b = JSON.parse(fs.readFileSync(aiPanelFile(), 'utf8'));
+    if (aiPanelVisible(b)) return panelPlace.fitBounds(b, screen.getDisplayMatching(b).workArea, aiPanelMin());
+  } catch { /* none kept */ }
+  return aiPanelHome();
+}
+
+/** Open (and shown) or not: the gear shows it. */
+const aiPanelOpen = () => !!aiPanel && !aiPanel.isDestroyed() && aiPanel.isVisible();
+function aiPanelState() { send('ai-panel', { open: aiPanelOpen() }); }
+
+function openAiPanel() {
+  if (aiPanel && !aiPanel.isDestroyed()) {
+    if (!aiPanelVisible(aiPanel.getBounds())) aiPanel.setBounds(aiPanelHome());
+    aiPanel.show();
+    aiPanel.focus();
+    aiPanelState();
+    return;
+  }
+  const min = aiPanelMin();
+  aiPanel = new BrowserWindow({
+    ...aiPanelBounds(), parent: win, frame: false, show: false, resizable: true, minWidth: min.width, minHeight: min.height,
+    skipTaskbar: true, fullscreenable: false, maximizable: false, minimizable: false,
+    backgroundColor: settings?.get('windowBg') || '#0d0f12', title: 'AI settings',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  const panel = aiPanel;
+  panel.loadFile(path.join(__dirname, 'renderer', 'aipanel.html'));
+  panel.webContents.on('will-navigate', ev => ev.preventDefault());
+  panel.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // The app's scale (Settings → Display), as in its main window.
+  panel.webContents.on('did-finish-load', () => { if (win && !win.isDestroyed()) panel.webContents.setZoomFactor(win.webContents.getZoomFactor()); });
+  panel.once('ready-to-show', () => { panel.show(); aiPanelState(); });
+  // Its page did not load (it never shows): not left hidden, so the gear opens it afresh next time.
+  panel.webContents.on('did-fail-load', (_e, code, why) => { logger.error('The AI settings window could not open', `${code} ${why}`); if (!panel.isDestroyed()) panel.destroy(); });
+  let keep = null;
+  const write = () => { try { fs.writeFileSync(aiPanelFile(), JSON.stringify(panel.getBounds())); } catch { /* not critical */ } };
+  const remember = () => {
+    clearTimeout(keep);
+    keep = setTimeout(() => { if (!panel.isDestroyed()) write(); }, 400);
+  };
+  panel.on('move', remember);
+  panel.on('resize', remember);
+  // Closed right after a drag: where it was left is still kept.
+  panel.on('close', () => { if (keep) { clearTimeout(keep); keep = null; write(); } });
+  panel.on('closed', () => { if (aiPanel === panel) aiPanel = null; aiPanelState(); });
+}
+
+function closeAiPanel() { if (aiPanel && !aiPanel.isDestroyed()) aiPanel.close(); }
+
+/** Back beside the app (its Reset button; also when a display it was on goes away). */
+function resetAiPanel() {
+  if (!aiPanel || aiPanel.isDestroyed()) return;
+  aiPanel.setBounds(aiPanelHome()); // (kept as its new place by its move handler)
 }
 
 let snapshotTimer = null;
@@ -178,6 +263,7 @@ function applyScale() {
   const display = screen.getDisplayMatching(win.getBounds());
   const { zoom, min, state } = scaleFor({ want: Number(settings?.get('uiScale')) || 0, system: display.scaleFactor, area: display.workAreaSize });
   if (Math.abs(win.webContents.getZoomFactor() - zoom) > 0.001) win.webContents.setZoomFactor(zoom);
+  if (aiPanel && !aiPanel.isDestroyed()) { aiPanel.webContents.setZoomFactor(zoom); const m = aiPanelMin(); aiPanel.setMinimumSize(m.width, m.height); } // the floating AI settings too
   win.setMinimumSize(min.width, min.height);
   // A larger scale needs a larger window: grow it to the new minimum (Windows does not do it itself).
   const [w, h] = win.getSize();
@@ -363,6 +449,10 @@ async function boot() {
   plays.recover(); // a play the app was closed during: finish it now that the logs are found
   screen.on('display-metrics-changed', () => applyScale());
   screen.on('display-removed', () => applyScale());
+  // A display unplugged (or its layout changed) with the AI settings window on it: back beside the app.
+  const panelBack = () => setTimeout(() => { if (aiPanel && !aiPanel.isDestroyed() && !aiPanelVisible(aiPanel.getBounds())) resetAiPanel(); }, 500);
+  screen.on('display-removed', panelBack);
+  screen.on('display-metrics-changed', panelBack);
   app.on('before-quit', () => {
     gameLogs.stop();
     // A play the game has left (its last minute of logs not saved yet) is saved now, not lost.
@@ -453,6 +543,11 @@ async function boot() {
   handle('ai:presetSave', name => { const saved = settings.saveAiPreset(String(name || '').slice(0, 200)); logger.success(`AI setup "${saved}" saved`); return aiChanged(); });
   handle('ai:presetApply', id => { const name = settings.applyAiPreset(String(id || '')); logger.success(`Using the AI setup "${name}"`); return aiChanged(); });
   handle('ai:presetDelete', id => { settings.deleteAiPreset(String(id || '')); return aiChanged(); });
+  // The floating AI settings window (the gear on the AI page; its own Reset and Close).
+  handle('aiPanel:toggle', () => { if (aiPanelOpen()) closeAiPanel(); else openAiPanel(); return true; });
+  handle('aiPanel:close', () => { closeAiPanel(); return true; });
+  handle('aiPanel:reset', () => { resetAiPanel(); return true; });
+  handle('aiPanel:state', () => ({ open: aiPanelOpen() }));
   handle('settings:validateKey', () => manager.validateKey());
   handle('settings:detectGame', async () => {
     const found = await findCyberpunk();

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- The floating AI settings window (the gear on the AI page). Same theme and settings as the app. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none';">
+  <title>AI settings</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="themes.js"></script>
+</head>
+<body class="aip">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><path d="M2 12h3M19 12h3M12 2v3M12 19v3"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></symbol>
+  </svg>
+  <header class="aip-head" title="Drag to move">
+    <svg class="i"><use href="#i-gear"/></svg>
+    <h1>AI settings</h1>
+    <button type="button" class="btn btn-icon btn-sm" id="aip-reset" title="Reset view: put this window back beside the app" aria-label="Reset view"><svg class="i"><use href="#i-target"/></svg></button>
+    <button type="button" class="btn btn-icon btn-sm" id="aip-close" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+  </header>
+  <main class="aip-body">
+    <div class="ai-field">
+      <label for="ai-p-preset">Saved setup</label>
+      <div class="field-row">
+        <select id="ai-p-preset"></select>
+        <button type="button" class="btn btn-sm" id="ai-p-preset-del" title="Delete this saved setup">Delete</button>
+      </div>
+      <button type="button" class="btn btn-sm" id="ai-p-preset-save" title="Save the settings below (and the key) under a name, to switch back with one click">Save these as a setup…</button>
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-provider">Format</label>
+      <select id="ai-p-provider" data-k="aiProvider">
+        <option value="openai">OpenAI-compatible</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+      </select>
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-model">Model</label>
+      <input id="ai-p-model" class="mono" type="text" spellcheck="false" data-k="aiModel">
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-endpoint">Endpoint</label>
+      <input id="ai-p-endpoint" class="mono" type="text" spellcheck="false" data-k="aiEndpoint">
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-key">API key</label>
+      <input id="ai-p-key" type="password" spellcheck="false" autocomplete="off">
+      <p class="hint" id="ai-p-key-hint"></p>
+    </div>
+    <div class="ai-field" id="ai-p-reasoning-row">
+      <label for="ai-p-reasoning">Reasoning effort</label>
+      <select id="ai-p-reasoning" data-k="aiReasoning">
+        <option value="">The model's default</option>
+        <option value="none">None (no thinking)</option>
+        <option value="low">Low (faster, cheaper)</option>
+        <option value="medium">Medium</option>
+        <option value="high">High (most thinking)</option>
+      </select>
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-steps">Steps per question</label>
+      <input id="ai-p-steps" type="number" min="0" max="500" step="1" data-k="aiMaxSteps" aria-describedby="ai-p-steps-hint">
+      <p class="hint" id="ai-p-steps-hint">How many times it may read before it stops to ask. 0: no limit.</p>
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-timeout">Time limit per step (minutes)</label>
+      <input id="ai-p-timeout" type="number" min="1" max="60" step="1" data-k="aiTimeout">
+    </div>
+    <div class="ai-field">
+      <label for="ai-p-context">Context window (tokens)</label>
+      <input id="ai-p-context" type="number" min="0" step="1024" placeholder="Automatic" data-k="aiContext">
+    </div>
+    <div class="ai-field">
+      <button type="button" class="btn" id="ai-p-test">Test</button>
+      <p class="hint" id="ai-p-status" aria-live="polite"></p>
+    </div>
+  </main>
+  <div class="aip-dialog-back" id="aip-dialog-back" hidden><div class="aip-dialog" id="aip-dialog" role="dialog" aria-modal="true"></div></div>
+  <script src="aipanel.js"></script>
+</body>
+</html>
