@@ -338,3 +338,56 @@ test('copying single saves: a taken slot name gets a new number, saves already t
     assert.deepStrictEqual(await mgr.copySaves(first, ['ManualSave-1'], [bad]), { copied: 0, renamed: 0, present: 0, profiles: 0 });
   }
 });
+
+test('turned off after a switch: saves left in a profile\'s folder still show, with their pictures, and copy into the game', async () => {
+  const { mgr, saves, first } = setup();
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('picture')]);
+  fs.writeFileSync(path.join(saves, 'ManualSave-1', 'screenshot.png'), png);
+  assert.strictEqual(mgr.savesView().stored, null, 'never on: nothing waits anywhere');
+  // On, a new profile (it starts with no saves), then off: the first profile's saves stay in its folder.
+  await mgr.setPerProfileSaves(true);
+  await mgr.switchProfile('p2');
+  await mgr.setPerProfileSaves(false);
+  assert.deepStrictEqual(slots(saves), [], 'the game sees none of them');
+  const view = mgr.savesView();
+  assert.strictEqual(view.perProfile, null);
+  assert.strictEqual(view.stored.owner, 'p2', 'the game\'s folder is the profile in use\'s');
+  assert.deepStrictEqual(view.stored.playthroughs[first].map(p => p.id).sort(), ['aaaa', 'bbbb']);
+  assert.deepStrictEqual(view.stored.playthroughs.p2, [], 'the game\'s own saves are not listed as waiting (only p2\'s own, empty, folder)');
+  assert.strictEqual(mgr.saveScreenshot('ManualSave-1', first), `data:image/png;base64,${png.toString('base64')}`, 'its picture, from its folder');
+  // One save, then a whole playthrough, into the game's saves.
+  assert.strictEqual((await mgr.copySaves(first, ['QuickSave-0'], [view.stored.owner])).copied, 1);
+  assert.strictEqual((await mgr.copyPlaythrough('aaaa', first, [view.stored.owner])).copied, 2);
+  assert.deepStrictEqual(slots(saves), ['AutoSave-0', 'ManualSave-1', 'QuickSave-0']);
+  assert.deepStrictEqual(slots(mgr.profileSaves.dirOf(first)), ['AutoSave-0', 'ManualSave-1', 'QuickSave-0'], 'copies: the originals stay');
+  // Switched back with it off (nothing moves): that profile's own folder still shows, the game's saves do not.
+  await mgr.switchProfile(first);
+  const again = mgr.savesView().stored;
+  assert.strictEqual(again.owner, 'p2');
+  assert.strictEqual(again.playthroughs[first].length, 2);
+  assert.deepStrictEqual(again.playthroughs.p2, []);
+});
+
+test('turned off, then the profile that last had the game\'s saves deleted: the profile in use\'s own folder still shows and copies in', async () => {
+  const { mgr, saves, first } = setup();
+  await mgr.setPerProfileSaves(true);
+  await mgr.switchProfile('p2'); // the first profile's saves go to its folder
+  await mgr.setPerProfileSaves(false);
+  await mgr.switchProfile(first); // off: nothing moves; the game's folder still holds p2's (none)
+  await mgr.deleteProfile('p2');
+  assert.strictEqual(mgr.savesOwner(), first, 'the owner falls back to the profile in use');
+  const stored = mgr.savesView().stored;
+  assert.ok(stored, 'its saves, in its own folder, are not taken for the game\'s');
+  assert.deepStrictEqual(stored.playthroughs[first].map(p => p.id).sort(), ['aaaa', 'bbbb']);
+  // Its pictures come from its own folder too (not the game's, although it is the "owner").
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('own')]);
+  fs.writeFileSync(path.join(mgr.profileSaves.dirOf(first), 'ManualSave-1', 'screenshot.png'), png);
+  assert.strictEqual(mgr.saveScreenshot('ManualSave-1', first), `data:image/png;base64,${png.toString('base64')}`);
+  // Copied from its own folder into the game, although it is the "owner".
+  assert.strictEqual((await mgr.copyPlaythrough('bbbb', first, [stored.owner])).copied, 1);
+  assert.deepStrictEqual(slots(saves), ['QuickSave-0']);
+  assert.deepStrictEqual(slots(mgr.profileSaves.dirOf(first)), ['AutoSave-0', 'ManualSave-1', 'QuickSave-0'], 'the originals stay');
+  // Not while the game runs.
+  mgr.gameRunning = () => true;
+  await assert.rejects(mgr.copySaves(first, ['ManualSave-1'], [first]), /Close Cyberpunk 2077 first/);
+});

@@ -1685,18 +1685,36 @@ class ModManager extends EventEmitter {
         owner: this.savesOwner(), active: this.data.profiles.active, store: this.profileSaves.root(),
         playthroughs: this.profileSaves.overview(Object.keys(this.data.profiles.list), this.savesOwner()),
       } : null,
+      stored: this.settings.get('perProfileSaves') ? null : this.storedSaves(),
     };
   }
 
   /**
-   * A save's screenshot as a data URL (the page cannot read the save folder itself). With a profile
-   * (per-profile saves on): from that profile's own folder, unless its saves are the game's now.
+   * Off: saves that profiles' own folders still hold from when each profile had its own (switching to a
+   * profile swapped the others' out). The game cannot see them; the Saves page copies them in.
+   * { owner, playthroughs }, or null when there are none. Off, the game's folder is no profile's: every
+   * profile's own folder is listed, the last owner's too (it can be stale, or gone and replaced by the
+   * profile in use). owner: the profile copies are addressed to (copySavesBetween puts them in the game).
+   */
+  storedSaves() {
+    try {
+      const playthroughs = this.profileSaves.overview(Object.keys(this.data.profiles.list), '');
+      return Object.values(playthroughs).some(list => list.length) ? { owner: this.savesOwner(), playthroughs } : null;
+    } catch {
+      return null; // where profiles keep saves is not known (no home folder): nothing to show
+    }
+  }
+
+  /**
+   * A save's screenshot as a data URL (the page cannot read the save folder itself). With a profile:
+   * from that profile's own folder, unless its saves are the game's now (per-profile saves on; off,
+   * the game's folder is no profile's).
    */
   saveScreenshot(folder, profileId = '') {
     const s = String(folder);
     if (!SAVE_SLOT.test(s)) throw new Error('No such save.');
     let dir = this.saves.savesDir();
-    if (profileId && this.settings.get('perProfileSaves') && profileId !== this.savesOwner()) {
+    if (profileId && (!this.settings.get('perProfileSaves') || profileId !== this.savesOwner())) {
       if (!this.isProfile(profileId)) throw new Error('Unknown profile.');
       dir = this.profileSaves.dirOf(profileId);
     }
@@ -1897,6 +1915,19 @@ class ModManager extends EventEmitter {
   async copySavesBetween(sourceId, targetIds, pick) {
     const list = this.data.profiles.list;
     if (!this.isProfile(sourceId)) throw new Error('That profile no longer exists.');
+    // Per-profile saves off: the saves a profile's own folder still holds go into the game's saves, asked
+    // for as savesView().stored.owner (no profile-to-profile copies while off).
+    if (!this.settings.get('perProfileSaves')) {
+      const asked = (Array.isArray(targetIds) ? targetIds : []).map(String).includes(this.savesOwner());
+      if (!asked) return { copied: 0, renamed: 0, present: 0, profiles: 0 };
+      return this.saves.exclusive(async () => {
+        if (await this.gameRunning()) throw new Error('Close Cyberpunk 2077 first: saves cannot be added to the game while it runs.');
+        const r = await this.profileSaves.copySaves(this.profileSaves.dirOf(sourceId), pick, this.saves.savesDir());
+        if (r.copied) this.log.success(`Copied ${plural(r.copied, 'save')} from "${list[sourceId].name}"'s folder into the game's saves${r.renamed ? ` (${r.renamed} under a new slot name)` : ''}`);
+        this.emit('saves');
+        return { copied: r.copied, renamed: r.renamed, present: r.present, profiles: 1 };
+      });
+    }
     const targets = [...new Set((Array.isArray(targetIds) ? targetIds : []).map(String))].filter(t => this.isProfile(t) && t !== sourceId);
     if (!targets.length) return { copied: 0, renamed: 0, present: 0, profiles: 0 };
     return this.saves.exclusive(async () => {

@@ -48,9 +48,14 @@ async function loadSaves() {
 
 // A save in another profile's folder carries `profile`.
 const shotKey = s => `${s.profile ? `${s.profile}/` : ''}${s.folder}:${Math.round(s.time)}:${s.size}`;
+/**
+ * Saves in profiles' own folders, the game's aside: with per-profile saves on, or (off) the ones those
+ * folders still hold from when it was on. { owner, playthroughs } or null.
+ */
+const profileFolders = v => v?.perProfile || v?.stored || null;
 function pruneShots(v) {
   const keep = new Set(v.saves.map(shotKey));
-  for (const list of Object.values(v.perProfile?.playthroughs || {})) {
+  for (const list of Object.values(profileFolders(v)?.playthroughs || {})) {
     for (const p of list) for (const s of [p.shot, ...(p.saves || [])]) if (s) keep.add(shotKey(s));
   }
   for (const k of sv.shots.keys()) if (!keep.has(k)) sv.shots.delete(k);
@@ -135,9 +140,10 @@ function renderSaves() {
     h('span', {}, `Each profile has its own saves. These are the saves of "${ownerName}"${pp.owner !== pp.active ? ' (the profile that had them last)' : ''}.${v.steamCloud ? ' Steam Cloud is on for this game: it may bring a switched-out save back; this app keeps it out of the wrong profile.' : ''}`))] : []), ...(v.steamCloud && !pp ? [h('div', { class: 'banner banner-cloud', role: 'note' }, icon('info'),
     h('span', {}, 'Steam Cloud syncs this game\'s saves. Backups only copy them, so they are safe with it. Restoring changes your saves, and Steam uploads that the next time the game closes.'))] : []));
   // Tabs: this profile's playthroughs (all of them with per-profile saves off), other profiles', backups.
-  if (sv.tab === 'others' && !pp) sv.tab = 'playthroughs';
+  // (off: the tab shows only while profiles' own folders still hold saves from when it was on)
+  if (sv.tab === 'others' && !profileFolders(v)) sv.tab = 'playthroughs';
   $('#saves-pt-label').textContent = pp ? 'Active profile' : 'Playthroughs';
-  $('#saves-tab-others').hidden = !pp;
+  $('#saves-tab-others').hidden = !profileFolders(v);
   $$('#saves-tabs .seg-btn').forEach(b => { const on = b.dataset.t === sv.tab; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
   $('#saves-pt-count').textContent = pts.length || '';
   $('#saves-ot-count').textContent = otherCount(v) || '';
@@ -151,6 +157,14 @@ function renderSaves() {
 /** Per-profile saves off: where to turn them on (copying playthroughs between profiles comes with it). */
 function perProfileHint(v) {
   if (v.perProfile) return [];
+  // Saves the game cannot see, left in profiles' own folders when per-profile saves was turned off.
+  const stored = waitingCount(v);
+  if (stored) {
+    // (no saves in the game at all: the empty state's own button leads there)
+    return !v.playthroughs.length ? [] : [h('p', { class: 'sv-foot sv-hint' }, icon('users'),
+      h('span', {}, `${plural(stored, 'playthrough')} ${stored === 1 ? 'is' : 'are'} still in profiles' own folders, from when each profile had its own saves. The game does not see ${stored === 1 ? 'it' : 'them'} until copied in. `,
+        h('button', { class: 'link-btn', dataset: { key: 'pt:stored-hint' }, onclick: () => { sv.tab = 'others'; renderSaves(); } }, 'Show them')))];
+  }
   const open = () => {
     state.settingsJump = 'saves';
     goTo('settings');
@@ -207,23 +221,31 @@ function playthroughsView(v) {
 
 /** The other profiles that keep saves: [{ id, name, list }]. */
 function otherProfiles(v) {
-  const pp = v.perProfile;
+  const pp = profileFolders(v);
   if (!pp) return [];
-  return Object.entries(pp.playthroughs).filter(([pid, list]) => pid !== pp.owner && list.length)
-    .map(([pid, list]) => ({ id: pid, name: v.profiles.find(x => x.id === pid)?.name || pid, list }));
+  // Off, the profile in use can have saves of its own waiting in its folder too.
+  const active = state.snap?.profiles?.active;
+  // (on: the owner's saves are the game's; off, the game's folder is no profile's and every own folder counts)
+  return Object.entries(pp.playthroughs).filter(([pid, list]) => (pid !== pp.owner || !v.perProfile) && list.length)
+    .map(([pid, list]) => {
+      const name = v.profiles.find(x => x.id === pid)?.name || pid;
+      return { id: pid, name: !v.perProfile && pid === active ? `${name} (this profile's own folder)` : name, list };
+    });
 }
 const otherCount = v => otherProfiles(v).reduce((n, o) => n + o.list.length, 0);
+/** Off: playthroughs left in profiles' own folders that the game's saves do not have (copied in: not counted). */
+const waitingCount = v => new Set(otherProfiles(v).flatMap(o => o.list.map(p => p.id)).filter(id => !v.playthroughs.some(x => x.id === id))).size;
 
 /**
  * Copy saves from another profile into this one; the toast says what happened. "This one" is read when
  * clicked (a switch since the page was drawn changes it).
  */
 async function copyHere(from, what, call) {
-  const owner = sv.view?.perProfile?.owner;
+  const owner = profileFolders(sv.view)?.owner;
   if (!owner) return;
   const r = await run(call(owner));
   if (!r) return;
-  if (!r.copied) toast(r.present ? `Already in this profile: ${what} was not copied again` : 'Nothing was copied');
+  if (!r.copied) toast(r.present ? `Already ${sv.view?.perProfile ? 'in this profile' : 'in the game\'s saves'}: ${what} was not copied again` : 'Nothing was copied');
   else toast(`Copied ${plural(r.copied, 'save')} from "${from}"${r.renamed ? ` (${r.renamed} under a new slot name)` : ''}`, 'success');
 }
 
@@ -233,9 +255,14 @@ function otherProfilesView(v) {
   const groups = otherProfiles(v);
   if (!groups.length) {
     return [h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('users')), h('div', { class: 'empty-title' }, 'No saves in other profiles'),
-      h('div', { class: 'empty-text' }, 'Each profile keeps its own saves. When another profile has some, they show here, and you can copy a playthrough or a single save into this one.'))];
+      h('div', { class: 'empty-text' }, pp ? 'Each profile keeps its own saves. When another profile has some, they show here, and you can copy a playthrough or a single save into this one.'
+        : 'No profile\'s own folder holds saves now.'))];
   }
-  return [h('p', { class: 'sv-lead' }, `Saves the other profiles keep in their own folders. Open a playthrough to copy one save into "${ownerName}", or copy the whole playthrough. A copy never replaces a save here.`),
+  const lead = pp
+    ? `Saves the other profiles keep in their own folders. Open a playthrough to copy one save into "${ownerName}", or copy the whole playthrough. A copy never replaces a save here.`
+    // Off: these stayed behind when each profile stopped having its own saves.
+    : "Saves left in profiles' own folders from when each profile had its own saves. The game does not see them. Open a playthrough to copy one save into the game's saves, or copy the whole playthrough. A copy never replaces a save there.";
+  return [h('p', { class: 'sv-lead' }, lead),
     ...groups.map(g => h('section', { class: 'sv-day', 'aria-label': g.name },
       h('div', { class: 'section-head' }, h('h2', {}, g.name), h('span', { class: 'section-note' }, plural(g.list.length, 'playthrough'))),
       h('div', { class: 'sv-list', role: 'list', 'aria-label': `Playthroughs of ${g.name}` }, ...g.list.map(p => otherPlaythrough(v, g, p)))))];
@@ -246,17 +273,18 @@ function otherPlaythrough(v, g, p) {
   const open = sv.open.has(key);
   const here = v.playthroughs.some(x => x.id === p.id);
   const title = ptTitle(p);
+  const dest = v.perProfile ? 'this profile' : "the game's saves";
   const row = h('button', {
     class: 'sv-pt', 'aria-expanded': String(open), dataset: { key: `other:${g.id}:${p.id}` },
     onclick: () => { if (open) sv.open.delete(key); else sv.open.add(key); renderSaves(); },
   },
   shotEl(p.shot, 'sv-thumb'),
   h('span', { class: 'sv-main' },
-    h('span', { class: 'sv-title' }, title, here ? h('span', { class: 'tag tag-off' }, 'Also in this profile') : null),
+    h('span', { class: 'sv-title' }, title, here ? h('span', { class: 'tag tag-off' }, v.perProfile ? 'Also in this profile' : "Also in the game's saves") : null),
     h('span', { class: 'sv-sub' }, [p.level ? `Level ${p.level}` : '', plural(p.count, 'save'), p.time ? `last saved ${ago(p.time)}` : ''].filter(Boolean).join(' · '))),
   icon('chevron-right', `sv-chev${open ? ' turn' : ''}`));
   const copyAll = h('span', { class: 'sv-acts' }, h('button', {
-    class: 'btn btn-sm', dataset: { key: `other:${g.id}:${p.id}:all` }, 'aria-label': `Copy the whole playthrough ${title} from ${g.name} into this profile`,
+    class: 'btn btn-sm', dataset: { key: `other:${g.id}:${p.id}:all` }, 'aria-label': `Copy the whole playthrough ${title} from ${g.name} into ${dest}`,
     onclick: () => copyHere(g.name, 'this playthrough', owner => api.copyPlaythrough(p.id, g.id, [owner])),
   }, icon('copy'), h('span', {}, 'Copy playthrough')));
   const head = h('div', { class: 'sv-row' }, row, copyAll);
@@ -270,7 +298,7 @@ function otherPlaythrough(v, g, p) {
       h('span', { class: 'sv-cell', title: s.time ? when(s.time) : '' }, s.time ? ago(s.time) : ''),
       h('span', { class: 'sv-cell num' }, s.gameVersion ? `v${s.gameVersion}` : ''),
       h('span', { class: 'sv-acts' }, h('button', {
-        class: 'btn btn-sm', dataset: { key: `other:${g.id}:${s.folder}` }, 'aria-label': `Copy ${slotName(s)} from ${g.name} into this profile`,
+        class: 'btn btn-sm', dataset: { key: `other:${g.id}:${s.folder}` }, 'aria-label': `Copy ${slotName(s)} from ${g.name} into ${dest}`,
         onclick: () => copyHere(g.name, 'this save', owner => api.copySaves(g.id, [s.folder], [owner])),
       }, icon('copy'), h('span', {}, 'Copy here')))))));
 }
@@ -431,7 +459,8 @@ $('#s-save-perprofile').addEventListener('change', async ev => {
       h('p', {}, 'Every switch makes a backup first, and only happens with the game closed.'),
       h('p', { class: 'hint' }, 'Cloud saves (Steam, GOG) can bring a swapped-out save back into the game\'s folder; it then also shows up in the profile in use (nothing is lost). It works best with cloud saves off for Cyberpunk.'),
     ] : [
-      h('p', {}, 'Switching profiles stops swapping saves. The saves in the game now stay; other profiles\' saves stay in their own folders, and the Saves page can copy them in.'),
+      h('p', {}, 'Switching profiles stops swapping saves. The saves in the game now stay as they are.'),
+      h('p', {}, 'Other profiles\' saves stay in their own folders, where the game does not see them. Saves → Other profiles shows them, to copy a playthrough or a single save into the game\'s saves.'),
     ])),
     buttons: [{ label: 'Cancel', value: false, safe: true }, { label: on ? 'Turn on' : 'Turn off', value: true, kind: 'btn-primary' }],
   });
@@ -457,6 +486,16 @@ $('#s-save-perprofile').addEventListener('change', async ev => {
   if (!r) { box.checked = !on; return; }
   state.settings = { ...(state.settings || {}), perProfileSaves: on };
   toast(on ? 'Each profile now has its own saves' : 'Profiles share one set of saves again', 'success');
+  // Off: say where saves the game no longer sees are, and lead there.
+  if (!on) {
+    const view = await run(api.savesView());
+    const n = view ? waitingCount(view) : 0;
+    if (n) {
+      toast(`${plural(n, 'playthrough')} stay in profiles' own folders, where the game does not see them`, 'info', {
+        label: 'Show them', fn: () => { sv.tab = 'others'; sv.view = view; renderSaves(); goTo('saves'); },
+      });
+    }
+  }
 });
 
 $('#saves-backup').addEventListener('click', backupNow);
