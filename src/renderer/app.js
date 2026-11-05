@@ -1509,7 +1509,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -1583,6 +1583,20 @@ api.onSettingsChanged(async () => {
   if (!r.ok || !state.settings) return;
   state.settings.uiScale = r.ok.uiScale;
   $('#s-ui-scale').value = String(r.ok.uiScale || 0);
+  // Changed in the AI chat's settings column (or a saved setup switched): the AI section follows.
+  // (a field edited here and not saved yet is left as it is)
+  const shown = v => String(v ?? '');
+  for (const [k, sel] of Object.entries(form)) {
+    if (!k.startsWith('ai')) continue;
+    const el = $(sel);
+    const was = k === 'aiContext' && !state.settings[k] ? '' : shown(state.settings[k]);
+    const untouched = el.value === was && document.activeElement !== el;
+    state.settings[k] = r.ok[k];
+    if (untouched) { el.value = k === 'aiContext' && !r.ok[k] ? '' : shown(r.ok[k]); el.title = shown(r.ok[k]); }
+  }
+  Object.assign(state.settings, { hasAiKey: r.ok.hasAiKey, aiKeyHint: r.ok.aiKeyHint, aiPresets: r.ok.aiPresets });
+  $('#s-ai-key').placeholder = r.ok.hasAiKey ? `Saved key ${r.ok.aiKeyHint} — paste a new one to replace it` : 'Paste your provider\'s API key (not needed for local models)';
+  aiPlaceholders();
   updateDirty();
 });
 

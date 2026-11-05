@@ -51,6 +51,8 @@ class Settings {
       aiEndpoint: '',
       aiModel: '',
       aiReasoning: '', // how much a reasoning model thinks first: '' (the model's own default) | none | low | medium | high
+      aiMaxSteps: 12, // model requests per question before it stops and asks to continue; 0: no limit
+      aiPresets: [], // saved AI setups: { id, name, provider, endpoint, model, reasoning, timeout, context, maxSteps, keyEnc, keyPlain }
       aiTimeout: 5, // minutes one request to the AI provider may take (local models can be slow)
       aiContext: 0, // the model's context window in tokens; 0: ask the provider
       playsKeep: 25, // how many plays (each launch's logs) the Game log keeps
@@ -128,10 +130,79 @@ class Settings {
 
   /** Settings as shown to the UI: the keys themselves never leave the main process. */
   publicView() {
-    const { apiKeyEnc, apiKeyPlain, aiKeyEnc, aiKeyPlain, ...rest } = this.store.data;
+    const { apiKeyEnc, apiKeyPlain, aiKeyEnc, aiKeyPlain, aiPresets, ...rest } = this.store.data;
     const key = this.apiKey;
     const ai = this.aiKey;
-    return { ...rest, launchMode: this.get('launchMode'), hasApiKey: !!key, apiKeyHint: key ? `••••••••${key.slice(-4)}` : '', hasAiKey: !!ai, aiKeyHint: ai ? `••••••••${ai.slice(-4)}` : '' };
+    const hint = k => (k ? `••••••••${k.slice(-4)}` : '');
+    const presets = this.aiPresets().map(({ keyEnc, keyPlain, ...p }) => {
+      const k = this.presetKey({ keyEnc, keyPlain });
+      return { ...p, hasKey: !!k, keyHint: hint(k) };
+    });
+    return { ...rest, aiPresets: presets, launchMode: this.get('launchMode'), hasApiKey: !!key, apiKeyHint: hint(key), hasAiKey: !!ai, aiKeyHint: hint(ai), aiKeySaved: this.aiKeySaved() };
+  }
+
+  // ---------------------------------------------------------------- saved AI setups
+
+  /** A saved setup's key (encrypted like the AI key, or plain where nothing can encrypt). */
+  presetKey(p) {
+    if (p.keyEnc && this.cipher?.available()) { try { return this.cipher.decrypt(p.keyEnc); } catch { return ''; } }
+    return p.keyPlain || '';
+  }
+
+  /**
+   * Save the AI settings in use (format, endpoint, model, reasoning, time limit, context window, steps
+   * and the key) as a setup under `name`; one of that name already there is replaced. At most 20.
+   */
+  saveAiPreset(name) {
+    const n = String(name || '').replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, 40);
+    if (!n) throw new Error('Give the setup a name.');
+    const d = this.store.data;
+    const list = this.aiPresets().filter(p => p.name.toLowerCase() !== n.toLowerCase());
+    if (list.length >= 20) throw new Error('There are 20 saved setups already: delete one first.');
+    const key = this.aiKey;
+    const enc = !!key && !!this.cipher?.available();
+    const preset = {
+      id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: n,
+      provider: d.aiProvider, endpoint: d.aiEndpoint, model: d.aiModel, reasoning: d.aiReasoning,
+      timeout: d.aiTimeout, context: d.aiContext, maxSteps: d.aiMaxSteps,
+      // savedKey: it was saved with a key (so a key it can no longer read is an error, not "no key")
+      savedKey: !!key, keyEnc: enc ? this.cipher.encrypt(key) : '', keyPlain: enc ? '' : key,
+    };
+    d.aiPresets = [...list, preset];
+    this.store.save();
+    return n;
+  }
+
+  /** The saved setups (entries a hand edit broke are left out). */
+  aiPresets() {
+    const list = this.store.data.aiPresets;
+    return (Array.isArray(list) ? list : []).filter(p => p && typeof p === 'object' && typeof p.id === 'string' && typeof p.name === 'string');
+  }
+
+  /**
+   * Use a saved setup: its settings and its key become the ones in use (a setup saved without a key,
+   * for a local model, clears it: no other provider's key is sent to that endpoint). A key it can no
+   * longer read (Windows' encryption changed) is an error, and nothing changes.
+   */
+  applyAiPreset(id) {
+    const p = this.aiPresets().find(x => x.id === id);
+    if (!p) throw new Error('That saved setup no longer exists.');
+    const key = this.presetKey(p);
+    if (p.savedKey && !key) throw new Error(`The key saved with "${p.name}" could not be read (Windows' encryption for this account changed). Switch to it, paste the key again, and save it again.`);
+    this.update({ aiProvider: p.provider, aiEndpoint: p.endpoint, aiModel: p.model, aiReasoning: p.reasoning ?? '', aiTimeout: p.timeout, aiContext: p.context, aiMaxSteps: p.maxSteps ?? 12, aiKey: key });
+    return p.name;
+  }
+
+  /** Whether the AI key in use is also in a saved setup (switching setups would otherwise lose it). */
+  aiKeySaved() {
+    const key = this.aiKey;
+    return !key || this.aiPresets().some(p => this.presetKey(p) === key);
+  }
+
+  deleteAiPreset(id) {
+    const d = this.store.data;
+    d.aiPresets = this.aiPresets().filter(x => x.id !== id);
+    this.store.save();
   }
 
   update(patch) {
@@ -140,6 +211,7 @@ class Settings {
     if ('aiKey' in patch) this.aiKey = patch.aiKey;
     if ('aiProvider' in patch && ['openai', 'anthropic'].includes(patch.aiProvider)) d.aiProvider = patch.aiProvider;
     if ('aiReasoning' in patch && AI_REASONING.includes(patch.aiReasoning)) d.aiReasoning = patch.aiReasoning;
+    if ('aiMaxSteps' in patch && patch.aiMaxSteps !== '' && Number.isFinite(Number(patch.aiMaxSteps))) d.aiMaxSteps = Math.min(500, Math.max(0, Math.round(Number(patch.aiMaxSteps))));
     for (const k of ['aiEndpoint', 'aiModel']) if (typeof patch[k] === 'string') d[k] = patch[k].trim().slice(0, 300);
     if ('aiContext' in patch) d.aiContext = Math.min(10e6, Math.max(0, Math.round(Number(patch.aiContext) || 0)));
     if ('aiTimeout' in patch && Number.isFinite(Number(patch.aiTimeout)) && patch.aiTimeout !== '') d.aiTimeout = Math.min(60, Math.max(1, Math.round(Number(patch.aiTimeout))));

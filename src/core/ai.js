@@ -27,7 +27,7 @@ const ctx = require('./aiContext');
  * the last turns stay word for word. See aiContext.js.
  */
 
-const MAX_ROUNDS = 12;
+const MAX_ROUNDS = 12; // steps per question unless set (Settings → AI assistant → Steps per question)
 const KEEP_TURNS = 400; // a safety cap only: long chats are summarized to fit the model (aiContext.js)
 const OLD_TOOL_TEXT = 1500;
 const DEFAULT_TIMEOUT_MS = 5 * 60e3; // how long one request may take (Settings → AI assistant → Time limit)
@@ -374,6 +374,13 @@ class Assistant extends EventEmitter {
     return (Number.isFinite(min) && min > 0 ? min : 5) * 60e3;
   }
 
+  /** Model requests per question (Steps per question): 0 is no limit (Stop and the repeat check still end a loop). */
+  maxSteps() {
+    const n = Number(this.settings.get('aiMaxSteps'));
+    if (n === 0) return Infinity;
+    return Number.isFinite(n) && n > 0 ? Math.min(500, Math.round(n)) : MAX_ROUNDS;
+  }
+
   /** Settings → AI assistant → Reasoning effort ('' : the model's own default). */
   effort() { return String(this.settings.get('aiReasoning') || ''); }
 
@@ -557,7 +564,10 @@ class Assistant extends EventEmitter {
         if (u.estimated) turn.estimated = true;
         usage(0);
       };
-      for (let round = 0; round < MAX_ROUNDS; round++) {
+      const maxSteps = this.maxSteps();
+      let stuck = 0; // steps in a row that only repeated what it already did
+      const called = new Set(); // every call it made in this answer (tool + arguments)
+      for (let round = 0; round < maxSteps; round++) {
         let guess = 0;
         let chars = 0;
         const ask = () => {
@@ -614,6 +624,14 @@ class Assistant extends EventEmitter {
         if (fresh) answer = this.show({ type: 'assistant', text });
         if (!reply.calls.length) break;
         const results = [];
+        // Calls that bring nothing new: the same call (any kind) made before in this answer, or a
+        // tool that does not exist.
+        let repeats = 0;
+        for (const c of reply.calls) {
+          const key = `${c.name}${JSON.stringify(c.args || {})}`;
+          if (called.has(key) || !this.tools.kind(c.name)) repeats++;
+          called.add(key);
+        }
         for (const c of reply.calls) {
           const kind = this.tools.kind(c.name);
           let content;
@@ -657,7 +675,11 @@ class Assistant extends EventEmitter {
           results.push({ id: c.id, name: c.name, content });
         }
         this.state.history.push({ role: 'tool', results });
-        if (round === MAX_ROUNDS - 1) this.show({ type: 'notice', text: 'The assistant stopped after many steps. Ask it to continue if needed.' });
+        // Steps that only repeat what it already did (or ask for tools that do not exist), three in a
+        // row: it is going round in circles (with no step limit, nothing else would end it).
+        stuck = repeats === reply.calls.length ? stuck + 1 : 0;
+        if (stuck >= 3) { this.show({ type: 'notice', text: 'The assistant kept repeating what it had already done, so it was stopped. Ask it to continue, or rephrase the question.' }); break; }
+        if (round === maxSteps - 1) this.show({ type: 'notice', text: `The assistant stopped after ${maxSteps} steps (the limit in its settings: Steps per question). Ask it to continue if needed.` });
       }
     } catch (err) {
       if (err.stopped || this.abort.signal.aborted) {

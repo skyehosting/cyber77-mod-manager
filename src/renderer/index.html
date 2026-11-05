@@ -443,6 +443,71 @@
             <button class="btn" id="ai-stop" hidden title="Stop the answer"><svg class="i"><use href="#i-x"/></svg><span>Stop</span></button>
           </div>
         </div>
+        <!-- The AI settings beside the chat: a small tab on the right opens the column (the same settings as Settings → AI assistant). -->
+        <button type="button" class="ai-side-tab" id="ai-side-tab" aria-expanded="false" aria-controls="ai-side" title="AI settings"><svg class="i"><use href="#i-sparkle"/></svg><span>AI settings</span></button>
+        <aside class="ai-side" id="ai-side" aria-labelledby="ai-side-title" hidden>
+          <div class="ai-side-head">
+            <h2 id="ai-side-title">AI settings</h2>
+            <button type="button" class="btn btn-icon" id="ai-side-close" title="Close" aria-label="Close the AI settings"><svg class="i"><use href="#i-x"/></svg></button>
+          </div>
+          <div class="ai-side-body">
+            <div class="ai-field">
+              <label for="ai-p-preset">Saved setup</label>
+              <div class="field-row">
+                <select id="ai-p-preset"></select>
+                <button type="button" class="btn btn-sm" id="ai-p-preset-del" title="Delete this saved setup">Delete</button>
+              </div>
+              <button type="button" class="btn btn-sm" id="ai-p-preset-save" title="Save the settings below (and the key) under a name, to switch back with one click">Save these as a setup…</button>
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-provider">Format</label>
+              <select id="ai-p-provider" data-k="aiProvider">
+                <option value="openai">OpenAI-compatible</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+              </select>
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-model">Model</label>
+              <input id="ai-p-model" class="mono" type="text" spellcheck="false" data-k="aiModel">
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-endpoint">Endpoint</label>
+              <input id="ai-p-endpoint" class="mono" type="text" spellcheck="false" data-k="aiEndpoint">
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-key">API key</label>
+              <input id="ai-p-key" type="password" spellcheck="false" autocomplete="off">
+              <p class="hint" id="ai-p-key-hint"></p>
+            </div>
+            <div class="ai-field" id="ai-p-reasoning-row">
+              <label for="ai-p-reasoning">Reasoning effort</label>
+              <select id="ai-p-reasoning" data-k="aiReasoning">
+                <option value="">The model's default</option>
+                <option value="none">None (no thinking)</option>
+                <option value="low">Low (faster, cheaper)</option>
+                <option value="medium">Medium</option>
+                <option value="high">High (most thinking)</option>
+              </select>
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-steps">Steps per question</label>
+              <input id="ai-p-steps" type="number" min="0" max="500" step="1" data-k="aiMaxSteps" aria-describedby="ai-p-steps-hint">
+              <p class="hint" id="ai-p-steps-hint">How many times it may read before it stops to ask. 0: no limit.</p>
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-timeout">Time limit per step (minutes)</label>
+              <input id="ai-p-timeout" type="number" min="1" max="60" step="1" data-k="aiTimeout">
+            </div>
+            <div class="ai-field">
+              <label for="ai-p-context">Context window (tokens)</label>
+              <input id="ai-p-context" type="number" min="0" step="1024" placeholder="Automatic" data-k="aiContext">
+            </div>
+            <div class="ai-field">
+              <button type="button" class="btn" id="ai-p-test">Test</button>
+              <p class="hint" id="ai-p-status" aria-live="polite"></p>
+            </div>
+          </div>
+        </aside>
       </section>
 
       <!-- LOAD ORDER -->
@@ -849,6 +914,10 @@
                       <option value="high">High (most thinking)</option>
                     </select>
                   </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-ai-steps">Steps per question</label><p class="set-desc" id="s-ai-steps-hint">How many times the assistant may ask your provider (each read is a step) before it stops to ask whether to go on. 0: no limit (Stop always works, and it stops by itself if it keeps re-reading the same things).</p></div>
+                  <div class="set-ctl set-ctl-sm"><input id="s-ai-steps" type="number" min="0" max="500" step="1" aria-describedby="s-ai-steps-hint"></div>
                 </div>
                 <div class="set-row">
                   <div class="set-label"><label for="s-ai-endpoint">Endpoint</label></div>

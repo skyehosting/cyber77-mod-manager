@@ -444,8 +444,15 @@ async function boot() {
     if ('updateEvery' in patch || 'updateUnit' in patch || 'updateMode' in patch) updater?.start();
     logger.success('Settings saved');
     pushSnapshot();
+    // The AI chat's settings column and the Settings page show the same settings: both follow.
+    if (Object.keys(patch || {}).some(k => k.startsWith('ai'))) { send('settings-changed'); }
     return settings.publicView();
   });
+  // Saved AI setups (the AI chat's settings column): their keys stay in this process.
+  const aiChanged = () => { send('settings-changed'); return settings.publicView(); };
+  handle('ai:presetSave', name => { const saved = settings.saveAiPreset(String(name || '').slice(0, 200)); logger.success(`AI setup "${saved}" saved`); return aiChanged(); });
+  handle('ai:presetApply', id => { const name = settings.applyAiPreset(String(id || '')); logger.success(`Using the AI setup "${name}"`); return aiChanged(); });
+  handle('ai:presetDelete', id => { settings.deleteAiPreset(String(id || '')); return aiChanged(); });
   handle('settings:validateKey', () => manager.validateKey());
   handle('settings:detectGame', async () => {
     const found = await findCyberpunk();
