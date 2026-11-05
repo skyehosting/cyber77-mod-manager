@@ -5,7 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
-const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
+const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, linuxLaunchOptions, STEAM_APP_ID } = require('./core/gameFinder');
 const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
 const { findGameProcess, isGameProcess } = require('./core/gameProcess');
 const { launchGame, hasRedmods, redmodFolders, redmodFingerprint, deployRedmods, redmodToolsInstalled } = require('./core/launcher');
@@ -57,6 +57,21 @@ const appStartedAt = Date.now(); // a game already running when the app opens is
 function gameRunningNow() {
   if (Date.now() - gameExitedAt < 20000) return Promise.resolve(true);
   return findGameProcess().then(proc => !!proc, () => true);
+}
+
+/**
+ * What the game's Steam launch options lack for Play through Steam: { missing, suggested, note }.
+ * Windows: skip the launcher, load REDmods. Linux also: the Wine setting the mod loaders' DLLs need
+ * (Cyber Engine Tweaks' version.dll, RED4ext's winmm.dll; only the ones installed).
+ */
+function launchOptionsCheck(dir, options) {
+  if (process.platform === 'win32') {
+    const missing = missingLaunchOptions(options, true);
+    return { missing, suggested: [options, ...missing].filter(Boolean).join(' '), note: '' };
+  }
+  const dlls = ['version', 'winmm'].filter(d => !!dir && fs.existsSync(path.join(dir, 'bin', 'x64', `${d}.dll`)));
+  const { missing, suggested, wine } = linuxLaunchOptions(options, { modded: true, dlls });
+  return { missing, suggested, note: wine ? 'Without the Wine setting, Cyber Engine Tweaks and RED4ext do not load under Proton; without the rest, the CD Projekt launcher opens.' : '' };
 }
 
 function pushSnapshot() {
@@ -377,14 +392,17 @@ async function boot() {
   });
   handle('steam:launchOptions', async () => {
     const found = await steamLaunchOptions();
-    return found ? { options: found.options, missing: missingLaunchOptions(found.options, true) } : null;
+    return found ? { options: found.options, ...launchOptionsCheck(settings.get('gamePath'), found.options) } : null;
   });
   handle('steam:openGame', () => shell.openExternal(`steam://nav/games/details/${STEAM_APP_ID}`));
   // Play: REDmod deploy first when the REDmods changed since the last one, then the game.
   handle('game:launch', async ({ skipDeploy = false, skipSteamCheck = false } = {}) => {
     const dir = settings.get('gamePath');
     if (!isGameDir(dir)) throw new Error('Set the Cyberpunk 2077 folder in Settings first.');
-    if (!skipDeploy) {
+    if (process.platform !== 'win32') {
+      // Linux: REDmod deploy (a Windows program) cannot run from here yet; REDmods load once deployed another way.
+      if (hasRedmods(dir) && !redmodLinuxNoted) { logger.warn('REDmod deploy does not run on Linux yet: REDmods load only if they were deployed another way'); redmodLinuxNoted = true; }
+    } else if (!skipDeploy) {
       const r = await runRedmodDeploy(dir, false);
       if (r && !r.ok) return { deployFailed: true, missingTools: !!r.missingTools, reason: r.reason };
     }
@@ -392,8 +410,8 @@ async function boot() {
     // Through Steam: the game's Steam launch options must skip the launcher (and load REDmods).
     if (store.store === 'steam' && ['steam', 'store'].includes(settings.get('launchMode')) && !skipSteamCheck) {
       const found = await steamLaunchOptions();
-      const missing = missingLaunchOptions(found?.options, true);
-      if (missing.length) return { steamOptions: { current: found?.options || '', missing, suggested: [found?.options, ...missing].filter(Boolean).join(' ') } };
+      const check = launchOptionsCheck(dir, found?.options);
+      if (check.missing.length) return { steamOptions: { current: found?.options || '', ...check } };
     }
     // Never start the game while saves are being restored (or backed up by hand).
     if (manager.saves.busy) throw new Error('Your saves are being backed up or restored. Press Play again in a moment.');
@@ -807,6 +825,7 @@ function redmodStatus(dir = settings.get('gamePath')) {
 
 const REDMOD_MISSING = 'The REDmod tools are not installed (tools\\redmod\\bin\\redMod.exe). They are a free DLC from CD Projekt for Cyberpunk 2077: without them REDmods cannot be deployed, by this app or any other.';
 let redmodMissingNoted = false;
+let redmodLinuxNoted = false;
 
 /*
  * Getting the REDmod tools, per store (CD Projekt's modding page, cyberpunk.net/en/modding-support).

@@ -68,7 +68,9 @@ class Settings {
 
   get(key) {
     const v = this.store.data[key];
-    return key === 'launchMode' && v === 'store' ? 'steam' : v; // 'store' was the old name of 'steam'
+    // 'store' was the old name of 'steam'; on Linux the game always starts through Steam (Proton).
+    if (key === 'launchMode') return process.platform !== 'win32' ? 'steam' : v === 'store' ? 'steam' : v;
+    return v;
   }
 
   get apiKey() {

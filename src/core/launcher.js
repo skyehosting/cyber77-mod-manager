@@ -84,6 +84,12 @@ function deployRedmods(gameDir, { onLine = () => {}, timeoutMs = 20 * 60e3 } = {
 async function launchGame({ gameDir, store, epicApp, mode = 'direct' }, openExternal, run = spawn) {
   const exe = path.join(gameDir, 'bin', 'x64', 'Cyberpunk2077.exe');
   if (!fs.existsSync(exe)) throw new Error('Cyberpunk2077.exe was not found. Check the game folder in Settings.');
+  if (process.platform !== 'win32') {
+    // Linux: the game is the Windows build; only Steam (through Proton) can start it from here.
+    if (store !== 'steam') throw new Error('On Linux this app starts Steam copies of the game. Start this copy from its own launcher (Heroic, Lutris).');
+    await openExternal(`steam://rungameid/${STEAM_APP_ID}`);
+    return { via: 'Steam', args: [] };
+  }
   const args = hasRedmods(gameDir) ? ['-modded'] : [];
   if (store === 'epic' && epicApp) {
     await openExternal(`com.epicgames.launcher://apps/${encodeURIComponent(epicApp)}?action=launch&silent=true`);

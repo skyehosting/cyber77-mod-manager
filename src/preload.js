@@ -9,6 +9,7 @@ const on = channel => cb => {
 };
 
 contextBridge.exposeInMainWorld('api', {
+  platform: process.platform, // 'win32' or 'linux': what wording and choices fit
   snapshot: () => call('snapshot'),
   logs: () => call('logs'),
   logHistory: () => call('logs:history'),

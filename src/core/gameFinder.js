@@ -329,7 +329,73 @@ function missingLaunchOptions(options, needsModded) {
   return ['--launcher-skip', needsModded ? '-modded' : ''].filter(o => o && !have.includes(o));
 }
 
+/** Words of a launch-options line, quotes kept with their word (FOO="a b" stays one). */
+function optionWords(line) {
+  return String(line || '').match(/(?:[^\s"']+|"[^"]*"?|'[^']*'?)+/g) || [];
+}
+
+/**
+ * A WINEDLLOVERRIDES value as { dll: modes }: "winmm,version=n,b" and "winmm=n,b;version=n,b" alike
+ * (Wine's own form: groups split by ;, names by commas before the last =). Never throws.
+ */
+function parseDllOverrides(value) {
+  const out = {};
+  for (const group of String(value || '').replace(/^["']|["']$/g, '').split(';')) {
+    const eq = group.lastIndexOf('=');
+    if (eq < 0) continue;
+    const modes = group.slice(eq + 1).trim().toLowerCase();
+    for (const name of group.slice(0, eq).split(',')) {
+      const dll = name.trim().toLowerCase().replace(/\.dll$/, '');
+      if (dll) out[dll] = modes;
+    }
+  }
+  return out;
+}
+
+/**
+ * Linux (Proton): what the game's Steam launch options lack, and the line to use instead. The proxy
+ * DLLs mods load through (version.dll for Cyber Engine Tweaks, winmm.dll for RED4ext) only load
+ * when Wine is told to prefer them: WINEDLLOVERRIDES="winmm,version=n,b" before %command%; the
+ * game's own arguments go after it. Everything already there is kept (other overrides too).
+ */
+function linuxLaunchOptions(current, { modded = true, dlls = [] } = {}) {
+  const line = String(current || '').trim();
+  // A line this cannot safely edit (an unclosed quote, %command% inside quotes or spelt otherwise,
+  // ; after a value): its parts are not kept; a clean line replaces it (the current one stays shown).
+  const odd = (line.split('"').length % 2 === 0) || (line.split('\'').length % 2 === 0)
+    || (/%command%/i.test(line) && !/(^|\s)%command%(\s|$)/.test(line)) || /["'];/.test(line);
+  const words = odd ? [] : optionWords(line);
+  const at = words.indexOf('%command%'); // Steam only replaces it spelt exactly so
+  const isEnv = w => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w);
+  const env = at >= 0 ? words.slice(0, at) : words.filter(isEnv);
+  const args = at >= 0 ? words.slice(at + 1) : words.filter(w => !isEnv(w));
+  // WINEDLLOVERRIDES given more than once: the shell keeps only the last, so that is what counts; the
+  // line suggested merges them all into one (later ones winning), so nothing set there is lost.
+  const given = env.filter(x => x.startsWith('WINEDLLOVERRIDES=')).map(w => parseDllOverrides(w.slice(w.indexOf('=') + 1)));
+  const effective = given[given.length - 1] || {};
+  const overrides = Object.assign({}, ...given);
+  const lacking = dlls.filter(d => !/^n/.test(effective[d] || '')); // n,b / n / native…: Wine prefers the mod's DLL
+  const missing = [];
+  const MOD_OF = { version: 'Cyber Engine Tweaks', winmm: 'RED4ext' };
+  if (lacking.length) missing.push(`the Wine setting for ${lacking.map(d => MOD_OF[d] || `${d}.dll`).join(' and ')}`);
+  const have = args.map(a => a.toLowerCase());
+  for (const a of ['--launcher-skip', modded ? '-modded' : '']) if (a && !have.includes(a)) { missing.push(a); args.push(a); }
+  if (!missing.length && !odd) return { missing, suggested: line, wine: false };
+  if (odd && !missing.length) missing.push('a launch options line Steam can read');
+  const keep = env.filter(x => !x.startsWith('WINEDLLOVERRIDES='));
+  if (lacking.length || Object.keys(overrides).length) {
+    for (const d of lacking) overrides[d] = 'n,b';
+    // Wine's short form, the DLLs that share modes grouped: winmm,version=n,b;dxgi=n,b
+    const byModes = new Map();
+    for (const [d, m] of Object.entries(overrides)) byModes.set(m, [...(byModes.get(m) || []), d]);
+    // First: settings go before any wrapper program (gamemoderun %command%).
+    keep.unshift(`WINEDLLOVERRIDES="${[...byModes].map(([m, ds]) => `${ds.join(',')}=${m}`).join(';')}"`);
+  }
+  return { missing, suggested: [...keep, '%command%', ...args].join(' '), wine: lacking.length > 0 };
+}
+
 module.exports = {
   findCyberpunk, findInstalls, storeOf, isGameDir, STEAM_APP_ID, GOG_GAME_ID, STORE_LABEL, parseLaunchOptions, steamLaunchOptions, missingLaunchOptions,
   installingNow, gameWindowsFolders, linuxSteamRoots, linuxSteamLibraries, linuxSteamGames, parseLibraryFolders,
+  parseDllOverrides, linuxLaunchOptions,
 };

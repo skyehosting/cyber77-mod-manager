@@ -250,7 +250,8 @@ test('Browse "Adult (18+)" asks Nexus for adult mods only', async () => {
   }
 });
 
-test('Play starts the game directly, with -modded when there are REDmods; REDmod changes are noticed', async () => {
+// Windows only: on Linux Play always goes through Steam (test/linux-launch.test.js).
+test('Play starts the game directly, with -modded when there are REDmods; REDmod changes are noticed', { skip: process.platform !== 'win32' }, async () => {
   const { launchGame, redmodFingerprint } = require('../src/core/launcher');
   const { game } = fakeGame();
   const calls = [];

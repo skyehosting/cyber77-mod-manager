@@ -1983,13 +1983,13 @@ let stopTimer = 0;
  * (Steam asks to confirm arguments another program passes, so they cannot come from here).
  * Resolves 'again' (check again), 'anyway' (start as they are) or false.
  */
-function steamOptionsBox({ current, missing, suggested }) {
+function steamOptionsBox({ current, missing, suggested, note = '' }) {
   const copy = h('button', { class: 'btn btn-sm', onclick: async () => { await navigator.clipboard.writeText(suggested); copy.lastChild.textContent = 'Copied'; } }, icon('copy'), h('span', {}, 'Copy'));
   return modal({
     title: 'Set the Steam launch options once',
     sub: 'So Steam starts Cyberpunk 2077 modded, without its launcher',
     body: h('div', { class: 'steam-opts' },
-      h('p', {}, `Steam starts the game with the launch options in its own settings. Yours are missing ${missing.join(' and ')}: without them the CD Projekt launcher opens${missing.includes('-modded') ? ' and REDmods do not load' : ''}.`),
+      h('p', {}, `Steam starts the game with the launch options in its own settings. Yours are missing ${missing.join(' and ')}${note ? `. ${note}` : `: without them the CD Projekt launcher opens${missing.includes('-modded') ? ' and REDmods do not load' : ''}.`}`),
       h('ol', {},
         h('li', {}, 'In Steam, right-click Cyberpunk 2077 → Properties → General.'),
         h('li', {}, 'Replace what is under Launch Options with:'),
@@ -2003,7 +2003,7 @@ function steamOptionsBox({ current, missing, suggested }) {
       { label: 'Start anyway', value: 'anyway' },
       { label: 'Check again', value: 'again', kind: 'btn-primary' },
     ],
-  }).then(v => (v === 'open' ? api.openSteamGame().then(() => steamOptionsBox({ current, missing, suggested })) : v));
+  }).then(v => (v === 'open' ? api.openSteamGame().then(() => steamOptionsBox({ current, missing, suggested, note })) : v));
 }
 
 /** Under "When you press Play": whether Steam's launch options are ready for Play through Steam. */
@@ -2014,10 +2014,15 @@ async function refreshSteamHint() {
   el.hidden = false;
   el.className = `hint ${r && !r.missing.length ? 'ok' : ''}`;
   el.textContent = !r ? 'Steam\'s settings for the game were not found; this works for Steam copies only.'
-    : r.missing.length ? `Add ${r.missing.join(' ')} to the game's launch options in Steam (Properties → General). Play shows how.`
+    : r.missing.length ? `Add ${r.missing.join(api.platform === 'win32' ? ' ' : ', ')} to the game's launch options in Steam (Properties → General). Play shows how.`
       : `Steam's launch options are ready: ${r.options}`;
 }
 $('#s-launch').addEventListener('change', refreshSteamHint);
+if (api.platform !== 'win32') {
+  // Linux: the game always starts through Steam (Proton): nothing to choose here.
+  $('#s-launch').closest('.set-ctl').hidden = true;
+  $('#s-launch').closest('.set-row').querySelector('.set-desc').textContent = 'On Linux the game starts through Steam (Proton). REDmod deploy does not run on Linux yet.';
+}
 
 $('#play-btn').addEventListener('click', async () => {
   const btn = $('#play-btn');
