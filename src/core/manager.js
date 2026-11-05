@@ -130,6 +130,13 @@ class ModManager extends EventEmitter {
     this.log = log;
     const dataDir = settings.get('dataDir');
     this.library = new JsonStore(path.join(dataDir, 'library.json'), { downloads: {}, mods: {}, nextPriority: 1 });
+    // Requirements read 50 mods a request were cut to 20 by Nexus, and the rest kept as "none": the
+    // empty ones are asked again (once, after the fix).
+    if (!this.library.data.reqPage20) {
+      for (const [k, v] of Object.entries(this.library.data.requirements || {})) if (!v?.list?.length) delete this.library.data.requirements[k];
+      this.library.data.reqPage20 = true;
+      this.library.save();
+    }
     this.nexus = new NexusClient(() => settings.apiKey, log);
     this.downloader = new Downloader(this.nexus, log, () => settings.get('concurrentDownloads'));
     // The 7-Zip set in Settings, else the copy that ships with the installed app.
@@ -2242,7 +2249,7 @@ class ModManager extends EventEmitter {
     return n;
   }
 
-  /** Read requirements from Nexus a moment from now (one request per 50 mods). */
+  /** Read requirements from Nexus a moment from now (one request per 20 mods: as many as Nexus answers). */
   requirementsSoon(delay = 3000) {
     if (this.reqTimer || this.reqFetching || Date.now() - (this.reqFailedAt || 0) < 300000) return;
     this.reqTimer = setTimeout(() => {

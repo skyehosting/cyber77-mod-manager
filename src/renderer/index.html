@@ -199,6 +199,7 @@
             <button class="seg-btn" data-f="vortex" id="mods-filter-vortex" hidden>Vortex <span class="seg-count seg-count-neutral" id="mods-vx-count"></span></button>
             <button class="seg-btn" data-f="problems">Problems <span class="seg-count" id="mods-prob-count" title="Mods with missing files, install warnings or game-log errors"></span></button>
           </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="mods-req-all" hidden title="Show or hide the requirements under every mod"><svg class="i"><use href="#i-updown"/></svg><span>Collapse all</span></button>
           <label class="sort-pick" title="Sort the list (the recent ones show when each change happened)">
             <span class="sort-label">Sort</span>
             <select id="mods-sort" aria-label="Sort mods">
@@ -229,7 +230,7 @@
             <colgroup><col class="w-check"><col class="w-toggle"><col class="w-name"><col class="w-status"><col class="w-version"></colgroup>
             <thead>
               <tr>
-                <th><input type="checkbox" id="mods-all" aria-label="Select all"></th>
+                <th><div class="check-cell"><span class="row-chev-space" aria-hidden="true"></span><input type="checkbox" id="mods-all" aria-label="Select all"></div></th>
                 <th>On</th>
                 <th>Name</th>
                 <th>Status</th>
@@ -939,11 +940,11 @@
                   </div>
                 </div>
                 <div class="set-row">
-                  <div class="set-label"><label for="s-req-view">Requirements under each mod</label><p class="set-desc">On the Mods page, the mods each mod needs are listed beneath it, each with its own switch.</p></div>
+                  <div class="set-label"><label for="s-req-view">Requirements under each mod</label><p class="set-desc">On the Mods page, the mods each mod needs are listed beneath it, each with its own switch. The arrow left of a mod's checkbox shows or hides them (it remembers); this is how mods you have not opened or closed start.</p></div>
                   <div class="set-ctl">
                     <select id="s-req-view">
-                      <option value="open">Always open</option>
-                      <option value="collapsed">Collapsed: click to open</option>
+                      <option value="open">Open</option>
+                      <option value="collapsed">Closed</option>
                     </select>
                   </div>
                 </div>

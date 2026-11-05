@@ -92,7 +92,9 @@ const state = {
   jobs: new Map(),
   settings: null,
   modSel: new Set(),
-  reqOpen: new Set(), // mods whose requirements are opened (with the Collapsed setting)
+  // mod id → its requirements shown (true) or hidden; else the setting decides (a damaged value: none)
+  reqOpen: (v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {}))(store.get('mods.reqOpen', {})),
+  searchClosed: new Set(), // while searching (requirements of matches shown): the ones closed by hand
   dlSel: new Set(),
   modFilter: 'all',
   lastModClick: null,
@@ -352,8 +354,11 @@ function rowKeys(ev, sel, id, open, repaint) {
   else if (ev.key === ' ') { ev.preventDefault(); if (sel.has(id)) sel.delete(id); else sel.add(id); repaint(); }
   else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
     ev.preventDefault();
-    const next = ev.key === 'ArrowDown' ? ev.currentTarget.nextElementSibling : ev.currentTarget.previousElementSibling;
-    (next?.classList.contains('row') ? next : (ev.key === 'ArrowDown' ? next?.nextElementSibling : next?.previousElementSibling))?.focus();
+    // The next row, past any rows in between (a mod's requirements under it).
+    const step = n => (ev.key === 'ArrowDown' ? n.nextElementSibling : n.previousElementSibling);
+    let next = step(ev.currentTarget);
+    while (next && !next.classList.contains('row')) next = step(next);
+    next?.focus();
   }
 }
 
@@ -552,24 +557,35 @@ function neededByMap(all = allMods()) {
   return out;
 }
 
-/** The inset copies of a mod's requirements, under its row (or one summary line when collapsed). */
+/*
+ * A mod's requirements show under it, opened or closed by the arrow left of its checkbox. Each mod
+ * keeps its own choice (kept between sessions); Settings → "Requirements under each mod" decides for
+ * the rest. While searching, the mods found show theirs (that is what a search is for), unless closed.
+ */
+const searching = () => !!$('#mods-search').value.trim();
+const reqDefaultOpen = () => state.settings?.reqView !== 'collapsed';
+function reqIsOpen(id) {
+  if (searching()) return !state.searchClosed.has(id);
+  return Object.hasOwn(state.reqOpen, id) ? !!state.reqOpen[id] : reqDefaultOpen();
+}
+/** Open or close these mods' requirements (and remember it). */
+function setReqOpen(ids, open) {
+  if (searching()) { for (const id of ids) { if (open) state.searchClosed.delete(id); else state.searchClosed.add(id); } } else {
+    for (const id of ids) { delete state.reqOpen[id]; state.reqOpen[id] = !!open; } // (newest last)
+    // Kept small: the oldest choices go past 2000 (not pruned by what is listed now, which can be
+    // missing mods for a moment, such as Vortex's while it is unreadable).
+    const keys = Object.keys(state.reqOpen);
+    for (const id of keys.slice(0, Math.max(0, keys.length - 2000))) delete state.reqOpen[id];
+    store.set('mods.reqOpen', state.reqOpen);
+  }
+  renderMods();
+}
+
+/** The inset copies of a mod's requirements, under its row (when it is open). */
 function reqRows(m, neededBy) {
   const list = reqsOf(m.id);
-  if (!list.length) return [];
-  const collapsed = state.settings?.reqView === 'collapsed';
-  const open = !collapsed || state.reqOpen.has(m.id);
+  if (!list.length || !reqIsOpen(m.id)) return [];
   const rows = [];
-  if (collapsed) {
-    const off = list.filter(q => q.state === 'off').length;
-    const missing = list.filter(q => q.state === 'missing').length;
-    const label = [`Needs ${plural(list.length, 'mod')}`, off ? `${off} off` : '', missing ? `${missing} missing` : ''].filter(Boolean).join(' · ');
-    rows.push(h('tr', { class: `req-row req-sum${open ? '' : ' last'}` }, h('td'),
-      h('td', { colspan: '4' }, h('button', {
-        class: 'req-toggle', 'aria-expanded': String(open), dataset: { key: `${m.id}:reqs` },
-        onclick: ev => { ev.stopPropagation(); if (open) state.reqOpen.delete(m.id); else state.reqOpen.add(m.id); renderMods(); },
-      }, icon('chevron-right', open ? 'turn' : ''), h('span', {}, open ? `${label} · hide` : label)))));
-    if (!open) return rows;
-  }
   list.forEach((q, i) => {
     const others = q.id ? (neededBy.get(q.id) || []).filter(n => n !== m.name).length : 0;
     const own = q.id ? reqsOf(q.id).map(r => r.name) : [];
@@ -656,6 +672,8 @@ function renderMods() {
     const sub = [who, kind, stamp].filter(Boolean).join(' · ');
     const needers = neededBy.get(m.id) || [];
     const reqIssue = reqProblem(m) ? reqsOf(m.id).find(q => q.state === 'missing' || q.state === 'official') ? 'missing' : 'off' : '';
+    const reqCount = reqsOf(m.id).length;
+    const reqOpenNow = reqCount > 0 && reqIsOpen(m.id);
     return [h('tr', {
       class: `row${reqsOf(m.id).length ? ' has-reqs' : ''}`, tabindex: '0', dataset: { id: m.id, key: `${m.id}:row` }, 'aria-selected': 'false',
       onclick: ev => {
@@ -666,12 +684,28 @@ function renderMods() {
         openDrawer(m.id, '', false);
       },
       oncontextmenu: ev => { if (!ev.target.closest('input,select')) { ev.preventDefault(); modContextMenu(m, ev.clientX, ev.clientY); } },
-      onkeydown: ev => rowKeys(ev, state.modSel, m.id, () => openDrawer(m.id), paintModSelection),
+      onkeydown: ev => {
+        // Right / Left: show or hide its requirements (as in a tree).
+        if (reqCount && !ev.altKey && !ev.ctrlKey && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') && ev.target === ev.currentTarget) {
+          ev.preventDefault();
+          if ((ev.key === 'ArrowRight') !== reqOpenNow) setReqOpen([m.id], ev.key === 'ArrowRight');
+          return;
+        }
+        rowKeys(ev, state.modSel, m.id, () => openDrawer(m.id), paintModSelection);
+      },
     },
-    h('td', {}, h('input', {
-      type: 'checkbox', 'aria-label': `Select ${m.name}`, tabindex: '-1',
-      onchange: ev => { if (ev.target.checked) state.modSel.add(m.id); else state.modSel.delete(m.id); state.lastModClick = m.id; paintModSelection(); },
-    })),
+    h('td', {}, h('div', { class: 'check-cell' },
+      // Its requirements, shown or hidden; mods with none keep the space, so every checkbox lines up.
+      reqCount ? h('button', {
+        type: 'button', class: `row-chev${reqOpenNow ? ' open' : ''}`, 'aria-expanded': String(reqOpenNow),
+        'aria-label': `${reqOpenNow ? 'Hide' : 'Show'} the ${plural(reqCount, 'requirement')} of ${m.name}`,
+        title: `${reqOpenNow ? 'Hide' : 'Show'} its ${plural(reqCount, 'requirement')}`, dataset: { key: `${m.id}:chev` },
+        onclick: ev => { ev.stopPropagation(); setReqOpen([m.id], !reqOpenNow); },
+      }, icon('chevron-right')) : h('span', { class: 'row-chev-space', 'aria-hidden': 'true' }),
+      h('input', {
+        type: 'checkbox', 'aria-label': `Select ${m.name}`, tabindex: '-1',
+        onchange: ev => { if (ev.target.checked) state.modSel.add(m.id); else state.modSel.delete(m.id); state.lastModClick = m.id; paintModSelection(); },
+      }))),
     h('td', {}, switchBtn),
     h('td', {}, h('div', { class: 'cell-name' },
       h('div', { class: 'name-line' },
@@ -688,6 +722,12 @@ function renderMods() {
         conflictCell(m, byId))),
     h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : h('span', { class: 'ver-text' }, m.version || ''))), ...reqRows(m, neededBy)];
   })), null);
+
+  const withReqs = mods.filter(m => reqsOf(m.id).length); // (the mods listed now: filtered, searched)
+  $('#mods-req-all').hidden = !withReqs.length;
+  const allOpen = withReqs.length > 0 && withReqs.every(m => reqIsOpen(m.id));
+  $('#mods-req-all').lastChild.textContent = allOpen ? 'Collapse all' : 'Expand all';
+  $('#mods-req-all').setAttribute('aria-label', allOpen ? 'Hide the requirements under every mod' : 'Show the requirements under every mod');
 
   markInspected();
   // Empty states: nothing installed vs nothing matching.
@@ -765,7 +805,12 @@ function setModFilter(f) {
   renderMods();
 }
 
-$('#mods-search').addEventListener('input', debounce(renderMods, 120));
+$('#mods-search').addEventListener('input', debounce(() => { state.searchClosed.clear(); renderMods(); }, 120));
+// Collapse all / Expand all: every mod with requirements (the button says which it does now).
+$('#mods-req-all').addEventListener('click', () => {
+  const withReqs = visibleMods().filter(m => reqsOf(m.id).length).map(m => m.id); // the ones listed now
+  setReqOpen(withReqs, !withReqs.every(reqIsOpen));
+});
 $('#mods-sort').value = state.modSort;
 $('#mods-sort').addEventListener('change', ev => {
   state.modSort = ev.target.value;

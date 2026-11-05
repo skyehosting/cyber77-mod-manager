@@ -1,6 +1,9 @@
 'use strict';
 const API = 'https://api.nexusmods.com/v1';
 const GRAPHQL = 'https://api.nexusmods.com/v2/graphql';
+// Nexus's GraphQL answers at most 20 mods per request (it reports more found, but returns 20): asking
+// for more left the rest out, and those were taken as mods with no requirements.
+const GRAPHQL_PAGE = 20;
 /** Browse's "Adult (18+)" entry: only mods flagged as adult content. */
 const ADULT_ONLY = '__adult';
 // Browse's time filter: how many days back each choice reaches.
@@ -103,22 +106,38 @@ class NexusClient {
   getFiles(game, modId) { return this.request(`/games/${game}/mods/${modId}/files.json`); }
 
   /**
-   * Nexus requirements of a mod, from the v2 GraphQL API (v1 has no requirements endpoint).
-   * Returns [{ modId, modName, gameId, url, notes, external }] plus the mod's own gameId.
+   * Many mods' nodes from legacyModsByDomain (`fields`: what to read of each), GRAPHQL_PAGE a request.
+   * If an answer still says it found more than it returned (the page got smaller), the ones left out
+   * are asked again, fewer at a time: a mod is only missing when Nexus does not have it.
    */
+  async modsByIds(game, modIds, fields) {
+    const nodes = [];
+    const ask = async ids => {
+      const data = await this.graphql(`query($ids: [CompositeDomainWithIdInput!]!) {
+        legacyModsByDomain(ids: $ids) { totalCount nodes { modId ${fields} } } }`,
+      { ids: ids.map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
+      const got = data.legacyModsByDomain?.nodes || [];
+      nodes.push(...got);
+      const found = Number(data.legacyModsByDomain?.totalCount) || 0;
+      if (found > got.length && ids.length > 1) {
+        const have = new Set(got.map(n => Number(n.modId)));
+        const left = ids.filter(id => !have.has(id));
+        const step = Math.max(1, Math.floor(got.length / 2) || 1);
+        for (let i = 0; i < left.length; i += step) await ask(left.slice(i, i + step));
+      }
+    };
+    const ids = [...new Set(modIds.map(Number).filter(n => n > 0))];
+    for (let i = 0; i < ids.length; i += GRAPHQL_PAGE) await ask(ids.slice(i, i + GRAPHQL_PAGE));
+    return nodes;
+  }
+
   /** Which mods each of these mods requires (Nexus ids), many at once: Map modId → [modId]. */
   async getRequirementsMany(game, modIds) {
     const out = new Map();
-    const ids = [...new Set(modIds.map(Number).filter(n => n > 0))];
-    for (let i = 0; i < ids.length; i += 50) {
-      const data = await this.graphql(`query($ids: [CompositeDomainWithIdInput!]!) {
-        legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId url externalRequirement } } } } } }`,
-      { ids: ids.slice(i, i + 50).map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
-      for (const n of data.legacyModsByDomain?.nodes || []) {
-        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || [])
-          .map(r => requirementOnNexus({ modId: Number(r.modId) || 0, url: r.url || '', external: !!r.externalRequirement }, game))
-          .filter(r => !r.external).map(r => r.modId).filter(Boolean));
-      }
+    for (const n of await this.modsByIds(game, modIds, 'modRequirements { nexusRequirements { nodes { modId url externalRequirement } } }')) {
+      out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || [])
+        .map(r => requirementOnNexus({ modId: Number(r.modId) || 0, url: r.url || '', external: !!r.externalRequirement }, game))
+        .filter(r => !r.external).map(r => r.modId).filter(Boolean));
     }
     return out;
   }
@@ -129,21 +148,19 @@ class NexusClient {
    */
   async requirementsMany(game, modIds) {
     const out = new Map();
-    const ids = [...new Set(modIds.map(Number).filter(n => n > 0))];
-    for (let i = 0; i < ids.length; i += 50) {
-      const data = await this.graphql(`query($ids: [CompositeDomainWithIdInput!]!) {
-        legacyModsByDomain(ids: $ids) { nodes { modId modRequirements { nexusRequirements { nodes { modId modName url notes externalRequirement } } } } } }`,
-      { ids: ids.slice(i, i + 50).map(modId => ({ gameDomain: game, modId })) }, 'read requirements');
-      for (const n of data.legacyModsByDomain?.nodes || []) {
-        out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).map(r => requirementOnNexus({
-          modId: Number(r.modId) || 0, name: String(r.modName || '').slice(0, 200), url: /^https?:\/\//i.test(r.url || '') ? r.url : '',
-          notes: String(r.notes || '').slice(0, 300), external: !!r.externalRequirement,
-        }, game)));
-      }
+    for (const n of await this.modsByIds(game, modIds, 'modRequirements { nexusRequirements { nodes { modId modName url notes externalRequirement } } }')) {
+      out.set(Number(n.modId), (n.modRequirements?.nexusRequirements?.nodes || []).map(r => requirementOnNexus({
+        modId: Number(r.modId) || 0, name: String(r.modName || '').slice(0, 200), url: /^https?:\/\//i.test(r.url || '') ? r.url : '',
+        notes: String(r.notes || '').slice(0, 300), external: !!r.externalRequirement,
+      }, game)));
     }
     return out;
   }
 
+  /**
+   * Nexus requirements of a mod, from the v2 GraphQL API (v1 has no requirements endpoint).
+   * Returns [{ modId, modName, gameId, url, notes, external }] plus the mod's own gameId.
+   */
   async getRequirements(game, modId) {
     const query = `query($ids: [CompositeDomainWithIdInput!]!) {
       legacyModsByDomain(ids: $ids) { nodes { modId gameId modRequirements {

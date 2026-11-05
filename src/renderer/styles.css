@@ -2968,3 +2968,22 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .aip-dialog h2 { font-size: var(--fs-md); font-weight: var(--fw-bold); }
 .aip-dialog p { font-size: var(--fs-sm); color: var(--text-2); }
 .aip-dialog-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+
+/* ================================================================== Mods: requirement arrows
+   Left of each mod's checkbox: an arrow to show or hide its requirements (">" closed, pointing up
+   when open). Mods without requirements keep the same space, so every checkbox lines up. */
+#mods-table col.w-check { width: 4.4rem; }
+.check-cell { display: flex; align-items: center; gap: 0.35rem; }
+.row-chev, .row-chev-space { flex: none; width: 1.5rem; height: 1.5rem; }
+.row-chev {
+  display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--muted); cursor: pointer;
+}
+.row-chev:hover { color: var(--text); background: var(--surface-3); }
+.row-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row-chev .i { width: 1rem; height: 1rem; transition: transform .15s var(--ease); }
+.row-chev.open { color: var(--text); }
+.row-chev.open .i { transform: rotate(-90deg); }
+#mods-req-all { margin-left: auto; }
+#mods-req-all + .sort-pick { margin-left: var(--sp-2); }
+.toolbar.selecting > #mods-req-all { display: none; }
