@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld('api', {
   reinstall: ids => call('mods:reinstall', ids),
   prioritize: ids => call('mods:prioritize', ids),
   modFiles: id => call('mods:files', id),
+  modImage: (game, modId, version) => call('mods:image', game, modId, version),
   modConflicts: id => call('mods:conflicts', id),
   conflictPlan: ids => call('mods:conflictPlan', ids),
   setFileChoices: choices => call('mods:fileChoices', choices),

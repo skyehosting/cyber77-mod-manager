@@ -9,6 +9,7 @@ if (IS_APPIMAGE) require('./core/hostEnv').dropAppImagePaths(process.env);
 const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
+const { ModImages } = require('./core/modImages');
 const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, linuxLaunchOptions, setsTimezone, STEAM_APP_ID } = require('./core/gameFinder');
 const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
 const { findGameProcess, isGameProcess } = require('./core/gameProcess');
@@ -41,6 +42,7 @@ let modConfig = null;
 let crashes = null;
 let plays = null;
 let perf = null; // the Performance page's readings (only while it is open)
+let modImages = null; // the mods' Nexus pictures (the details panel)
 let lastExport = '';
 // Update before opening: the small window shown meanwhile, and what the check found.
 let splash = null;
@@ -395,6 +397,9 @@ async function boot() {
     .catch(err => logger.error('Could not sort out a switch of saves that was cut off last time (your saves are in the backup made before it)', err.message))
     .finally(() => { try { manager.writeSavesReadme(); } catch (err) { logger.warn('Could not write README.txt beside your save backups', err.message); } });
   manager.on('job', job => send('job', job));
+  modImages = new ModImages({ dir: path.join(app.getPath('userData'), 'mod-images'), nexus: manager.nexus, log: logger });
+  // A finished download brings its mod's picture into the cache, ready for the details panel.
+  manager.downloader.on('done', job => { if (job.modId) modImages.get(job.game, job.modId, job.version).catch(() => {}); });
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
   // Vortex.exe wherever it was installed (the registry knows), unless one was chosen in Settings;
@@ -994,6 +999,11 @@ async function boot() {
   handle('mods:reinstall', ids => manager.reinstall(ids));
   handle('mods:prioritize', ids => manager.prioritize(ids));
   handle('mods:files', id => manager.modFiles(id));
+  // A mod's Nexus picture for the details panel (cached; asked again when its version changes).
+  handle('mods:image', async (game, modId, version) => {
+    const r = await modImages.get(String(game || ''), Number(modId), String(version || '').slice(0, 80));
+    return r ? { url: require('url').pathToFileURL(r.file).href, adult: r.adult } : null;
+  });
   handle('mods:conflicts', id => manager.conflictDetails(id));
   handle('mods:conflictPlan', ids => manager.conflictPlan(Array.isArray(ids) ? ids.map(String).slice(0, 1000) : []));
   handle('mods:fileChoices', choices => manager.setFileChoices(choices && typeof choices === 'object' ? choices : {}));

@@ -1074,11 +1074,6 @@ body.console-open .console-toggle .chevron { transform: none; }
   box-shadow: var(--shadow);
   animation: slide-in .18s var(--ease);
 }
-.drawer-head { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5) var(--sp-5) var(--sp-3); }
-.drawer-heading { flex: 1; min-width: 0; }
-.drawer-title { font-weight: var(--fw-bold); font-size: var(--fs-lg); line-height: 1.3; overflow-wrap: anywhere; letter-spacing: 0; text-transform: none; color: var(--text); }
-.drawer-sub { color: var(--muted); font-size: var(--fs-sm); margin-top: 0.2rem; }
-.drawer-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; padding: 0 var(--sp-5) var(--sp-4); border-bottom: 1px solid var(--line); }
 .drawer-body { flex: 1; overflow: auto; padding: var(--sp-4) var(--sp-5) var(--sp-5); }
 .drawer-body h2 { margin: var(--sp-5) 0 var(--sp-2); }
 .kv { display: grid; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); gap: var(--sp-2) var(--sp-4); font-size: var(--fs-md); margin: 0; }
@@ -2344,11 +2339,6 @@ button.tag:hover { filter: brightness(1.25); }
 }
 body.no-activity .drawer { bottom: 0; }
 body.drawer-open .main { margin-right: var(--panel-w); }
-.drawer-head { padding: 1.4rem 1.4rem 0.9rem; align-items: center; }
-.drawer-title { font-size: var(--fs-lg); }
-.drawer-actions { padding: 0 1.4rem 1rem; border-bottom-color: var(--line-side); }
-.drawer-body { padding: 0.4rem 1.4rem 1.4rem; }
-.drawer-body h2 { margin-top: 1.4rem; }
 .kv { grid-template-columns: 8.2rem minmax(0, 1fr); }
 @media (max-width: 1100px) {
   body.drawer-open .main { margin-right: 0; }
@@ -3114,3 +3104,55 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .perf-empty { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); color: var(--muted); font-size: var(--fs-sm); }
 .perf-empty .i { flex: none; width: 1.1rem; }
 #perf-notes .banner { margin-bottom: var(--sp-3); }
+
+/* ================================================================== mod details panel
+   The top never scrolls: the mod's picture (a fixed 16:9 frame, cropped, never stretched) with its
+   name over the lower edge, Open on Nexus Mods, the actions as square buttons two to a row, and the
+   tabs. Only the chosen tab's pane scrolls. */
+.drawer-top { flex: none; display: flex; flex-direction: column; border-bottom: 1px solid var(--line-side); }
+.drawer-hero { position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: 30vh; overflow: hidden; background: linear-gradient(135deg, var(--surface-3), var(--surface-2)); }
+.drawer-ph { position: absolute; inset: 0; display: grid; place-items: start end; padding: 1.1rem 1.1rem; color: color-mix(in srgb, var(--muted) 30%, transparent); }
+.drawer-ph .i { width: 5rem; height: 5rem; stroke-width: 1.2; }
+.drawer-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.drawer-hero.is-adult .drawer-img { filter: blur(22px) saturate(0.6); transform: scale(1.15); }
+.drawer-reveal { position: absolute; left: 50%; top: 38%; translate: -50% -50%; z-index: 2; border-radius: 0; background: #000b; border-color: #fff4; color: #fff; }
+.drawer-reveal:hover:not(:disabled) { background: #000d; color: #fff; }
+.drawer-scrim { position: absolute; inset: 0; background: linear-gradient(0deg, var(--panel) 0%, color-mix(in srgb, var(--panel) 80%, transparent) 30%, transparent 72%); pointer-events: none; }
+.drawer-heading { position: absolute; left: 1.1rem; right: 1.1rem; bottom: 0.7rem; z-index: 1; min-width: 0; }
+.drawer-cat { color: var(--accent); font-size: var(--fs-xs); font-weight: var(--fw-bold); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-cat:empty { display: none; }
+.drawer-title { margin: 0.1rem 0 0; color: var(--text); font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: 1.25; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 1px 8px #000a; }
+.drawer-sub { margin-top: 0.15rem; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-sub:empty { display: none; }
+.drawer-x { position: absolute; top: 0.6rem; right: 0.6rem; z-index: 3; border-radius: 0; background: #000a; border-color: #fff3; color: #fff; }
+.drawer-x:hover:not(:disabled) { background: #000d; color: #fff; }
+.drawer-nexus { margin: 0.75rem 1.1rem 0; }
+.drawer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; padding: 0.4rem 1.1rem 0.8rem; }
+.drawer-nexus[hidden] + .drawer-actions { padding-top: 0.75rem; }
+.drawer-actions .span2 { grid-column: span 2; }
+/* Square buttons (the panel's actions). */
+.btn.btn-sq { border-radius: 0; }
+.drawer-actions .btn { min-width: 0; justify-content: center; }
+.drawer-actions .btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn.btn-danger-text { color: var(--err-text); }
+.btn.btn-danger-text:hover:not(:disabled) { background: var(--err-soft); color: var(--err-text); }
+.drawer-tabs { display: flex; padding: 0 0.5rem; overflow-x: auto; scrollbar-width: none; }
+.drawer-tab { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; height: 2.5rem; padding: 0 0.55rem; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
+.drawer-tab:hover { color: var(--text); }
+.drawer-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: var(--fw-bold); }
+.drawer-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.drawer-count { min-width: 1.15rem; padding: 0 0.3rem; background: var(--surface-3); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: 1.35; text-align: center; }
+.drawer-count.bad { background: var(--err); color: var(--err-ink); }
+.drawer-body { padding: 1rem 1.1rem 1.4rem; }
+.dpane > h2:first-child, .dpane > :first-child { margin-top: 0; }
+.drawer-body h2 { margin: 1.3rem 0 0.5rem; }
+.drawer-body .btn { border-radius: 0; }
+/* Short windows: the panel scrolls as a whole, with the tabs staying at its top. */
+@media (max-height: 720px) {
+  .drawer { overflow-y: auto; }
+  .drawer-top { display: contents; }
+  .drawer-hero, .drawer-nexus, .drawer-actions { flex: none; }
+  .drawer-tabs { position: sticky; top: 0; z-index: 4; flex: none; background: var(--panel); border-bottom: 1px solid var(--line-side); }
+  .drawer-body { flex: none; overflow: visible; }
+}

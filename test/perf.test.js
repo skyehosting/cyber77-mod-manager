@@ -8,8 +8,9 @@ const { EventEmitter } = require('events');
 const perf = require('../src/core/perf');
 const { updateBeforeOpening } = require('../src/core/launchUpdate');
 
-// Rates over about a second of real time: within 5%.
-const near = (a, b, msg) => assert.ok(Math.abs(a - b) <= Math.abs(b) * 0.05 + 0.5, `${msg || ''} ${a} is not about ${b}`);
+// Rates over about a second of real time, plus however long the second reading takes on a busy
+// machine (seen: 58 ms under the full suite): within 15%. A wrong formula is off by far more.
+const near = (a, b, msg) => assert.ok(Math.abs(a - b) <= Math.abs(b) * 0.15 + 0.5, `${msg || ''} ${a} is not about ${b}`);
 const quiet = { info() {}, warn() {}, error() {}, success() {}, debug() {} };
 
 test('Windows: a sampler line becomes a sample; nonsense is no sample', () => {

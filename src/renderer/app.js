@@ -764,7 +764,7 @@ function modStatusItems(m, neededBy, byId = {}) {
   const upd = state.snap.updates?.[rowUpdateId(m) || m.id];
   if (upd) items.push({ sev: 'info', text: upd.version ? `${upd.version} available` : 'Update available', section: 'update' });
   const needers = neededBy.get(m.id) || [];
-  if (needers.length) items.push({ sev: 'info', text: `Needed by ${needers.length}`, section: 'reqs', detail: needers.join(', ') });
+  if (needers.length) items.push({ sev: 'info', text: `Needed by ${needers.length}`, section: 'needed', detail: needers.join(', ') });
   if (c?.wins) items.push({ sev: 'ok', text: `Wins ${plural(c.wins, 'file')}`, section: 'conflicts', detail: `over ${names(c.with)}` });
   const twin = state.snap.vortex?.twins?.[m.id];
   if (twin) items.push({ sev: 'info', text: 'Also in Vortex', section: '', detail: `while it is enabled here, Vortex's copy is switched off${twin.enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}` });
@@ -793,8 +793,8 @@ function statusSection(items) {
       h('span', { class: `sev-dot sev-${i.sev}`, 'aria-hidden': 'true' }),
       h('span', { class: 'drawer-li-text' }, i.text, i.detail ? h('span', { class: 'muted' }, ` · ${i.detail}`) : null),
       i.section ? h('button', {
-        class: 'btn btn-sm', dataset: { gotoSection: i.section },
-        onclick: ev => $('#drawer-body').querySelector(`[data-section="${ev.currentTarget.dataset.gotoSection}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+        class: 'btn btn-sm btn-sq', dataset: { gotoSection: i.section },
+        onclick: ev => showDrawerSection(ev.currentTarget.dataset.gotoSection, true),
       }, h('span', {}, 'Show')) : null))),
   ];
 }
@@ -804,15 +804,13 @@ function dropDeadLinks(body) {
   for (const b of body.querySelectorAll('[data-goto-section]')) if (!body.querySelector(`[data-section="${b.dataset.gotoSection}"]`)) b.remove();
 }
 
-/** The details panel's Requirements: each mod this one needs, whether it is there and on, and the fix. */
-function reqSection(m, neededBy) {
+/** The details panel's Requires tab: each mod this one needs, whether it is there and on, and the fix. */
+function reqSection(m) {
   const list = reqsOf(m.id);
-  const needers = neededBy.get(m.id) || [];
-  if (!list.length && !needers.length) return [];
+  if (!list.length) return [h('p', { class: 'empty-inline', dataset: { section: 'reqs' } }, m.modId ? 'This mod needs no other mod.' : 'Not from Nexus: its requirements are not known.')];
   const STATE = { on: ['tag-ok', 'On'], off: ['tag-warn', 'Off'], missing: ['tag-err', 'Missing'], outside: ['tag-off', 'Not managed here'], builtin: ['tag-ok', 'Part of the game'], official: ['tag-warn', 'Not installed'], external: ['tag-off', 'Not on Nexus'] };
   return [
-    h('h2', { dataset: { section: 'reqs' } }, list.length ? `Requirements · ${list.length}` : 'Requirements'),
-    list.length ? h('div', { class: 'drawer-list' }, list.map(q => {
+    h('div', { class: 'drawer-list', dataset: { section: 'reqs' } }, list.map(q => {
       const [cls, label] = STATE[q.state] || ['tag-off', String(q.state || '')];
       const page = Number(q.modId) > 0 ? `https://www.nexusmods.com/cyberpunk2077/mods/${Number(q.modId)}` : '';
       const action = q.state === 'off' && q.id
@@ -825,9 +823,21 @@ function reqSection(m, neededBy) {
           ? h('button', { class: 'link-btn quiet', title: q.id ? `${q.name}: open its details` : `${q.name}: open its Nexus page`, onclick: () => { if (q.id) openDrawer(q.id); else api.openLink(page); } }, q.name)
           : q.name),
         h('span', { class: `tag ${cls}` }, label), action);
-    })) : null,
-    needers.length ? h('p', { class: 'drawer-note' }, `Needed by ${needers.join(', ')}`) : null,
+    })),
   ];
+}
+
+/** The details panel's Needed by tab: the mods that need this one (each opens its own details). */
+function neededSection(m, neededBy) {
+  const needers = neededBy.get(m.id) || [];
+  if (!needers.length) return [h('p', { class: 'empty-inline', dataset: { section: 'needed' } }, 'No other mod needs this one.')];
+  const byName = new Map(allMods().map(x => [x.name, x]));
+  return [h('div', { class: 'drawer-list', dataset: { section: 'needed' } }, needers.map(name => {
+    const o = byName.get(name);
+    return h('div', { class: 'drawer-li' },
+      h('span', { class: 'drawer-li-text' }, o ? h('button', { class: 'link-btn quiet', title: `${name}: open its details`, onclick: () => openDrawer(o.id) }, name) : name),
+      o ? h('span', { class: `tag ${o.enabled ? 'tag-ok' : 'tag-off'}` }, o.enabled ? 'On' : 'Off') : null);
+  }))];
 }
 
 function renderMods() {
@@ -1236,6 +1246,7 @@ function markInspected() {
 
 function closeDrawer() {
   state.drawerMod = null;
+  drawerTabMod = ''; // opened again later: it starts at Overview
   setDrawerShown(false);
   state.drawerSig = '';
   if (drawerOpener) restoreFocus(drawerOpener, drawerOpenerKey);
@@ -1245,10 +1256,132 @@ function closeDrawer() {
 /** What the drawer shows depends on these; a snapshot that changes none of them leaves it alone. */
 const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedAt, m.fileCount, m.warnings, m.health, state.snap.conflicts[m.id], state.snap.updates?.[m.id], state.modLogProblems[m.id],
   reqsOf(m.id), state.snap.vortex?.overlaps?.[m.id], state.snap.vortex?.twins?.[m.id], modCatOf(m), neededByMap(allMods()).get(m.id) || []]);
-// The Files list in the details panel: folded unless opened (it stays open for the next mod once opened).
-let drawerFilesOpen = false;
+// The tab the details panel shows (it stays while the same mod is open; another mod starts at Overview).
+let drawerTab = 'ov';
+let drawerTabMod = '';
 
 let drawerSeq = 0;
+
+/**
+ * The panel's picture: the mod's Nexus picture (cached by the app), or a placeholder. Adult pictures
+ * stay blurred until "Show adult image" (remembered per mod). Asked again only when the mod or its
+ * version changes, so redrawing the panel does not flicker.
+ */
+const drawerImages = new Map();
+let drawerImageFor = '';
+function paintDrawerImage(m) {
+  const key = m.modId ? `${m.game || 'cyberpunk2077'}:${m.modId}:${m.version || ''}` : '';
+  if (key === drawerImageFor) return;
+  drawerImageFor = key;
+  const img = $('#drawer-img');
+  const reveal = $('#drawer-reveal');
+  const adultKey = `${m.game || 'cyberpunk2077'}:${m.modId}`;
+  const show = r => {
+    if (drawerImageFor !== key) return; // another mod opened meanwhile
+    const shown = new Set(store.get('adultShown', []));
+    img.hidden = !r;
+    if (r) img.src = r.url; else img.removeAttribute('src');
+    const blur = !!r?.adult && !shown.has(adultKey);
+    $('#drawer-hero').classList.toggle('is-adult', blur);
+    reveal.hidden = !blur;
+    reveal.onclick = () => {
+      store.set('adultShown', [...new Set([...store.get('adultShown', []), adultKey])].slice(-500));
+      $('#drawer-hero').classList.remove('is-adult');
+      reveal.hidden = true;
+    };
+  };
+  img.hidden = true;
+  reveal.hidden = true;
+  $('#drawer-hero').classList.remove('is-adult');
+  if (!key) return;
+  if (drawerImages.has(key)) { show(drawerImages.get(key)); return; }
+  api.modImage(m.game || 'cyberpunk2077', m.modId, m.version || '').then(r => {
+    const v = r?.ok || null;
+    if (v) drawerImages.set(key, v); // no picture now (offline, an error): asked again next time
+    show(v);
+  }).catch(() => {});
+}
+// A picture that fails to load (its cache file was replaced) gives way to the placeholder, and is asked for again next time.
+$('#drawer-img').addEventListener('error', ev => {
+  ev.currentTarget.hidden = true;
+  drawerImages.delete(drawerImageFor);
+  drawerImageFor = '';
+});
+
+/** The panel's top: the picture, category, name and version, and Open on Nexus Mods. */
+function paintDrawerHead(m, cat, sub) {
+  paintDrawerImage(m);
+  $('#drawer-cat').textContent = cat;
+  $('#drawer-title').textContent = m.name;
+  $('#drawer-title').title = m.name;
+  $('#drawer-sub').textContent = sub;
+  const nexus = $('#drawer-nexus');
+  nexus.hidden = !m.modId;
+  nexus.onclick = () => api.openNexus(m.game, m.modId);
+}
+
+/** The actions as square buttons, two to a row (an odd last one takes the whole row). */
+function paintDrawerActions(buttons) {
+  const list = buttons.filter(Boolean);
+  list.forEach(b => b.classList.add('btn-sq'));
+  if (list.length % 2) list.at(-1).classList.add('span2');
+  $('#drawer-actions').replaceChildren(...list);
+}
+
+/**
+ * The tabs and their panes. `panes`: [{ key, label, count, bad, nodes }]. Only the chosen pane is
+ * shown; Status items and openDrawer(id, section) reach the others through showDrawerSection.
+ */
+function paintDrawerTabs(panes) {
+  if (!panes.some(p => p.key === drawerTab)) drawerTab = 'ov';
+  $('#drawer-tabs').replaceChildren(...panes.map(p => h('button', {
+    class: 'drawer-tab', role: 'tab', id: `dtab-${p.key}`, 'aria-controls': `dpane-${p.key}`, 'aria-selected': String(p.key === drawerTab),
+    tabindex: p.key === drawerTab ? '0' : '-1', dataset: { key: `dtab:${p.key}`, tab: p.key },
+    onclick: () => showDrawerTab(p.key),
+  }, h('span', {}, p.label), p.count !== undefined && p.count !== '' ? h('span', { class: `drawer-count${p.bad ? ' bad' : ''}` }, String(p.count)) : null)));
+  $('#drawer-body').replaceChildren(...panes.map(p => h('div', {
+    class: 'dpane', role: 'tabpanel', tabindex: '0', id: `dpane-${p.key}`, 'aria-labelledby': `dtab-${p.key}`, dataset: { pane: p.key }, hidden: p.key !== drawerTab,
+  }, ...p.nodes.filter(Boolean))));
+}
+
+function showDrawerTab(key) {
+  if (!$(`#dpane-${key}`)) return;
+  drawerTab = key;
+  for (const t of $$('#drawer-tabs [role="tab"]')) {
+    const on = t.dataset.tab === key;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+  }
+  for (const p of $$('#drawer-body .dpane')) p.hidden = p.dataset.pane !== key;
+  $('#drawer-body').scrollTop = 0;
+}
+
+/** Shows the tab holding a section (status, reqs, needed, conflicts, update, health, logs, warnings, files) and scrolls to it. */
+function showDrawerSection(sec, smooth = false) {
+  const el = $('#drawer-body').querySelector(`[data-section="${sec}"]`);
+  const pane = el?.closest('.dpane');
+  if (!pane) return;
+  showDrawerTab(pane.dataset.pane);
+  el.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+}
+
+// Arrow keys move between the tabs (the tab list is one stop for Tab).
+$('#drawer-tabs').addEventListener('keydown', ev => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) return;
+  const tabs = $$('#drawer-tabs [role="tab"]');
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  ev.preventDefault();
+  const next = ev.key === 'Home' ? 0 : ev.key === 'End' ? tabs.length - 1 : (i + (ev.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[next].focus();
+  showDrawerTab(tabs[next].dataset.tab);
+});
+
+/** A newly opened mod starts at Overview; the same mod redrawn keeps its tab (a section asked for picks its own). */
+function startDrawerTab(id) {
+  if (drawerTabMod !== id) drawerTab = 'ov';
+  drawerTabMod = id;
+}
 
 async function openDrawer(id, focusSection = '', takeFocus = true) {
   const m = allMods().find(x => x.id === id);
@@ -1267,62 +1400,75 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
   const [files, conflicts] = await Promise.all([fetchModFiles(id), hasConflicts ? fetchModConflicts(id) : []]);
   // A newer request (another mod, or a newer snapshot) has started: this result is stale.
   if (seq !== drawerSeq || state.drawerMod !== id) return;
+  startDrawerTab(id);
 
   const drawer = $('#drawer');
   const body = $('#drawer-body');
   const keepScroll = wasOpen ? body.scrollTop : 0;
   const byId = Object.fromEntries(allMods().map(x => [x.id, x.name]));
   const kv = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
-  const act = (label, name, a, kind = '') => h('button', { class: `btn btn-sm ${kind}`, dataset: { key: `act:${a}` }, onclick: () => modAction(a, [m.id]) }, icon(name), h('span', {}, label));
+  const act = (label, name, a, kind = '') => h('button', { class: `btn ${kind}`, dataset: { key: `act:${a}` }, onclick: () => modAction(a, [m.id]) }, icon(name), h('span', {}, label));
   const fileList = files || [];
+  const upd = state.snap.updates?.[m.id];
 
   keepFocus(drawer, () => {
-    $('#drawer-title').textContent = m.name;
-    $('#drawer-sub').textContent = [m.modName !== m.name ? m.modName : '', m.version ? `v${m.version}` : '', m.author].filter(Boolean).join(' · ');
-    const nexus = $('#drawer-nexus');
-    nexus.hidden = !m.modId;
-    nexus.onclick = () => api.openNexus(m.game, m.modId);
-    $('#drawer-actions').replaceChildren(...[
+    paintDrawerHead(m, [modCatOf(m) || (m.modId ? 'Nexus mod' : 'Local file'), m.enabled ? '' : 'Disabled'].filter(Boolean).join(' · '),
+      [m.author, m.version ? `v${m.version}` : '', m.modName !== m.name ? m.modName : ''].filter(Boolean).join(' · '));
+    paintDrawerActions([
       m.enabled ? act('Disable', 'ban', 'disable') : act('Enable', 'check', 'enable', 'btn-primary'),
+      upd ? act(upd.version ? `Update to ${upd.version}` : 'Update', 'up-circle', 'update', 'btn-primary') : null,
       hasConflicts && !(conflicts || []).length ? act('Win conflicts', 'arrow-up', 'prioritize') : null,
+      h('button', { class: 'btn', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`app:${m.id}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
+      h('button', { class: 'btn', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
       act('Reinstall', 'rotate', 'reinstall'),
-      h('button', { class: 'btn btn-sm', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`app:${m.id}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
-      h('button', { class: 'btn btn-sm', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
-      act('Uninstall', 'minus-circle', 'uninstall'),
-    ].filter(Boolean));
+      act('Uninstall', 'minus-circle', 'uninstall', 'btn-danger-text'),
+    ]);
     const all = allMods();
     const neededBy = neededByMap(all);
-    const files = h('details', { class: 'drawer-fold', open: drawerFilesOpen, ontoggle: ev => { drawerFilesOpen = ev.currentTarget.open; } },
-      h('summary', {}, icon('chevron-right'), h('span', {}, `Files · ${fileList.length || m.fileCount}`)),
-      fileList.length
-        ? h('div', { class: 'filelist' }, fileList.map(f => h('div', {},
-          h('span', {}, f.dest),
-          m.enabled && !f.deployed ? h('span', { class: 'lost', title: f.owner ? `The copy from ${byId[f.owner] || f.owner} is in the game` : 'Not in the game folder' }, f.owner ? `overridden by ${byId[f.owner] || 'another mod'}` : 'missing') : null)))
-        : h('div', { class: 'empty-inline' }, m.fileCount ? 'The file list could not be read. Reinstall the mod to rebuild it.' : 'This mod installed no files.'));
-    body.replaceChildren(...[
-      h('dl', { class: 'kv' },
-        kv('Status', !m.enabled ? h('span', { class: 'tag' }, 'Disabled')
-          : m.health ? h('span', { class: 'tag tag-warn' }, 'Enabled · needs repair') : h('span', { class: 'tag tag-ok' }, 'Enabled')),
-        kv('Type', m.type),
-        kv('Category', modCatOf(m) || 'Unassigned'),
-        kv('File category', CAT_LABEL[m.category] || m.category),
-        m.dependencyOf ? kv('Required by', m.dependencyOf) : null,
-        kv('Priority', `${m.priority}${hasConflicts ? ' — higher wins file conflicts' : ''}`),
-        kv('Installed', new Date(m.installedAt).toLocaleString()),
-        m.skipped ? kv('Not installed', `${plural(m.skipped, 'file')} (readmes, images, unknown files)`) : null),
-      ...statusSection(modStatusItems(m, neededBy, Object.fromEntries(all.map(x => [x.id, x])))),
-      ...reqSection(m, neededBy),
-      ...conflictSection(m, conflicts || []),
-      m.warnings?.length ? h('h2', { dataset: { section: 'warnings' } }, 'Install warnings') : null,
-      m.warnings?.length ? h('ul', { class: 'warnlist' }, m.warnings.map(w => h('li', {}, w))) : null,
-      ...drawerSections.flatMap(fn => fn(m) || []),
-      files,
+    const items = modStatusItems(m, neededBy, Object.fromEntries(all.map(x => [x.id, x])));
+    const problems = items.filter(i => i.sev === 'err' || i.sev === 'warn').length;
+    const reqs = reqsOf(m.id);
+    paintDrawerTabs([
+      {
+        key: 'ov', label: 'Overview', count: problems || '', bad: problems > 0,
+        nodes: [
+          ...statusSection(items),
+          h('h2', {}, 'Details'),
+          h('dl', { class: 'kv' },
+            kv('Status', !m.enabled ? h('span', { class: 'tag' }, 'Disabled')
+              : m.health ? h('span', { class: 'tag tag-warn' }, 'Enabled · needs repair') : h('span', { class: 'tag tag-ok' }, 'Enabled')),
+            kv('Version', m.version ? `${m.version}${upd?.version ? ` (${upd.version} on Nexus)` : ''}` : '—'),
+            m.author ? kv('Author', m.author) : null,
+            kv('Type', m.type),
+            kv('Category', modCatOf(m) || 'Unassigned'),
+            kv('File category', CAT_LABEL[m.category] || m.category),
+            m.dependencyOf ? kv('Required by', m.dependencyOf) : null,
+            kv('Priority', `${m.priority}${hasConflicts ? ' — higher wins file conflicts' : ''}`),
+            kv('Installed', new Date(m.installedAt).toLocaleString()),
+            m.modId ? kv('Nexus mod', String(m.modId)) : null,
+            m.skipped ? kv('Not installed', `${plural(m.skipped, 'file')} (readmes, images, unknown files)`) : null),
+          m.warnings?.length ? h('h2', { dataset: { section: 'warnings' } }, 'Install warnings') : null,
+          m.warnings?.length ? h('ul', { class: 'warnlist' }, m.warnings.map(w => h('li', {}, w))) : null,
+          ...drawerSections.flatMap(fn => fn(m) || []),
+        ],
+      },
+      { key: 'reqs', label: 'Requires', count: reqs.length, bad: reqs.some(q => q.state === 'missing' || (m.enabled && q.state === 'off')), nodes: reqSection(m) },
+      { key: 'needed', label: 'Needed by', count: (neededBy.get(m.id) || []).length, nodes: neededSection(m, neededBy) },
+      (conflicts || []).length ? { key: 'conflicts', label: 'Conflicts', count: conflicts.length, nodes: conflictSection(m, conflicts) } : null,
+      {
+        key: 'files', label: 'Files', count: fileList.length || m.fileCount,
+        nodes: [fileList.length
+          ? h('div', { class: 'filelist', dataset: { section: 'files' } }, fileList.map(f => h('div', {},
+            h('span', {}, f.dest),
+            m.enabled && !f.deployed ? h('span', { class: 'lost', title: f.owner ? `The copy from ${byId[f.owner] || f.owner} is in the game` : 'Not in the game folder' }, f.owner ? `overridden by ${byId[f.owner] || 'another mod'}` : 'missing') : null)))
+          : h('div', { class: 'empty-inline', dataset: { section: 'files' } }, m.fileCount ? 'The file list could not be read. Reinstall the mod to rebuild it.' : 'This mod installed no files.')],
+      },
     ].filter(Boolean));
     dropDeadLinks(body);
   }, '#drawer-close');
 
   setDrawerShown(true);
-  if (focusSection) body.querySelector(`[data-section="${focusSection}"]`)?.scrollIntoView({ block: 'start' });
+  if (focusSection) showDrawerSection(focusSection);
   else body.scrollTop = keepScroll;
   if (!wasOpen && takeFocus && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
 }
@@ -1333,48 +1479,59 @@ function openVortexDrawer(m, takeFocus = true, focusSection = '') {
   if (drawer.hidden) { drawerOpener = document.activeElement; drawerOpenerKey = drawerOpener?.closest?.('[data-key]')?.dataset.key || ''; }
   state.drawerMod = m.id;
   state.drawerSig = drawerSignature(m);
+  startDrawerTab(m.id);
   const vx = state.snap.vortex || {};
   const u = state.snap.updates?.[m.id];
   const ours = state.snap.mods.filter(o => (vx.overlaps?.[o.id] || []).includes(m.id));
   const kv = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
   keepFocus(drawer, () => {
-    $('#drawer-title').textContent = m.name;
-    $('#drawer-sub').textContent = ['Managed by Vortex', m.version ? `v${m.version}` : '', m.author].filter(Boolean).join(' · ');
-    const nexus = $('#drawer-nexus');
-    nexus.hidden = !m.modId;
-    nexus.onclick = () => api.openNexus(m.game, m.modId);
-    $('#drawer-actions').replaceChildren(...[
+    paintDrawerHead(m, [modCatOf(m) || 'Vortex', 'Managed by Vortex'].join(' · '), [m.author, m.version ? `v${m.version}` : ''].filter(Boolean).join(' · '));
+    paintDrawerActions([
       m.enabled
-        ? h('button', { class: 'btn btn-sm', dataset: { key: 'act:disable' }, onclick: () => modAction('disable', [m.id]) }, icon('ban'), h('span', {}, 'Disable in Vortex'))
-        : h('button', { class: 'btn btn-sm btn-primary', dataset: { key: 'act:enable' }, onclick: () => modAction('enable', [m.id]) }, icon('check'), h('span', {}, 'Enable in Vortex')),
-      h('button', { class: 'btn btn-sm', title: 'This app manages it from now on; Vortex keeps it, switched off', onclick: () => moveFromVortex([m.id]) }, icon('download'), h('span', {}, 'Move to this app')),
-      h('button', { class: 'btn btn-sm', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
-      h('button', { class: 'btn btn-sm', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`vx:${m.vortexId}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
-      h('button', { class: 'btn btn-sm', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the Vortex mod "${m.name}": is anything wrong with it? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
+        ? h('button', { class: 'btn', dataset: { key: 'act:disable' }, onclick: () => modAction('disable', [m.id]) }, icon('ban'), h('span', {}, 'Disable in Vortex'))
+        : h('button', { class: 'btn btn-primary', dataset: { key: 'act:enable' }, onclick: () => modAction('enable', [m.id]) }, icon('check'), h('span', {}, 'Enable in Vortex')),
+      u ? h('button', { class: 'btn btn-primary', dataset: { key: 'act:update' }, onclick: () => modAction('update', [m.id]) }, icon('up-circle'), h('span', {}, u.version ? `Update to ${u.version}` : 'Update')) : null,
+      h('button', { class: 'btn', title: 'This app manages it from now on; Vortex keeps it, switched off', onclick: () => moveFromVortex([m.id]) }, icon('download'), h('span', {}, 'Move to this app')),
+      h('button', { class: 'btn', onclick: () => run(api.openVortex()) }, icon('vortex'), h('span', {}, 'Open Vortex')),
+      h('button', { class: 'btn', title: 'See this mod\'s files and edit them', onclick: () => { closeDrawer?.(); openConfigFor(`vx:${m.vortexId}`); } }, icon('file-code'), h('span', {}, 'Edit files')),
+      h('button', { class: 'btn', title: 'Ask the AI assistant about this mod', onclick: () => askAi(`Look at the Vortex mod "${m.name}": is anything wrong with it? What should I do?`) }, icon('sparkle'), h('span', {}, 'Ask AI')),
     ]);
     const all = allMods();
     const neededBy = neededByMap(all);
-    $('#drawer-body').replaceChildren(...[
-      h('dl', { class: 'kv' },
-        kv('Status', m.enabled ? h('span', { class: 'tag tag-ok' }, 'Deployed by Vortex') : h('span', { class: 'tag' }, 'Disabled in Vortex')),
-        kv('Vortex profile', vx.activeProfileName || '—'),
-        kv('Category', modCatOf(m) || 'Unassigned'),
-        kv('Files in the game', String(m.fileCount)),
-        m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
-        kv('Changes', 'Switching it on or off here is done without opening Vortex (if Vortex is open, it closes for a moment). Move to this app to manage it here entirely.')),
-      ...statusSection(modStatusItems(m, neededBy, Object.fromEntries(all.map(x => [x.id, x])))),
-      ...reqSection(m, neededBy),
-      u ? h('h2', { dataset: { section: 'update' } }, 'Update available') : null,
-      u ? h('div', { class: 'notice notice-info' }, icon('up-circle'),
-        h('div', { class: 'notice-text' }, h('div', { class: 'name' }, `${u.name}${u.version ? ` · v${u.version}` : ''}`), h('div', { class: 'subname' }, 'Updating moves it to this app, which downloads and installs the new version. Vortex is not opened.')),
-        h('button', { class: 'btn btn-sm btn-primary', onclick: () => modAction('update', [m.id]) }, 'Update')) : null,
-      ours.length ? h('h2', {}, `Shares files with this app's mods · ${ours.length}`) : null,
-      ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
-    ].filter(Boolean));
+    const items = modStatusItems(m, neededBy, Object.fromEntries(all.map(x => [x.id, x])));
+    const problems = items.filter(i => i.sev === 'err' || i.sev === 'warn').length;
+    const reqs = reqsOf(m.id);
+    paintDrawerTabs([
+      {
+        key: 'ov', label: 'Overview', count: problems || '', bad: problems > 0,
+        nodes: [
+          ...statusSection(items),
+          h('h2', {}, 'Details'),
+          h('dl', { class: 'kv' },
+            kv('Status', m.enabled ? h('span', { class: 'tag tag-ok' }, 'Deployed by Vortex') : h('span', { class: 'tag' }, 'Disabled in Vortex')),
+            kv('Version', m.version || '—'),
+            m.author ? kv('Author', m.author) : null,
+            kv('Vortex profile', vx.activeProfileName || '—'),
+            kv('Category', modCatOf(m) || 'Unassigned'),
+            kv('Files in the game', String(m.fileCount)),
+            m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
+            m.modId ? kv('Nexus mod', String(m.modId)) : null,
+            kv('Changes', 'Switching it on or off here is done without opening Vortex (if Vortex is open, it closes for a moment). Move to this app to manage it here entirely.')),
+          u ? h('h2', { dataset: { section: 'update' } }, 'Update available') : null,
+          u ? h('div', { class: 'notice notice-info' }, icon('up-circle'),
+            h('div', { class: 'notice-text' }, h('div', { class: 'name' }, `${u.name}${u.version ? ` · v${u.version}` : ''}`), h('div', { class: 'subname' }, 'Updating moves it to this app, which downloads and installs the new version. Vortex is not opened.')),
+            h('button', { class: 'btn btn-sm btn-primary btn-sq', onclick: () => modAction('update', [m.id]) }, 'Update')) : null,
+          ours.length ? h('h2', {}, `Shares files with this app's mods · ${ours.length}`) : null,
+          ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
+        ],
+      },
+      { key: 'reqs', label: 'Requires', count: reqs.length, bad: reqs.some(q => q.state === 'missing' || (m.enabled && q.state === 'off')), nodes: reqSection(m) },
+      { key: 'needed', label: 'Needed by', count: (neededBy.get(m.id) || []).length, nodes: neededSection(m, neededBy) },
+    ]);
     dropDeadLinks($('#drawer-body'));
   }, '#drawer-close');
   setDrawerShown(true);
-  if (focusSection) $('#drawer-body').querySelector(`[data-section="${focusSection}"]`)?.scrollIntoView({ block: 'start' });
+  if (focusSection) showDrawerSection(focusSection);
   if (takeFocus && !drawer.contains(document.activeElement)) $('#drawer-close').focus();
 }
 

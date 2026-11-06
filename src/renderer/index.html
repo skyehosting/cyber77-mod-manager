@@ -206,7 +206,6 @@
             </select>
           </label>
           <label class="sort-pick" title="Sort the list (the recent ones show when each change happened)">
-            <span class="sort-label">Sort</span>
             <select id="mods-sort" aria-label="Sort mods">
               <option value="az">A to Z</option>
               <option value="za">Z to A</option>
@@ -1161,15 +1160,24 @@
 
   <!-- DRAWER: mod details -->
   <aside class="drawer" id="drawer" hidden role="dialog" aria-labelledby="drawer-title">
-    <div class="drawer-head">
-      <div class="drawer-heading">
-        <h2 class="drawer-title" id="drawer-title"></h2>
-        <div class="drawer-sub" id="drawer-sub"></div>
+    <!-- The top never scrolls: the mod's picture with its name, Open on Nexus, the actions, the tabs. -->
+    <div class="drawer-top">
+      <div class="drawer-hero" id="drawer-hero">
+        <div class="drawer-ph" aria-hidden="true"><svg class="i"><use href="#i-package"/></svg></div>
+        <img class="drawer-img" id="drawer-img" alt="" hidden>
+        <button class="btn btn-sm drawer-reveal" id="drawer-reveal" hidden><svg class="i"><use href="#i-eye"/></svg><span>Show adult image</span></button>
+        <div class="drawer-scrim" aria-hidden="true"></div>
+        <div class="drawer-heading">
+          <div class="drawer-cat" id="drawer-cat"></div>
+          <h2 class="drawer-title" id="drawer-title"></h2>
+          <div class="drawer-sub" id="drawer-sub"></div>
+        </div>
+        <button class="btn btn-icon drawer-x" id="drawer-close" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
       </div>
-      <button class="btn btn-icon btn-ghost" id="drawer-nexus" hidden title="Open the mod page on Nexus Mods" aria-label="Open on Nexus Mods"><svg class="i"><use href="#i-external"/></svg></button>
-      <button class="btn btn-icon" id="drawer-close" title="Close (Esc)" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
+      <button class="btn btn-primary btn-sq drawer-nexus" id="drawer-nexus" hidden title="Open the mod page on Nexus Mods"><svg class="i"><use href="#i-external"/></svg><span>Open on Nexus Mods</span></button>
+      <div class="drawer-actions" id="drawer-actions"></div>
+      <div class="drawer-tabs" id="drawer-tabs" role="tablist" aria-label="Mod details"></div>
     </div>
-    <div class="drawer-actions" id="drawer-actions"></div>
     <div class="drawer-body" id="drawer-body"></div>
   </aside>
 
