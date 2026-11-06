@@ -382,6 +382,8 @@ test('a Vortex mod from mod.io (modioMod) or another site keeps its ids apart (n
   st.persistent.mods.cyberpunk2077.beta.attributes.source = 'gta5mods'; // another site's extension: its ids are its own
   st.persistent.mods.cyberpunk2077.alpha.attributes.source = 'website'; // a website download Vortex matched on Nexus
   fs.writeFileSync(file, JSON.stringify(st));
+  const newer = new Date(Date.now() + 30e3);
+  fs.utimesSync(file, newer, newer);
   const mods = mgr.vortex.read().mods;
   const g = mods.find(m => m.vortexId === 'gamma');
   assert.strictEqual(g.modId, 0, 'not a Nexus id');
@@ -390,6 +392,8 @@ test('a Vortex mod from mod.io (modioMod) or another site keeps its ids apart (n
   // An extension naming its source 'modio' with the usual id attributes: those are mod.io ids.
   st.persistent.mods.cyberpunk2077.beta.attributes.source = 'modio';
   fs.writeFileSync(file, JSON.stringify(st));
+  const later = new Date(Date.now() + 60e3); // a newer file for sure (the read is cached by its time; a fast machine writes twice in one tick)
+  fs.utimesSync(file, later, later);
   const b2 = mgr.vortex.read().mods.find(m => m.vortexId === 'beta');
   assert.deepStrictEqual([b2.modId, b2.modio], [0, { id: 20, fileId: 200 }]);
   assert.strictEqual(mods.find(m => m.vortexId === 'alpha').modId, 10, 'the modId Vortex keeps is a Nexus id whatever its own source says');
