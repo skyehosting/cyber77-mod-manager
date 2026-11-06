@@ -230,6 +230,21 @@ class ModioClient {
     };
   }
 
+  /** A mod's files for PC, newest first: [{ id, version, fileName, size, added, changelog, live }]. */
+  async files(modId) {
+    const id = Number(modId);
+    const [m, r] = await Promise.all([this.mod(id), this.request(`/games/${GAME_ID}/mods/${id}/files`, { _sort: '-date_added', _limit: '50' })]);
+    const pc = f => {
+      const plats = Array.isArray(f.platforms) ? f.platforms : [];
+      return !plats.length || plats.some(p => p.platform === 'windows' && Number(p.status) !== 2); // 2: denied
+    };
+    return (Array.isArray(r.data) ? r.data : []).filter(pc).map(f => ({
+      id: Number(f.id), version: String(f.version || '').slice(0, 60), fileName: String(f.filename || '').slice(0, 200),
+      size: Number(f.filesize) || 0, added: (Number(f.date_added) || 0) * 1000, changelog: String(f.changelog || '').replace(/<[^>]+>/g, '').slice(0, 2000),
+      virusPositive: Number(f.virus_positive) || 0, live: Number(f.id) === m.fileId,
+    })).filter(f => f.id > 0);
+  }
+
   /** Where to download a file right now (mod.io's address can expire, so it is never kept). */
   async downloadUrl(modId, fileId) {
     const f = await this.request(`/games/${GAME_ID}/mods/${Number(modId)}/files/${Number(fileId)}`);

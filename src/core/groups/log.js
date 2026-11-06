@@ -60,23 +60,27 @@ const str = (v, max) => (typeof v === 'string' && v.length <= max ? v : null);
 // Control characters, invisible and right-to-left marks out (no names that hide or reverse text).
 const cleanName = (v, max = 40) => { const s = typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, '').trim().slice(0, max) : ''; return s || null; };
 const posInt = v => (Number.isSafeInteger(v) && v > 0 ? v : null);
+// A mod's id on a list: a Nexus mod's (positive), or a mod.io mod's as a negative number (-id), so the
+// two can never be taken for each other. Apps before mod.io support skip the negative ones.
+const modKey = v => (Number.isSafeInteger(v) && v !== 0 ? v : null);
 
 /** A mod entry as the list keeps it (anything else in it is dropped). */
 function cleanMod(m) {
   if (!m || typeof m !== 'object') return null;
-  const modId = posInt(m.modId);
-  const fileId = posInt(m.fileId);
+  const modId = modKey(m.modId);
+  const fileId = modKey(m.fileId);
   const name = cleanName(m.name, 120);
-  if (!modId || !fileId || !name) return null;
+  if (!modId || !fileId || !name || Math.sign(modId) !== Math.sign(fileId)) return null; // a mod and its file on one site
   return {
     modId, fileId, name,
+    author: cleanName(m.author, 80) || '',
     version: cleanName(m.version, 40) || '',
     file: cleanName(m.file, 160) || '',
     category: cleanName(m.category, 60) || '',
     size: Number.isSafeInteger(m.size) && m.size >= 0 ? m.size : 0,
     adult: m.adult === true,
     // Its requirements on Nexus (shown as the mod's dropdown; each member resolves them for themselves).
-    reqs: Array.isArray(m.reqs) ? m.reqs.slice(0, 50).map(r => ({ modId: posInt(r?.modId), name: cleanName(r?.name, 120) || '' })).filter(r => r.modId) : [],
+    reqs: Array.isArray(m.reqs) ? m.reqs.slice(0, 50).map(r => ({ modId: modKey(r?.modId), name: cleanName(r?.name, 120) || '' })).filter(r => r.modId && Math.sign(r.modId) === Math.sign(modId)) : [],
   };
 }
 
@@ -288,8 +292,8 @@ function apply(list, cut, verified, certs, descends) {
       }
       case 'mod-version': {
         const m = st.lists.get(d.list)?.mods.get(Number(d.modId));
-        const fileId = posInt(d.fileId);
-        if (m && fileId) { Object.assign(m, { fileId, version: cleanName(d.version, 40) || '', file: cleanName(d.file, 160) || m.file, size: Number.isSafeInteger(d.size) && d.size >= 0 ? d.size : m.size, changedAt: ev.at, changedBy: ev.by }); ok = true; }
+        const fileId = modKey(d.fileId);
+        if (m && fileId && Math.sign(fileId) === Math.sign(m.modId)) { Object.assign(m, { fileId, version: cleanName(d.version, 40) || '', file: cleanName(d.file, 160) || m.file, size: Number.isSafeInteger(d.size) && d.size >= 0 ? d.size : m.size, changedAt: ev.at, changedBy: ev.by }); ok = true; }
         break;
       }
       default:

@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, confirmBox, plural, fmtSize, fmtCount, fmtIsoDay, state, store, debounce, goTo, pageHooks, snapshotHooks, setSegActive, loadSettings, showSettingsSection */
+/* global api, $, $$, h, icon, run, toast, confirmBox, modal, plural, fmtSize, fmtCount, fmtIsoDay, state, store, debounce, goTo, pageHooks, snapshotHooks, setSegActive, loadSettings, showSettingsSection */
 
 // ---------------------------------------------------------------- Browse Mods: mod.io
 // The Browse page's second source: Cyberpunk 2077 mods on mod.io (src/core/modio.js), with the
@@ -192,14 +192,60 @@ function mioRender() {
   $('#modio-next').disabled = r.page >= pages;
 }
 
-/** Download a mod and the mods it needs that are not here yet. */
+/** Download a mod: the Download window (version, and the mods it needs), as for Nexus mods. */
 async function download(m) {
   if (inGameIds().has(m.id) && !(await confirmBox(`${m.name} is in the game's Mods menu`, 'The game already installed it from mod.io. Installed here too, it can load twice. Download it here anyway (then remove it in the game\'s Mods menu)?', 'Download here'))) return;
-  const r = await run(api.modioDownload(m.id, true));
-  if (!r) return;
-  if (r.queued) toast(`Downloading ${plural(r.queued, 'file')} from mod.io${r.queued > 1 ? ' (with what it needs)' : ''}`, 'success', { label: 'Show', fn: () => goTo('downloads') });
-  else if (r.skipped) toast(`${m.name} is downloaded already: Downloads can install it`, 'info', { label: 'Show', fn: () => goTo('downloads') });
-  if (r.noWindows?.length) toast(`${m.name} also needs ${r.noWindows.join(', ')}, which mod.io has for consoles only`, 'warn');
+  await modioDownloadWindow(m.id, { name: m.name });
+}
+
+/**
+ * The Download window for a mod.io mod: its PC files (pick the version: the newest is ticked; a group
+ * list's pinned one when given) and the mods it needs (ticked unless here already, or console-only).
+ * Resolves with what was queued, or null when cancelled.
+ */
+async function modioDownloadWindow(id, { name = '', fileId = 0, note = '' } = {}) {
+  toast(`Asking mod.io about ${name || 'the mod'}…`);
+  const [modR, filesR] = await Promise.all([api.modioMod(id), api.modioFiles(id)]);
+  if (modR.error || filesR.error) { toast(modR.error || filesR.error, 'error'); return null; }
+  const mod = modR.ok;
+  const files = filesR.ok || [];
+  if (!files.length) { toast(`${mod.name} has no PC file on mod.io (it is made for consoles only)`, 'warn'); return null; }
+  const have = ownedIds();
+  const pre = files.find(f => f.id === Number(fileId)) || files.find(f => f.live) || files[0];
+  const group = `mio-v-${id}`;
+  const versions = h('div', { class: 'mio-versions', role: 'radiogroup', 'aria-label': 'Version' }, ...files.slice(0, 20).map(f => h('label', { class: 'check mio-ver' },
+    h('input', { type: 'radio', name: group, value: String(f.id), checked: f === pre }),
+    h('span', { class: 'mio-ver-main' }, h('b', {}, f.version ? `v${f.version}` : f.fileName),
+      f.live ? h('span', { class: 'tag tag-ok' }, 'Newest') : null,
+      f.virusPositive === 2 ? h('span', { class: 'tag tag-warn', title: 'mod.io\'s scan: it contains a program' }, 'Contains a program') : null),
+    h('span', { class: 'muted' }, [f.added ? fmtIsoDay(f.added) : '', fmtSize(f.size)].filter(Boolean).join(' · ')))));
+  const deps = mod.dependencies.map(d => {
+    const here = have.has(d.id);
+    const box = h('input', { type: 'checkbox', checked: !here && !!d.fileId, disabled: here || !d.fileId });
+    return {
+      d, box,
+      row: h('label', { class: `check mio-dep${here || !d.fileId ? ' off' : ''}` }, box, h('span', {}, d.name || `mod.io mod ${d.id}`),
+        h('span', { class: 'muted' }, here ? 'Installed' : d.fileId ? 'Needed' : 'Console only: no PC file')),
+    };
+  });
+  const body = h('div', { class: 'gm-dialog' },
+    note ? h('p', { class: 'muted' }, note) : null,
+    h('h3', { class: 'mio-h' }, 'Version'), versions,
+    deps.length ? h('h3', { class: 'mio-h' }, `It needs (${deps.length})`) : null,
+    deps.length ? h('div', { class: 'mio-deps' }, ...deps.map(x => x.row)) : h('p', { class: 'muted' }, 'It needs no other mods (as its author lists them on mod.io).'),
+    h('p', { class: 'muted' }, 'Each file is checked against mod.io\'s size and checksum, then installed like any other mod.'));
+  const ok = await modal({
+    title: `Download ${mod.name}`, sub: `From mod.io${mod.author ? ` · by ${mod.author}` : ''}`, body,
+    buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Download', value: true, kind: 'btn-primary' }],
+  });
+  if (!ok) return null;
+  const chosen = Number(versions.querySelector('input:checked')?.value) || pre.id;
+  const r = await run(api.modioDownload(id, { fileId: chosen, deps: deps.filter(x => x.box.checked && !x.box.disabled).map(x => x.d.id) }));
+  if (!r) return null;
+  if (r.queued) toast(`Downloading ${plural(r.queued, 'file')} from mod.io`, 'success', { label: 'Show', fn: () => goTo('downloads') });
+  else if (r.skipped) toast(`${mod.name} is downloaded already: Downloads can install it`, 'info', { label: 'Show', fn: () => goTo('downloads') });
+  if (r.noWindows?.length) toast(`${mod.name} also needs ${r.noWindows.join(', ')}, which mod.io has for consoles only`, 'warn');
+  return r;
 }
 
 // ---------------------------------------------------------------- one mod's page
@@ -297,5 +343,5 @@ snapshotHooks.push(() => { if (mio.result && !$('#modio-list').hidden && mio.sou
 
 $('#page-browse').classList.toggle('modio-mode', mio.source === 'modio');
 setSegActive('.browse-source', 'source', mio.source);
-window.modioPage = { keyChanged, setSource: mioSetSource };
+window.modioPage = { keyChanged, setSource: mioSetSource, downloadWindow: modioDownloadWindow };
 }

@@ -832,9 +832,23 @@ async function boot() {
     sort: MIO_SORTS.includes(o?.sort) ? o.sort : 'trending', period: MIO_PERIODS.includes(o?.period) ? o.period : '',
     page: Math.max(1, Math.min(1000, parseInt(o?.page, 10) || 1)), perPage: parseInt(o?.perPage, 10) || 20,
   }));
+  const mioId = v => { const n = Number(v); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Not a mod.io mod.'); return n; };
   handle('modio:tags', () => manager.modio.tags());
-  handle('modio:mod', id => manager.modio.mod(Number(id)));
-  handle('modio:download', (id, withDeps) => manager.queueModio(Number(id), { withDeps: withDeps !== false }));
+  handle('modio:mod', id => manager.modio.mod(mioId(id)));
+  // A mod from mod.io: a chosen file (version) and the requirements ticked (all when not said).
+  handle('modio:download', (rawId, o) => {
+    const id = mioId(rawId);
+    const opts = o && typeof o === 'object' ? o : { withDeps: o !== false };
+    return manager.queueModio(id, {
+      withDeps: opts.withDeps !== false, fileId: Number.isSafeInteger(Number(opts.fileId)) && Number(opts.fileId) > 0 ? Number(opts.fileId) : 0,
+      deps: Array.isArray(opts.deps) ? opts.deps.map(Number).filter(n => Number.isSafeInteger(n) && n > 0).slice(0, 50) : null,
+    });
+  });
+  handle('modio:files', id => manager.modio.files(mioId(id)));
+  // The same mod on the other site (a group list's mod from a site this PC does not use): find, then remember the user's pick.
+  handle('cross:find', o => manager.crossFind({ name: typeof o?.name === 'string' ? o.name : '', author: typeof o?.author === 'string' ? o.author : '', version: typeof o?.version === 'string' ? o.version : '', to: o?.to === 'modio' ? 'modio' : 'nexus' }));
+  handle('cross:link', (e, f, t) => manager.crossLink(Number(e), Number(f), Number(t)));
+  handle('cross:unlink', e => manager.crossUnlink(Number(e)));
   handle('modio:test', async () => { manager.modio.cache.delete('game'); manager.modio.blockedUntil = 0; return (await manager.modio.tags()).length; });
   handle('modio:open', url => { shell.openExternal(siteUrl(url)); }); // a page on mod.io only (else the game's page)
   // Theme Studio: named themes in Documents (CMM_THEMES_DIR for tests and demos), pictures of the theme in use in the app's data.

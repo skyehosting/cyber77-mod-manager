@@ -21,6 +21,11 @@ const { scanSaves } = require('../saves');
 const GAME = 'cyberpunk2077';
 const RENEW_UPNP = 30 * 60e3;
 const posInt = v => (Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+// A list entry's id: a Nexus mod's (positive) or a mod.io mod's (negative), as the group log keeps them.
+const modKey = v => (Number.isSafeInteger(Number(v)) && Number(v) !== 0 ? Number(v) : 0);
+/** A mod of this app as a list entry's ids: [modId, fileId], Nexus positive, mod.io negative; null if neither. */
+const idsOf = m => (m.modio?.id && m.modio?.fileId ? [-Number(m.modio.id), -Number(m.modio.fileId)]
+  : posInt(m.modId) && posInt(m.fileId) ? [Number(m.modId), Number(m.fileId)] : null);
 const gid = g => { if (!GROUP_ID.test(String(g))) throw new Error('Unknown group.'); return String(g); };
 const lid = l => { if (!LIST_ID.test(String(l))) throw new Error('Unknown list.'); return String(l); };
 
@@ -35,7 +40,24 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
     }
     return versionCache.v;
   };
-  const enabledMods = () => Object.values(manager.data.mods).filter(m => m.enabled && posInt(m.modId) && posInt(m.fileId)).map(m => [Number(m.modId), Number(m.fileId)]);
+  // What this PC has (enabled), as list ids; a list entry matched to a mod of the other site counts as had
+  // (the friend sees the entry's own file: the two are the same mod, confirmed by this PC's user).
+  // Reported only for the list's current file of that mod, and only while the match was made for that file
+  // (the list moved to another version: the friend's PC shows "different", as for anyone else).
+  const enabledMods = () => {
+    const on = Object.values(manager.data.mods).filter(m => m.enabled).map(idsOf).filter(Boolean);
+    const onIds = new Set(on.map(([id]) => id));
+    const links = manager.data.crossLinks || {};
+    for (const rec of service?.groups?.values?.() || []) {
+      for (const l of rec.st?.lists?.values?.() || []) {
+        for (const e of l.mods.values()) {
+          const link = links[String(e.modId)];
+          if (link && onIds.has(link.target) && Number(link.file) === e.fileId) on.push([e.modId, e.fileId]);
+        }
+      }
+    }
+    return on;
+  };
   // Demos and tests: CMM_GROUPS_HOST=127.0.0.1 listens on this PC only (no firewall prompt, no router).
   const loopback = process.env.CMM_GROUPS_HOST === '127.0.0.1';
   const service = new GroupService({ dir, cipher, log, status: () => ({ game: gameVersion(), mods: enabledMods() }), addresses: loopback ? () => ['127.0.0.1'] : localAddresses, loopback });
@@ -165,7 +187,8 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
       for (const modId of ids) {
         if (stillListed.has(Number(modId)) || loc.keep[modId]) continue;
         for (const m of Object.values(manager.data.mods)) {
-          if (Number(m.modId) === Number(modId) && m.enabled && loc.mine[String(m.fileId)]) { off.push(m.id); names.push(m.modName || m.name); }
+          const ids = idsOf(m); // (Nexus or mod.io: the ids the list knows it by)
+          if (ids && ids[0] === Number(modId) && m.enabled && loc.mine[String(ids[1])]) { off.push(m.id); names.push(m.modName || m.name); }
         }
       }
       loc.toDisable = {};
@@ -189,12 +212,17 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
 
   // ---- what the page asks for
 
-  /** A list entry made from one of this PC's installed Nexus mods. */
+  /** A list entry made from one of this PC's installed mods (from Nexus Mods or mod.io). */
   function entryOf(id) {
     const m = manager.data.mods[String(id)];
-    if (!m || !posInt(m.modId) || !posInt(m.fileId)) return null;
+    const ids = m && idsOf(m);
+    if (!ids) return null;
     const dl = manager.data.downloads?.[m.key];
+    if (ids[0] < 0) {
+      return { modId: ids[0], fileId: ids[1], name: m.modName || m.name, author: String(m.author || ''), version: String(m.version || ''), file: dl?.fileName || '', category: '', size: Number(dl?.size) || 0, reqs: [] };
+    }
     return {
+      author: String(m.author || ''),
       modId: Number(m.modId), fileId: Number(m.fileId), name: m.modName || m.name, version: String(m.version || ''),
       file: dl?.fileName || '', category: manager.data.modCategories?.[m.modId]?.name || '', size: Number(dl?.size) || 0,
       reqs: (manager.data.requirements?.[m.modId]?.list || []).filter(r => !r.external && posInt(r.modId)).slice(0, 50).map(r => ({ modId: Number(r.modId), name: String(r.name || '') })),
@@ -228,9 +256,21 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
     let installed = 0;
     try {
       for (const p of (Array.isArray(picks) ? picks : []).slice(0, 200)) {
-        const modId = posInt(p?.modId);
-        const fileId = posInt(p?.fileId);
-        if (!modId || !fileId) continue;
+        const modId = modKey(p?.modId);
+        const fileId = modKey(p?.fileId);
+        if (!modId || !fileId || Math.sign(modId) !== Math.sign(fileId)) continue;
+        // From mod.io: that file, through the mod.io download (with the requirements the user ticked).
+        if (modId < 0) {
+          if (!manager.modio.hasKey) { failed.push(`mod.io mod ${-modId}: add your mod.io key in Settings to get it from mod.io`); continue; }
+          try {
+            const olds = Object.values(manager.data.mods).filter(m => m.modio?.id === -modId && m.modio?.fileId !== -fileId);
+            const r = await manager.queueModio(-modId, { fileId: -fileId, deps: Array.isArray(p?.deps) ? p.deps.map(Number).filter(n => Number.isSafeInteger(n) && n > 0).slice(0, 50) : [], replaces: olds.length === 1 ? olds[0].id : '' });
+            summary.queued += r.queued;
+            summary.skipped += r.skipped;
+            asked.push(fileId);
+          } catch (err) { failed.push(`mod.io mod ${-modId}: ${err.message}`); }
+          continue;
+        }
         // The version it replaces: another installed file of this mod in the same file category (Main for
         // Main), and only when exactly one fits (an optional patch is never taken for the main file).
         // Main, update and old version are one line (a pinned main file becomes an "old version" on Nexus
@@ -295,12 +335,12 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
   handle('groups:listRemove', (g, l) => service.removeList(gid(g), lid(l)));
   handle('groups:modsAdd', (g, l, ids) => {
     const entries = (Array.isArray(ids) ? ids : []).slice(0, 200).map(entryOf).filter(Boolean);
-    if (!entries.length) throw new Error('Only mods from Nexus Mods can go on a group list.');
+    if (!entries.length) throw new Error('Only mods from Nexus Mods or mod.io can go on a group list.');
     return service.addMods(gid(g), lid(l), entries);
   });
-  handle('groups:modRemove', (g, l, modId) => service.removeMod(gid(g), lid(l), posInt(modId)));
+  handle('groups:modRemove', (g, l, modId) => service.removeMod(gid(g), lid(l), modKey(modId)));
   handle('groups:seen', g => service.markSeen(gid(g)));
-  handle('groups:keep', (g, modId, on) => service.setKeep(gid(g), posInt(modId), on === true));
+  handle('groups:keep', (g, modId, on) => service.setKeep(gid(g), modKey(modId), on === true));
   handle('groups:download', (g, picks, reqs) => download(g, picks, reqs));
   handle('groups:verify', picks => verify(picks));
 

@@ -8,6 +8,7 @@ const { JsonStore } = require('./jsonStore');
 const { NexusClient, parseModUrl, parseNxm, requirementOnNexus } = require('./nexus');
 const { ModioClient } = require('./modio');
 const { GameModio } = require('./modioGame');
+const { rank } = require('./crossMatch');
 const { redmodToolsInstalled } = require('./launcher');
 const { Downloader } = require('./downloader');
 const { Installer, isSafeRel } = require('./installer');
@@ -338,6 +339,7 @@ class ModManager extends EventEmitter {
       ignored: this.data.ignored || {},
       sections: this.sectionsView(),
       gameModio: this.gameModioView(),
+      crossLinks: this.data.crossLinks || {},
     };
   }
 
@@ -982,16 +984,19 @@ class ModManager extends EventEmitter {
    * Download a mod from mod.io: its Windows file (or the file given, for an update) and, unless told
    * not to, the mods it needs that are not here yet. Mods with no Windows file are named, not queued.
    */
-  async queueModio(modioId, { withDeps = true, fileId = 0, replaces = '' } = {}) {
+  async queueModio(modioId, { withDeps = true, fileId = 0, replaces = '', deps = null } = {}) {
     const m = await this.modio.mod(modioId);
     const summary = { queued: 0, skipped: 0, noWindows: [], name: m.name };
     const fid = Number(fileId) || m.fileId;
     if (!fid) throw new Error(`${m.name} has no Windows file on mod.io (it is made for consoles only).`);
+    if (fid !== m.fileId && !(await this.modio.files(m.id)).some(f => f.id === fid)) throw new Error(`That file of ${m.name} is not a PC file on mod.io (or is gone).`);
     const file = m.file && m.file.id === fid ? m.file : await this.modio.file(m.id, fid);
     if (file.virusPositive === 1) throw new Error(`mod.io's virus scan flagged ${m.name} as malicious; it was not downloaded.`);
     this.queueModioFile(m, file, '', summary, replaces ? { replaces } : {});
     if (withDeps) {
+      const chosen = Array.isArray(deps) ? new Set(deps.map(Number)) : null; // the requirements the user ticked (null: all)
       for (const d of m.dependencies || []) {
+        if (chosen && !chosen.has(d.id)) continue;
         if (this.modioHave(d.id)) continue;
         if (!d.fileId) { summary.noWindows.push(d.name || `mod ${d.id}`); continue; }
         const dm = await this.modio.mod(d.id);
@@ -1022,6 +1027,54 @@ class ModManager extends EventEmitter {
       requestedBy: this.data.profiles?.active || '', ...extra,
     });
     summary.queued++;
+  }
+
+  // ---------------------------------------------------------------- the same mod on the other site
+
+  /**
+   * Find a mod on the other site by its name (and author, version): candidates best first, each with a
+   * score and why. `to`: 'nexus' or 'modio'. The user picks; nothing is decided here.
+   */
+  async crossFind({ name, author = '', version = '', to }) {
+    const want = { name: String(name || '').slice(0, 120), author: String(author || '').slice(0, 80), version: String(version || '').slice(0, 40) };
+    if (!want.name.trim()) throw new Error('No name to look for.');
+    let found = [];
+    if (to === 'nexus') {
+      const r = await this.nexus.searchMods({ query: want.name, sort: 'relevance', adult: true, perPage: 12 });
+      found = (r.mods || []).map(m => ({ site: 'nexus', id: Number(m.modId), name: m.name, author: m.author || '', version: m.version || '', picture: m.thumbnail || '', summary: m.summary || '', adult: !!m.adult }));
+    } else if (to === 'modio') {
+      const r = await this.modio.search({ query: want.name, perPage: 20 });
+      found = (r.mods || []).map(m => ({ site: 'modio', id: m.id, name: m.name, author: m.author, version: m.version, picture: m.logo, summary: m.summary, mature: m.mature, fileId: m.fileId }));
+    } else throw new Error('Unknown site.');
+    return rank(want, found.filter(c => c.id > 0));
+  }
+
+  /**
+   * Remember that a list entry (a mod on one site: its signed id, as group lists keep them) is this
+   * mod on the other site (its signed id too): a Nexus mod for a mod.io entry, or the other way.
+   */
+  crossLink(entryModId, entryFileId, target) {
+    const e = Number(entryModId);
+    const f = Number(entryFileId);
+    const t = Number(target);
+    if (![e, f, t].every(n => Number.isSafeInteger(n) && n !== 0) || Math.sign(e) !== Math.sign(f) || Math.sign(e) === Math.sign(t)) throw new Error('Not a match between Nexus Mods and mod.io.');
+    this.data.crossLinks ||= {};
+    delete this.data.crossLinks[String(e)]; // newest last (the trim keeps the newest)
+    this.data.crossLinks[String(e)] = { target: t, file: f, at: Date.now() };
+    const keys = Object.keys(this.data.crossLinks);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 2000))) delete this.data.crossLinks[k];
+    this.library.save();
+    this.emit('changed');
+    return true;
+  }
+
+  /** Forget a match made by mistake. */
+  crossUnlink(entryModId) {
+    if (!this.data.crossLinks?.[String(Number(entryModId))]) return false;
+    delete this.data.crossLinks[String(Number(entryModId))];
+    this.library.save();
+    this.emit('changed');
+    return true;
   }
 
   /** Is a required mod already taken care of? */

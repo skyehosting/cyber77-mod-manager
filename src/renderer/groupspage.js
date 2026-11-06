@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, newsToast, modal, confirmBox, plural, fmtSize, ago, state, store, goTo, pageHooks, snapshotHooks, keepFocus, showSettingsSection */
+/* global api, $, $$, h, icon, run, toast, newsToast, modal, confirmBox, plural, fmtSize, ago, state, store, goTo, pageHooks, snapshotHooks, keepFocus, showSettingsSection, downloadLinks */
 
 // ---------------------------------------------------------------- Group Mods (the Mods page's second view)
 // Friends who play co-op keep a shared list of Nexus mods (src/core/groups). This page shows your
@@ -28,13 +28,20 @@ async function loadGroups() {
 // ---- this PC's status for a list entry, and each member's
 
 /** installed | disabled | different | downloading | missing, from this PC's mods and downloads. */
+// A mod's ids as group lists keep them: Nexus positive, mod.io negative.
+const listIds = m => (m.modio?.id ? [-m.modio.id, -(m.modio.fileId || 0)] : [Number(m.modId) || 0, Number(m.fileId) || 0]);
 function myStatus(e) {
   const mods = state.snap?.mods || [];
-  const exact = mods.find(m => Number(m.fileId) === e.fileId);
+  const exact = mods.find(m => listIds(m)[1] === e.fileId && e.fileId);
   if (exact) return exact.enabled ? 'installed' : 'disabled';
-  const job = [...(state.jobs?.values?.() || state.snap?.jobs || [])].find(j => Number(j.fileId) === e.fileId && !['error', 'cancelled', 'done', 'skipped'].includes(j.status));
+  // Matched by this PC's user to a mod on the other site: that one stands for it.
+  const link = state.snap?.crossLinks?.[String(e.modId)];
+  const linked = link && mods.find(m => listIds(m)[0] === link.target);
+  if (linked) return Number(link.file) !== e.fileId ? 'different' : linked.enabled ? 'installed' : 'disabled';
+  const jobFile = j => (j.modio?.fileId ? -j.modio.fileId : Number(j.fileId));
+  const job = [...(state.jobs?.values?.() || state.snap?.jobs || [])].find(j => jobFile(j) === e.fileId && !['error', 'cancelled', 'done', 'skipped'].includes(j.status));
   if (job) return 'downloading';
-  return mods.some(m => Number(m.modId) === e.modId) ? 'different' : 'missing';
+  return mods.some(m => listIds(m)[0] === e.modId) ? 'different' : 'missing';
 }
 const GM_STATUS = {
   installed: ['Installed', 'tag-ok'], disabled: ['Disabled', 'tag-off'], different: ['Different version', 'tag-warn'],
@@ -248,12 +255,16 @@ function listTable(g, list, me) {
         const [label, cls] = GM_STATUS[s];
         const sub = [e.category, e.reqs.length ? plural(e.reqs.length, 'requirement') : '', e.size ? fmtSize(e.size) : ''].filter(Boolean).join(' · ');
         return h('tr', { class: `gm-row st-${s}` },
-          h('td', {}, h('div', { class: 'gm-mod' }, h('span', { class: 'gm-mod-name' }, e.name, e.adult ? h('span', { class: 'tag tag-off' }, 'Adult') : null), h('span', { class: 'gm-mod-sub' }, sub || 'Nexus Mods'))),
+          h('td', {}, h('div', { class: 'gm-mod' }, h('span', { class: 'gm-mod-name' }, e.name, e.adult ? h('span', { class: 'tag tag-off' }, 'Adult') : null), h('span', { class: 'gm-mod-sub' }, sub || (e.modId < 0 ? 'mod.io' : 'Nexus Mods'),
+            state.snap?.crossLinks?.[String(e.modId)] ? h('span', { class: 'tag tag-info gm-link-tag', title: 'You matched it to the same mod on the other site' }, e.modId < 0 ? 'Yours from Nexus' : 'Yours from mod.io',
+              h('button', { type: 'button', class: 'gm-unlink', 'aria-label': `Forget the match for ${e.name}`, title: 'Not the same mod: forget the match', onclick: async () => { if (await confirmBox(`Forget the match for ${e.name}?`, 'The mod you matched it to stays installed; it no longer counts as this list\'s mod.', 'Forget')) { await run(api.crossUnlink(e.modId)); loadGroups(); } } }, '×')) : null))),
           h('td', { class: 'num' }, e.version || '–'),
           h('td', {}, h('span', { class: 'gm-by' }, e.addedByName, h('span', { class: 'muted' }, ` · ${ago(e.changedAt || e.addedAt)}`))),
           h('td', {}, h('span', { class: `tag ${cls}` }, label), e.keep ? h('span', { class: 'tag tag-off', title: 'Kept for you even if it leaves the list' }, 'Kept for you') : null),
           h('td', { class: 'gm-row-acts' },
-            h('a', { class: 'btn btn-sm btn-ghost btn-icon', href: `https://www.nexusmods.com/cyberpunk2077/mods/${e.modId}`, target: '_blank', rel: 'noopener', title: 'Open on Nexus Mods', 'aria-label': `Open ${e.name} on Nexus Mods` }, icon('external')),
+            e.modId < 0
+              ? h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Open on mod.io', 'aria-label': `Open ${e.name} on mod.io`, onclick: async () => { const r = await api.modioMod(-e.modId); api.openModioPage(r.ok?.url || 'https://mod.io/g/cyberpunk-2077'); } }, icon('external'))
+              : h('a', { class: 'btn btn-sm btn-ghost btn-icon', href: `https://www.nexusmods.com/cyberpunk2077/mods/${e.modId}`, target: '_blank', rel: 'noopener', title: 'Open on Nexus Mods', 'aria-label': `Open ${e.name} on Nexus Mods` }, icon('external')),
             h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: e.keep ? 'Stop keeping it for you' : 'Keep it for me, even if someone removes it from the list', 'aria-label': `${e.keep ? 'Stop keeping' : 'Keep'} ${e.name} for me`, 'aria-pressed': String(!!e.keep), onclick: () => run(api.groupsKeep(g.id, e.modId, !e.keep)).then(loadGroups) }, icon('pin')),
             h('button', { class: 'btn btn-sm btn-ghost-danger btn-icon', title: 'Remove from the list (disabled for members who got it through the group)', 'aria-label': `Remove ${e.name} from the list`, onclick: () => removeFromList(g, list, e) }, icon('x'))));
       })))));
@@ -429,20 +440,21 @@ async function openJoin() {
 /** Add mods to a list: this PC's installed Nexus mods, A to Z. */
 async function openAddMods(g, list) {
   const inList = new Set(list.mods.map(e => e.modId));
+  const shareable = m => (Number(m.modId) > 0 && Number(m.fileId) > 0) || (m.modio?.id > 0 && m.modio?.fileId > 0);
   const seen = new Set();
   // One entry per mod: its Main file when it has one installed (not an optional patch), enabled first.
   const rank = m => (m.category === 'MAIN' ? 0 : 1) + (m.enabled ? 0 : 2);
-  const mine = (state.snap?.mods || []).filter(m => Number(m.modId) > 0 && Number(m.fileId) > 0).sort((a, b) => rank(a) - rank(b))
-    .filter(m => { const k = Number(m.modId); if (seen.has(k)) return false; seen.add(k); return true; })
+  const mine = (state.snap?.mods || []).filter(shareable).sort((a, b) => rank(a) - rank(b))
+    .filter(m => { const k = listIds(m)[0]; if (seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => (a.modName || a.name).localeCompare(b.modName || b.name));
-  const local = (state.snap?.mods || []).filter(m => !(Number(m.modId) > 0 && Number(m.fileId) > 0)).length;
+  const local = (state.snap?.mods || []).filter(m => !shareable(m)).length;
   const search = h('input', { type: 'search', placeholder: 'Search your mods', 'aria-label': 'Search your mods' });
   const rows = mine.map(m => {
-    const there = inList.has(Number(m.modId));
+    const there = inList.has(listIds(m)[0]);
     const box = h('input', { type: 'checkbox', value: m.id, disabled: there });
     const reqs = (state.snap?.reqs?.[m.id] || []).length;
     const row = h('label', { class: `check gm-pick-row${there ? ' off' : ''}` }, box,
-      h('span', { class: 'gm-pick-name' }, m.modName || m.name, h('span', { class: 'muted' }, ` ${m.version || ''}`)),
+      h('span', { class: 'gm-pick-name' }, m.modName || m.name, h('span', { class: 'muted' }, ` ${m.version || ''}`), m.modio?.id ? h('span', { class: 'tag tag-info' }, 'mod.io') : null),
       h('span', { class: 'gm-pick-note muted' }, there ? 'In the list' : reqs ? plural(reqs, 'requirement') : ''));
     return { m, box, row };
   });
@@ -452,8 +464,8 @@ async function openAddMods(g, list) {
   listBox.addEventListener('change', () => { const b = $('#modal .modal-foot .btn-primary'); if (b) b.textContent = count() ? `Add ${plural(count(), 'mod')}` : 'Add'; });
   const shown = modal({
     title: `Add mods to ${list.name}`,
-    body: h('div', { class: 'gm-dialog' }, search, rows.length ? listBox : h('p', { class: 'muted' }, 'None of your mods come from Nexus Mods yet.'),
-      h('p', { class: 'muted' }, `Members are asked before anything downloads.${local ? ` ${plural(local, 'mod')} installed from a file can't go on a list (not on Nexus Mods).` : ''}`)),
+    body: h('div', { class: 'gm-dialog' }, search, rows.length ? listBox : h('p', { class: 'muted' }, 'None of your mods come from Nexus Mods or mod.io yet.'),
+      h('p', { class: 'muted' }, `Members are asked before anything downloads.${local ? ` ${plural(local, 'mod')} installed from a file can't go on a list (not from Nexus Mods or mod.io).` : ''} Friends without the site a mod came from can find it on the other one.`)),
     buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Add', value: true, kind: 'btn-primary' }],
   });
   setTimeout(() => search.focus(), 30);
@@ -465,75 +477,156 @@ async function openAddMods(g, list) {
   loadGroups();
 }
 
-/** Get the list's mods this PC is missing: each with its requirements, ticked; Download selected. */
+/**
+ * Get the list's mods this PC is missing: each with its requirements, ticked; Download selected.
+ * A mod from a site this PC does not use (a mod.io mod without a mod.io key, a Nexus mod without a
+ * Nexus key) is offered as "Find on …": the other site is searched, the user confirms which mod is the
+ * same one, and that site's own Download window opens (version and requirements to choose).
+ */
 async function openGet(g, list) {
   const mods = state.snap?.mods || [];
   const have = id => mods.some(m => Number(m.modId) === id);
+  const haveMio = id => mods.some(m => m.modio?.id === id);
   const need = [...list.mods].filter(e => ['missing', 'different'].includes(myStatus(e))).sort((a, b) => a.name.localeCompare(b.name));
   if (!need.length) {
     toast('You have everything on this list', 'success');
     run(api.groupsSeen(g.id));
     return;
   }
+  const canNexus = !!state.settings?.hasApiKey;
+  const canModio = !!state.settings?.hasModioKey;
+  const reachable = e => (e.modId > 0 ? canNexus : canModio);
+  const direct = need.filter(reachable);
+  const elsewhere = need.filter(e => !reachable(e));
   const premium = !!state.keyUser?.isPremium;
-  // First ask Nexus what each mod (and requirement) really is: a list entry's name is a member's word.
-  // Only what Nexus confirms starts ticked; a name that differs is pointed out and left unticked.
-  toast('Checking the mods with Nexus…');
-  const ids = [...new Set(need.flatMap(e => [e.modId, ...e.reqs.map(r => r.modId)]))];
-  const real = (await api.groupsVerify(ids.map(modId => ({ modId }))))?.ok || {};
+  // First ask each site what each mod (and requirement) really is: a list entry's name is a member's word.
+  // Only what the site confirms starts ticked; a name that differs is pointed out and left unticked.
+  toast('Checking the mods with Nexus Mods and mod.io…');
+  const nexusIds = [...new Set(direct.filter(e => e.modId > 0).flatMap(e => [e.modId, ...e.reqs.map(r => r.modId)]))];
+  const real = nexusIds.length ? (await api.groupsVerify(nexusIds.map(modId => ({ modId }))))?.ok || {} : {};
+  const mio = {};
+  const mioRows = direct.filter(e => e.modId < 0);
+  await Promise.all(Array.from({ length: Math.min(4, mioRows.length) }, async () => {
+    while (mioRows.length) { const e = mioRows.shift(); const r = await api.modioMod(-e.modId); if (r.ok) mio[e.modId] = r.ok; }
+  }));
   const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
-  const rows = need.map(e => {
-    const n = real[e.modId];
+  const rows = direct.map(e => {
+    const fromModio = e.modId < 0;
+    const n = fromModio ? mio[e.modId] : real[e.modId];
     const trusted = !!n && sameName(n.name, e.name);
     const box = h('input', { type: 'checkbox', checked: trusted });
-    const reqs = e.reqs.filter(r => !list.mods.some(x => x.modId === r.modId)).map(r => {
-      const rn = real[r.modId];
-      return { r, rn, box: h('input', { type: 'checkbox', checked: !have(r.modId) && !!rn && trusted, disabled: have(r.modId) || !trusted }) };
+    // Requirements: Nexus's (from the list entry), or mod.io's (as mod.io lists them now).
+    const reqList = fromModio
+      ? (n?.dependencies || []).map(d => ({ modId: d.id, name: d.name, pc: !!d.fileId }))
+      : e.reqs.filter(r => !list.mods.some(x => x.modId === r.modId)).map(r => ({ ...r, pc: true }));
+    const isHere = r => (fromModio ? haveMio(r.modId) : have(r.modId));
+    const reqs = reqList.map(r => {
+      const rn = fromModio ? r : real[r.modId];
+      return { r, rn, box: h('input', { type: 'checkbox', checked: !isHere(r) && !!rn && r.pc && trusted, disabled: isHere(r) || !trusted || !r.pc }) };
     });
     const open = { on: false };
-    const sub = h('div', { class: 'gm-reqs', hidden: true }, ...reqs.map(x => h('label', { class: `check gm-req${have(x.r.modId) ? ' off' : ''}` }, x.box,
+    const sub = h('div', { class: 'gm-reqs', hidden: true }, ...reqs.map(x => h('label', { class: `check gm-req${isHere(x.r) || !x.r.pc ? ' off' : ''}` }, x.box,
       h('span', {}, x.rn ? x.rn.name : `${x.r.name || 'Mod'} (Nexus mod ${x.r.modId}, not checked)`),
-      h('span', { class: 'muted' }, have(x.r.modId) ? 'Installed' : 'Needed'))));
+      h('span', { class: 'muted' }, isHere(x.r) ? 'Installed' : x.r.pc ? 'Needed' : 'Console only'))));
     const chev = reqs.length ? h('button', { type: 'button', class: 'btn btn-sm btn-ghost btn-icon', 'aria-expanded': 'false', 'aria-label': `Show the requirements of ${e.name}`, onclick: () => { open.on = !open.on; sub.hidden = !open.on; chev.setAttribute('aria-expanded', String(open.on)); chev.classList.toggle('turn', open.on); } }, icon('chevron-right')) : h('span', { class: 'gm-chev-space' });
-    box.addEventListener('change', () => { for (const x of reqs) if (!have(x.r.modId)) x.box.disabled = !box.checked; });
-    const nexus = h('span', { class: `gm-nexus muted${n && !trusted ? ' bad' : ''}` },
-      !n ? `Could not check with Nexus (mod ${e.modId}, added by ${e.addedByName}): tick it only if you trust it`
-        : trusted ? `On Nexus: ${n.name}${n.author ? ` by ${n.author}` : ''} · added by ${e.addedByName}`
-          : `Careful: on Nexus this is "${n.name}"${n.author ? ` by ${n.author}` : ''}, not "${e.name}" (added by ${e.addedByName})`);
-    const row = h('div', { class: 'gm-get-row' }, h('div', { class: 'gm-get-main' }, chev, h('label', { class: 'check' }, box, h('span', {}, h('b', {}, e.name), h('span', { class: 'muted' }, ` ${e.version}${myStatus(e) === 'different' ? ' (you have another version)' : ''}`), nexus)),
+    box.addEventListener('change', () => { for (const x of reqs) if (!isHere(x.r) && x.r.pc) x.box.disabled = !box.checked; });
+    const site = fromModio ? 'mod.io' : 'Nexus';
+    const check = h('span', { class: `gm-nexus muted${n && !trusted ? ' bad' : ''}` },
+      !n ? `Could not check with ${site} (added by ${e.addedByName}): tick it only if you trust it`
+        : trusted ? `On ${site}: ${n.name}${n.author ? ` by ${n.author}` : ''} · added by ${e.addedByName}`
+          : `Careful: on ${site} this is "${n.name}"${n.author ? ` by ${n.author}` : ''}, not "${e.name}" (added by ${e.addedByName})`);
+    const row = h('div', { class: 'gm-get-row' }, h('div', { class: 'gm-get-main' }, chev, h('label', { class: 'check' }, box, h('span', {}, h('b', {}, e.name), h('span', { class: 'muted' }, ` ${e.version}${myStatus(e) === 'different' ? ' (you have another version)' : ''}`), fromModio ? h('span', { class: 'tag tag-info' }, 'mod.io') : null, check)),
       h('span', { class: 'muted gm-get-size' }, [e.size ? fmtSize(e.size) : '', reqs.length ? plural(reqs.length, 'requirement') : ''].filter(Boolean).join(' · '))), sub);
-    return { e, box, reqs, row, nexus };
+    return { e, box, reqs, row };
+  });
+  // From a site this PC does not use: found on the other one, after this window.
+  let findFor = null;
+  const elsewhereRows = elsewhere.map(e => {
+    const to = e.modId < 0 ? 'nexus' : 'modio';
+    const usable = to === 'nexus' ? canNexus : canModio;
+    if (!usable) {
+      return h('div', { class: 'gm-get-row gm-elsewhere' }, h('div', { class: 'gm-get-main' }, h('span', { class: 'gm-chev-space' }),
+        h('span', { class: 'gm-else-text' }, h('b', {}, e.name), h('span', { class: 'gm-nexus muted' }, `Shared from ${e.modId < 0 ? 'mod.io' : 'Nexus Mods'}. Add your ${e.modId < 0 ? 'mod.io' : 'Nexus'} key (or one for ${to === 'nexus' ? 'Nexus' : 'mod.io'}) in Settings to get it.`))));
+    }
+    return h('div', { class: 'gm-get-row gm-elsewhere' }, h('div', { class: 'gm-get-main' }, h('span', { class: 'gm-chev-space' }),
+      h('span', { class: 'gm-else-text' }, h('b', {}, e.name), h('span', { class: 'muted' }, ` ${e.version}`),
+        h('span', { class: 'gm-nexus muted' }, `Shared from ${e.modId < 0 ? 'mod.io' : 'Nexus Mods'} by ${e.addedByName}; ${e.modId < 0 ? 'you have no mod.io key' : 'you have no Nexus key'}. Look for the same mod on ${to === 'nexus' ? 'Nexus Mods' : 'mod.io'}:`)),
+      h('button', { type: 'button', class: 'btn btn-sm', onclick: () => { findFor = e; $('#modal .modal-foot [data-safe="1"]')?.click(); } }, icon('search'), h('span', {}, `Find on ${to === 'nexus' ? 'Nexus' : 'mod.io'}…`))));
   });
   const label = () => {
     const files = rows.filter(r => r.box.checked);
     const reqN = rows.reduce((n, r) => n + (r.box.checked ? r.reqs.filter(x => x.box.checked && !x.box.disabled).length : 0), 0);
     const size = files.reduce((n, r) => n + (r.e.size || 0), 0);
     const n = files.length + reqN;
-    return premium ? `Download selected (${plural(n, 'file')}${size ? `, ${fmtSize(size)}+` : ''})` : `Get selected (${plural(n, 'file')})`;
+    return premium || !files.some(r => r.e.modId > 0) ? `Download selected (${plural(n, 'file')}${size ? `, ${fmtSize(size)}+` : ''})` : `Get selected (${plural(n, 'file')})`;
   };
   // The dialog's button follows the boxes (it is in the page once the dialog shows: looked up then).
-  const getBox = h('div', { class: 'gm-get' }, ...rows.map(r => r.row));
+  const getBox = h('div', { class: 'gm-get' }, ...rows.map(r => r.row), ...elsewhereRows);
   getBox.addEventListener('change', () => { const b = $('#modal .modal-foot .btn-primary'); if (b) b.textContent = label(); });
   const shown = modal({
     title: `Get ${list.name}'s mods`, sub: `${plural(need.length, 'mod')} you don't have yet, or have in another version`,
     body: h('div', { class: 'gm-dialog' }, getBox,
-      h('p', { class: 'muted' }, premium ? 'They download from Nexus Mods and install into the profile you are using. Where you have another version, it is replaced.'
-        : 'Free Nexus account: each file waits on the Downloads page for one click on "Slow download" on Nexus. They install into the profile you are using; another version you have is replaced.')),
-    buttons: [{ label: 'Not now', value: false, safe: true }, { label: label(), value: true, kind: 'btn-primary' }],
+      h('p', { class: 'muted' }, premium || !rows.some(r => r.e.modId > 0) ? 'They download from Nexus Mods or mod.io and install into the profile you are using. Where you have another version, it is replaced.'
+        : 'Free Nexus account: each Nexus file waits on the Downloads page for one click on "Slow download" on Nexus. They install into the profile you are using; another version you have is replaced.')),
+    buttons: rows.length ? [{ label: 'Not now', value: false, safe: true }, { label: label(), value: true, kind: 'btn-primary' }] : [{ label: 'Close', value: false, safe: true }],
   });
-  if (!await shown) return;
-  const picks = rows.filter(r => r.box.checked).map(r => ({ modId: r.e.modId, fileId: r.e.fileId }));
-  const reqs = [...new Set(rows.filter(r => r.box.checked).flatMap(r => r.reqs.filter(x => x.box.checked && !x.box.disabled).map(x => x.r.modId)))];
+  const go = await shown;
+  if (findFor) { await findElsewhere(g, findFor); return; }
+  if (!go) return;
+  const checked = rows.filter(r => r.box.checked);
+  const picks = checked.map(r => ({ modId: r.e.modId, fileId: r.e.fileId, ...(r.e.modId < 0 ? { deps: r.reqs.filter(x => x.box.checked && !x.box.disabled).map(x => x.r.modId) } : {}) }));
+  const reqs = [...new Set(checked.filter(r => r.e.modId > 0).flatMap(r => r.reqs.filter(x => x.box.checked && !x.box.disabled).map(x => x.r.modId)))];
   if (!picks.length && !reqs.length) return;
-  toast('Asking Nexus for the files…');
+  toast('Asking for the files…');
   const r = await run(api.groupsDownload(g.id, picks, reqs));
   if (!r) return;
   if (r.gone.length) toast(`No longer on Nexus Mods: ${r.gone.join(', ')}. Ask the group to move the list to a newer version.`, 'warn');
   if (r.failed) toast(`${plural(r.failed, 'mod')} could not be fetched: ${r.problems.join('; ')}`, 'warn');
   if (r.installed) toast(`Installed ${plural(r.installed, 'mod')} that ${r.installed === 1 ? 'was' : 'were'} downloaded already`, 'success');
-  if (r.queued) toast(`${plural(r.queued, 'file')} on the way${premium ? '' : ': each needs one click on the Downloads page'}`, 'success', { label: 'Downloads', fn: () => goTo('downloads') });
+  if (r.queued) toast(`${plural(r.queued, 'file')} on the way${premium || !picks.some(p => p.modId > 0) ? '' : ': each Nexus file needs one click on the Downloads page'}`, 'success', { label: 'Downloads', fn: () => goTo('downloads') });
   else if (!r.installed && !r.failed && !r.gone.length) toast('Nothing new to download');
   run(api.groupsSeen(g.id));
+}
+
+/**
+ * A list's mod from a site this PC does not use: search the other site, the user picks the same mod
+ * (best match first; nothing is assumed), the pick is remembered for this list entry, and that site's
+ * Download window opens (choose the version and what it needs, as always).
+ */
+async function findElsewhere(g, e) {
+  const to = e.modId < 0 ? 'nexus' : 'modio';
+  const siteName = to === 'nexus' ? 'Nexus Mods' : 'mod.io';
+  toast(`Looking for ${e.name} on ${siteName}…`);
+  const r = await api.crossFind({ name: e.name, author: e.author || '', version: e.version || '', to });
+  if (r.error) { toast(r.error, 'error'); return; }
+  const list = r.ok || [];
+  if (!list.length) { toast(`Nothing like "${e.name}" on ${siteName}`, 'warn'); return; }
+  const group = `gm-x-${e.modId}`;
+  const hideAdult = !state.settings?.showMature;
+  const rows = list.map((c, i) => h('label', { class: 'check gm-x-row' },
+    h('input', { type: 'radio', name: group, value: String(i) }), // the user picks: nothing is ticked for them
+    c.picture && /^https:\/\//.test(c.picture) ? h('img', { class: `gm-x-pic${(c.adult || c.mature) && hideAdult ? ' is-mature' : ''}`, src: c.picture, alt: '', referrerpolicy: 'no-referrer' }) : h('span', { class: 'gm-x-pic' }),
+    h('span', { class: 'gm-x-main' }, h('b', {}, c.name), h('span', { class: 'muted' }, [c.author ? `by ${c.author}` : '', c.version ? `v${c.version}` : ''].filter(Boolean).join(' · ')),
+      h('span', { class: 'muted gm-x-sum' }, c.summary || '')),
+    c.adult || c.mature ? h('span', { class: 'tag tag-warn' }, 'Adult') : null,
+    h('span', { class: `tag ${c.likely ? 'tag-ok' : c.score >= 0.6 ? 'tag-warn' : 'tag-off'}`, title: `${c.why} (compared with the name and author as the list has them)` }, c.likely ? 'Close match' : c.score >= 0.6 ? 'Maybe' : 'Unlikely')));
+  const body = h('div', { class: 'gm-dialog' },
+    h('div', { class: 'gm-x-want' }, h('span', { class: 'muted' }, `On the list (from ${e.modId < 0 ? 'mod.io' : 'Nexus Mods'}, as ${e.addedByName || 'a member'} added it):`), h('b', {}, ` ${e.name}`),
+      h('span', { class: 'muted' }, [e.author ? ` by ${e.author}` : '', e.version ? ` · v${e.version}` : ''].join(''))),
+    h('div', { class: 'gm-x-list', role: 'radiogroup', 'aria-label': `Results on ${siteName}` }, ...rows),
+    h('p', { class: 'muted' }, `Pick the one that is the same mod. The order only follows how alike the names and authors are, as the list has them: check the author and the picture yourself. The next window shows its versions and what it needs, as usual. Nothing downloads before that.`));
+  const ok = await modal({ title: `Find ${e.name} on ${siteName}`, sub: 'The best matches first', body, buttons: [{ label: 'None of these', value: false, safe: true }, { label: 'This is the same mod', value: true, kind: 'btn-primary' }] });
+  if (!ok) return;
+  const i = Number(body.querySelector(`input[name="${group}"]:checked`)?.value);
+  const c = list[i];
+  if (!c) { toast('Pick one of the results first', 'warn'); return; }
+  if (!(await run(api.crossLink(e.modId, e.fileId, to === 'nexus' ? c.id : -c.id)))) return;
+  if (to === 'nexus') {
+    const res = await downloadLinks(`https://www.nexusmods.com/cyberpunk2077/mods/${c.id}`);
+    if (res?.queued) toast(`Downloading ${plural(res.queued, 'file')}`, 'success', { label: 'Show', fn: () => goTo('downloads') });
+  } else {
+    await window.modioPage?.downloadWindow(c.id, { name: c.name, note: `For "${e.name}" on ${g.name}'s list.` });
+  }
 }
 
 async function removeFromList(g, list, e) {
