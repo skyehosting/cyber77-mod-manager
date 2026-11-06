@@ -168,6 +168,9 @@ class ModManager extends EventEmitter {
     }
     this.nexus = new NexusClient(() => settings.apiKey, log);
     this.downloader = new Downloader(this.nexus, log, () => settings.get('concurrentDownloads'));
+    // Nexus refused a direct link: ask again whether the account is still Premium (true / false / null).
+    // A fresh answer (refusals of a whole batch share one check); null when it can't be checked.
+    this.downloader.checkPremium = () => this.recheckAccount(0).then(a => (a ? a.isPremium : null));
     // The 7-Zip set in Settings, else the copy that ships with the installed app.
     this.installer = new Installer({ getSevenZip: () => sevenZip(settings.get('sevenZipPath')), tempDir: () => settings.tempDir, log });
     this.deployer = new Deployer({ manifestFile: path.join(dataDir, 'deployment.json'), backupDir: settings.backupDir, log });
@@ -494,12 +497,61 @@ class ModManager extends EventEmitter {
 
   // ---------------------------------------------------------------- downloading
 
+  /**
+   * Ask Nexus who the key belongs to and whether the account is Premium now. Premium can end (or
+   * start) while the app is open, so this runs again later (recheckAccount). Each answer is sent as
+   * an 'account' event; the log says it only when something changed.
+   */
   async validateKey() {
+    const key = this.settings.apiKey;
     const user = await this.nexus.validate();
-    this.log.success(`API key valid: ${user.name}${user.is_premium ? ' (Premium)' : ' (not Premium)'}`);
-    this.downloader.freeAccount = !user.is_premium;
-    if (!user.is_premium) this.log.info('Free Nexus account: each file is downloaded after one click on "Slow download" on Nexus (the Browse page opens each one).');
-    return { name: user.name, isPremium: !!user.is_premium, isSupporter: !!user.is_supporter, avatar: user.profile_url || '' };
+    const acct = { name: user.name, isPremium: !!user.is_premium, isSupporter: !!user.is_supporter, avatar: user.profile_url || '' };
+    // The key changed while Nexus answered: this answer is about the old one.
+    if (this.settings.apiKey !== key) throw Object.assign(new Error('The API key changed while it was being checked; check it again'), { keyChanged: true });
+    const was = this.account;
+    const wasFree = this.downloader.freeAccount;
+    this.account = acct;
+    this.accountAt = Date.now();
+    this.accountFailAt = 0;
+    this.downloader.freeAccount = !acct.isPremium;
+    // Files that waited for a click (a refused link, an earlier free answer) go ahead when Premium.
+    if (wasFree && acct.isPremium) this.downloader.resumeWaiting();
+    if (!was || was.name !== acct.name) {
+      this.log.success(`API key valid: ${acct.name}${acct.isPremium ? ' (Premium)' : ' (not Premium)'}`);
+      if (!acct.isPremium) this.log.info('Free Nexus account: each file is downloaded after one click on "Slow download" on Nexus (the Browse page opens each one).');
+    } else if (was.isPremium && !acct.isPremium) {
+      this.log.warn('Your Nexus Premium has ended: from now on each file needs one click on "Slow download" on Nexus (the Browse page opens each one).');
+    } else if (!was.isPremium && acct.isPremium) {
+      this.log.success('Your Nexus account is Premium again: direct downloads are back');
+    }
+    this.emit('account', acct);
+    return acct;
+  }
+
+  /**
+   * The account again, if the last answer is older than `maxAge` ms (0: always). One check at a
+   * time: callers in the meantime share it. Resolves to the account, or null without a key or on an
+   * error (the last known account then stays).
+   */
+  recheckAccount(maxAge = 0) {
+    if (!this.settings.apiKey) {
+      // The key was removed: no account any more.
+      if (this.account) { this.account = null; this.emit('account', null); }
+      return Promise.resolve(null);
+    }
+    if (this.accountCheck) return this.accountCheck;
+    if (this.account && Date.now() - (this.accountAt || 0) < maxAge) return Promise.resolve(this.account);
+    // After a failed check (offline, rate limit), a minute before the next one.
+    if (Date.now() - (this.accountFailAt || 0) < 60e3) return Promise.resolve(null);
+    this.accountCheck = this.validateKey()
+      .catch(err => {
+        if (err.keyChanged) return null; // not a failure: the new key gets its own check
+        if (!this.accountFailAt) this.log.warn('Could not check the Nexus account', err.message); // once until a check works again
+        this.accountFailAt = Date.now();
+        return null;
+      })
+      .finally(() => { this.accountCheck = null; });
+    return this.accountCheck;
   }
 
   /**
@@ -682,6 +734,9 @@ class ModManager extends EventEmitter {
 
   /** Queue files of one mod. `dependencyOf` names the mod that needs it ('' for a linked mod). */
   queueFiles(mod, files, dependencyOf, summary, extra = {}) {
+    // Downloads are when Premium matters: an answer older than 5 minutes is asked again (in the background;
+    // files that wait for a click go ahead by themselves if the account turns out Premium now).
+    if (files.length) this.recheckAccount(5 * 60e3);
     for (const f of files) {
       const key = String(f.file_id);
       const category = catOf(f);

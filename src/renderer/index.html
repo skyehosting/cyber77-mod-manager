@@ -39,6 +39,7 @@
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2Z"/></symbol>
       <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
       <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 9-9M16 6l3 3M14 8l2 2"/></symbol>
@@ -343,11 +344,9 @@
             <textarea id="dl-links" rows="1" aria-label="Nexus Mods links" title="Enter: pick its files · Shift+Enter: another link" placeholder="Paste a Nexus Mods link, like nexusmods.com/cyberpunk2077/mods/12345"></textarea>
           </div>
           <button class="btn btn-primary is-idle" id="dl-go" title="Read the link and pick which of its files to download"><svg class="i"><use href="#i-download"/></svg><span>Download</span></button>
+          <button class="btn btn-icon" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg></button>
         </div>
-        <div class="dl-under">
-          <p class="hint dl-hint" id="dl-hint"></p>
-          <button class="btn" id="dl-open-folder" title="Open the downloads folder" aria-label="Open downloads folder"><svg class="i"><use href="#i-folder"/></svg><span>Open folder</span></button>
-        </div>
+        <p class="hint dl-hint" id="dl-hint"></p>
 
         <section class="dl-progress" id="dl-progress" aria-labelledby="dl-progress-h" hidden>
           <div class="dl-progress-head">

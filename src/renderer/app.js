@@ -1515,18 +1515,59 @@ function jobStatusCell(j) {
   if (j.status === 'waiting') {
     return h('span', { class: 'status-wait' },
       h('span', { class: 'status status-warn', title: 'A free Nexus account downloads each file after one click on "Slow download" on Nexus' }, 'Needs a click'),
-      h('button', { class: 'btn btn-sm btn-primary', dataset: { key: `job:${j.id}:get` }, title: 'Open its Nexus download page', onclick: () => startFreeDownloads(j.id) }, 'Get'));
+      getButton(j));
   }
   if (j.status === 'error') return h('span', { class: 'status status-err', title: j.error }, 'Failed');
   return h('span', { class: 'status' }, 'Cancelled');
 }
 
-/** One download in progress: what, how far, how fast, and Cancel (or Get, for a free account's click). */
+/**
+ * Get on a file that waits for a click: first ask Nexus whether the account is Premium now. If it is,
+ * every waiting file downloads directly; if not, the file's Nexus page opens for the click.
+ */
+// One account check covers every waiting file: while it runs, each Get says so and ignores clicks.
+// Kept outside the DOM because the rows are rebuilt while it runs (the check itself sends an update).
+let gettingJob = false;
+
+function paintGetButton(btn) {
+  btn.textContent = gettingJob ? 'Checking…' : 'Get';
+  btn.setAttribute('aria-disabled', String(gettingJob)); // not `disabled`: the keyboard focus stays
+  btn.setAttribute('aria-busy', String(gettingJob));
+}
+
+function getButton(j) {
+  const btn = h('button', {
+    class: 'btn btn-sm btn-primary get-btn', dataset: { key: `job:${j.id}:get` },
+    title: 'Premium: download it directly. Free account: open its Nexus download page',
+    'aria-label': `Get ${j.name}`,
+    onclick: async () => {
+      if (gettingJob) return;
+      gettingJob = true;
+      document.querySelectorAll('.get-btn').forEach(paintGetButton);
+      let r = null;
+      try { r = await api.getJob(j.id); } catch { /* treated as not checked */ }
+      gettingJob = false;
+      document.querySelectorAll('.get-btn').forEach(paintGetButton);
+      if (r?.ok?.premium) {
+        // Browse's click-per-file flow (if open) says "every file has started" by itself.
+        if (!free.active) toast('Your Nexus account is Premium: the waiting files download directly', 'success');
+        return;
+      }
+      if (!r?.ok?.checked) toast('Could not check your Nexus account: opening the file on Nexus instead', 'warn');
+      startFreeDownloads(j.id);
+    },
+  }, 'Get');
+  paintGetButton(btn);
+  return btn;
+}
+
+/** One download in progress: what, how far, how fast, and Cancel (and Get, for a free account's click). */
 function progressRow(j) {
   const ico = j.status === 'downloading' ? 'download' : j.status === 'waiting' ? 'alert' : 'clock';
-  const act = j.status === 'waiting'
-    ? h('button', { class: 'btn btn-sm btn-primary', dataset: { key: `job:${j.id}:get` }, title: 'Open its Nexus download page', onclick: () => startFreeDownloads(j.id) }, 'Get')
+  const cancel = j.status === 'waiting'
+    ? h('button', { class: 'btn btn-sm btn-icon btn-cancel', dataset: { key: `job:${j.id}:x` }, title: 'Cancel this download', 'aria-label': `Cancel ${j.name}`, onclick: () => run(api.cancelJob(j.id)) }, icon('x-circle'))
     : h('button', { class: 'btn btn-sm btn-icon btn-ghost', dataset: { key: `job:${j.id}:x` }, title: 'Cancel', 'aria-label': `Cancel ${j.name}`, onclick: () => run(api.cancelJob(j.id)) }, icon('x'));
+  const act = j.status === 'waiting' ? [getButton(j), cancel] : cancel;
   const row = h('div', { class: `dlp-row ${j.status}`, role: 'listitem', dataset: { job: String(j.id) } },
     h('span', { class: 'dlp-icon', 'aria-hidden': 'true' }, icon(ico)),
     h('div', { class: 'dlp-name', title: `${j.name}\n${j.fileName || ''}` },
@@ -1847,7 +1888,8 @@ api.onSettingsChanged(async () => {
 });
 
 // The account type, checked when the app starts.
-api.onKeyUser(u => { state.keyUser = u; renderStatus(); });
+// Every account check (start, focus, every 30 minutes, downloads): the Premium tag and banners follow it.
+api.onKeyUser(u => { state.keyUser = u; renderStatus(); renderDlProgress(); });
 api.updateState().then(r => r.ok && renderUpdate(r.ok));
 $('#update-later').addEventListener('click', () => run(api.postponeUpdate()));
 $('#update-now').addEventListener('click', () => run(api.installUpdate()));

@@ -2616,7 +2616,7 @@ input.lo-pos:focus { color: var(--text); background: var(--bg); border-color: va
 .dl-progress-speed.live { color: var(--text); }
 .dl-progress .tag-premium { height: auto; padding: 0.15rem 0.35rem; border: 0; font: var(--fw-bold) max(0.62rem, 9px)/1.4 var(--font); }
 .dl-progress-list { max-height: calc(3.75rem * 4); overflow-y: auto; }
-.dlp-row { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) minmax(10rem, 22rem) 7rem 4.5rem; align-items: center; min-height: 3.75rem; padding: 0 0.75rem 0 1rem; border-bottom: 1px solid var(--line-soft); }
+.dlp-row { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) minmax(10rem, 22rem) 7rem 7rem; align-items: center; min-height: 3.75rem; padding: 0 0.75rem 0 1rem; border-bottom: 1px solid var(--line-soft); }
 .dlp-row:last-child { border-bottom: 0; }
 .dlp-icon { width: 1.75rem; height: auto; aspect-ratio: 1; display: grid; place-items: center; border-radius: var(--r-sm); background: var(--surface-3); color: var(--muted); }
 .dlp-icon .i { width: 1.05rem; }
@@ -2629,9 +2629,14 @@ input.lo-pos:focus { color: var(--text); background: var(--bg); border-color: va
 .dlp-note { color: var(--text-2); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dlp-row.waiting .dlp-note { color: var(--warn); }
 .dlp-speed { padding-right: 1rem; text-align: right; color: var(--text-2); font: var(--fs-sm) var(--mono); white-space: nowrap; }
-.dlp-act { display: flex; justify-content: flex-end; }
+.dlp-act { display: flex; justify-content: flex-end; align-items: center; gap: var(--sp-2); }
+/* Cancel on a file that waits for a click: a red button with a white circled x, beside Get. */
+.btn.btn-cancel { background: color-mix(in srgb, var(--err) 70%, #000); border-color: transparent; color: #fff; }
+.btn.btn-cancel:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 82%, #000); color: #fff; }
+.btn.btn-cancel .i { width: 1.15rem; height: 1.15rem; }
+.get-btn[aria-busy="true"] { opacity: 0.75; cursor: progress; }
 @container (max-width: 52rem) {
-  .dlp-row { grid-template-columns: 2.5rem minmax(0, 1fr) minmax(7rem, 12rem) 4.5rem; }
+  .dlp-row { grid-template-columns: 2.5rem minmax(0, 1fr) minmax(7rem, 12rem) 7rem; }
   .dlp-speed { display: none; }
 }
 
@@ -3070,13 +3075,10 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 /* Settings: App updates (Check every…, Check now) ends at the right edge, like every other control. */
 .set-row .upd-row { justify-content: flex-end; }
 
-/* Downloads: Open folder sits under Download, the same width, with the link hint to its left. */
-#page-downloads .dl-add { margin-bottom: var(--sp-2); }
-.dl-under { display: flex; align-items: flex-start; gap: var(--sp-3); margin-bottom: var(--sp-3); }
-.dl-under .dl-hint { flex: 1; min-width: 0; margin: 0; padding-top: 0.45rem; }
-.dl-under .dl-hint:empty { display: block; }
-.dl-under > .btn { flex: none; margin-left: auto; }
-#dl-go, #dl-open-folder { min-width: 8.5rem; }
+/* Downloads: the link box, Download, and the downloads folder as a square icon button beside it. */
+#page-downloads .dl-add { margin-bottom: var(--sp-3); }
+#dl-go { min-width: 8.5rem; }
+#dl-open-folder { width: var(--control-h); min-width: 0; }
 
 /* Play while it gets the game going: still green (not greyed out), its icon pulsing, the step as its label. */
 .play-btn.staging:disabled { background: var(--running-bg); color: var(--ok-text); cursor: progress; }

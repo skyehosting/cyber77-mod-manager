@@ -122,6 +122,7 @@ contextBridge.exposeInMainWorld('api', {
   revealExport: () => call('profiles:revealExport'),
   cancelJob: id => call('jobs:cancel', id),
   retryJob: id => call('jobs:retry', id),
+  getJob: id => call('jobs:get', id),
   clearJobs: () => call('jobs:clear'),
   install: keys => call('downloads:install', keys),
   installAndEnable: keys => call('downloads:installAndEnable', keys),

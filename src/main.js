@@ -337,6 +337,7 @@ function createWindow() {
     try { fs.writeFileSync(boundsFile, JSON.stringify({ ...b, maximized: win.isMaximized() })); } catch { /* not critical */ }
   };
   win.on('close', saveBounds);
+  win.on('focus', () => manager?.recheckAccount(10 * 60e3));
 
   // Ctrl + / Ctrl - step the app's scale (kept in Settings → Display); Ctrl 0 goes back to Windows' scale.
   win.webContents.on('before-input-event', (event, input) => {
@@ -424,8 +425,12 @@ async function boot() {
   launchLate?.(); // the app's updater listens from here on
   if (launchUpdate) updater.afterLaunchCheck(launchUpdate);
   updater.start();
+  // The Nexus account (and whether it is Premium) goes to the window on every check: at start, when
+  // the window comes back after 10 minutes, every 30 minutes, before downloads, on a refused download.
+  manager.on('account', u => send('key-user', u));
+  setInterval(() => manager.recheckAccount(25 * 60e3), 30 * 60e3).unref?.();
   if (settings.apiKey) {
-    manager.validateKey().then(u => send('key-user', u)).catch(err => logger.warn('Could not check the Nexus API key', err.message));
+    manager.recheckAccount();
     manager.resolveSoon(); // mods that know their Nexus mod but not the exact file (moved from Vortex): look them up once
   }
   applyAdBlock();
@@ -944,6 +949,12 @@ async function boot() {
   handle('profiles:revealExport', () => { if (lastExport) shell.showItemInFolder(lastExport); });
   handle('jobs:cancel', id => manager.downloader.cancel(id));
   handle('jobs:retry', id => manager.downloader.retry(id));
+  // Get on a waiting file: Premium now (asked fresh) downloads directly; otherwise the user clicks on Nexus.
+  handle('jobs:get', async () => {
+    const acct = await manager.recheckAccount(0);
+    if (acct?.isPremium) manager.downloader.resumeWaiting();
+    return { premium: !!acct?.isPremium, checked: !!acct };
+  });
   handle('jobs:clear', () => { manager.downloader.clearFinished(); pushSnapshot(); });
   handle('downloads:install', keys => manager.install(keys));
   handle('downloads:installAndEnable', async keys => {

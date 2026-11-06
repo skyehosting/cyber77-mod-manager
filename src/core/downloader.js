@@ -42,6 +42,17 @@ class Downloader extends EventEmitter {
     return job;
   }
 
+  /** Premium again: the files that waited for a click download directly now. */
+  resumeWaiting() {
+    for (const job of this.jobs.values()) {
+      if (job.status !== 'waiting' || job.nxm?.key) continue;
+      Object.assign(job, { status: 'queued', error: '', attempts: 0 });
+      this.queue.push(job);
+      this.emit('update', publicJob(job));
+    }
+    this.pump();
+  }
+
   /** Put a file aside until the user clicks its download on Nexus. */
   wait(job) {
     Object.assign(job, { status: 'waiting', speed: 0, received: 0, error: '' });
@@ -128,12 +139,22 @@ class Downloader extends EventEmitter {
           this.log.warn(`Cancelled ${job.fileName}`);
           return;
         }
-        // Nexus refused a direct link: a free account. This and later files wait for a click.
+        // Nexus refused a direct link. Ask Nexus whether the account is (still) Premium: if not, this
+        // and later files wait for a click; if it is, the refusal is about this one file.
         if (err.status === 403 && !job.nxm?.key) {
-          if (!this.freeAccount) this.log.warn('Your Nexus account is not Premium: each file needs one click on "Slow download" on Nexus. The Browse page opens each one for you.');
-          this.freeAccount = true;
-          this.wait(job);
-          return;
+          const premium = this.freeAccount ? false : await (async () => this.checkPremium?.() ?? null)().catch(() => null);
+          if (job.cancelled) {
+            Object.assign(job, { status: 'cancelled', speed: 0 });
+            this.emit('update', publicJob(job));
+            return;
+          }
+          if (premium !== true) {
+            if (!this.freeAccount) this.log.warn('Nexus refused a direct download: the account is not Premium (or could not be checked). Each file needs one click on "Slow download" on Nexus; the Browse page opens each one for you.');
+            this.freeAccount = true;
+            this.wait(job);
+            return;
+          }
+          err = Object.assign(new Error(`Nexus refused this file (403) although the account is Premium${err.detail ? `: ${err.detail}` : ''}`), { status: 403 });
         }
         // A used or expired one-time key: wait for a new click.
         if (err.status === 403 || err.status === 410) {

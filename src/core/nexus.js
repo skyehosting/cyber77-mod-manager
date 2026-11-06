@@ -111,7 +111,7 @@ class NexusClient {
         404: 'Not found (404). Check the mod link.',
         429: 'Rate limit reached (429). Nexus allows 20,000 requests a day / 500 an hour after that.',
       };
-      throw new NexusError(`${hints[res.status] || `Nexus API error ${res.status}`}${msg ? ` — ${msg}` : ''}`, res.status);
+      throw Object.assign(new NexusError(`${hints[res.status] || `Nexus API error ${res.status}`}${msg ? ` — ${msg}` : ''}`, res.status), { detail: String(msg).slice(0, 300) });
     }
     return res.json();
   }
