@@ -535,7 +535,7 @@ function renderModCats() {
   for (const n of [...[...count.keys()].filter(c => c !== NO_CAT), ...DEFAULT_MOD_CATS, ...state.nexusCats]) if (!seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n);
   const names = [...seen.values()].sort(nameOrder.compare);
   if (state.modCat && state.modCat !== NO_CAT && !names.includes(state.modCat)) names.push(state.modCat);
-  const opts = [['', `All categories (${rows.length})`], [NO_CAT, `Unassigned (${count.get(NO_CAT) || 0})`],
+  const opts = [['', `All ${sectionList().length ? 'Nexus ' : ''}categories (${rows.length})`], [NO_CAT, `Unassigned (${count.get(NO_CAT) || 0})`],
     ...names.map(n => [n, `${n} (${count.get(n) || 0})`])];
   const sel = $('#mods-cat');
   sel.classList.toggle('is-set', !!state.modCat);
@@ -549,6 +549,12 @@ function renderModCats() {
 
 function visibleMods() {
   return groupedMods().filter(m => passesModFilters(m, true)).sort(SORTS[state.modSort] || byName);
+}
+/** The mods whose rows are on screen: the visible ones, less those in a collapsed category. Select all takes these. */
+function shownMods() {
+  const mods = visibleMods();
+  if (!state.secCollapsed?.size || !sectionList().length) return mods;
+  return mods.filter(m => !state.secCollapsed.has(sectionOf(m)));
 }
 
 // The Show filter: which mods each choice lists, in the order the list offers them.
@@ -643,6 +649,7 @@ function modContextMenu(m, x, y) {
     item('info', 'Properties', () => openDrawer(m.id), { kbd: 'Enter' }),
     state.modLogProblems[m.id] ? item('activity', 'Show its game log errors', () => openDrawer(m.id, 'logs')) : null,
     item('sparkle', 'Ask AI', () => askAi(`Look at the mod "${m.name}": is anything wrong with it (logs, conflicts, missing files, load order)? What should I do?`)),
+    ...(sectionList().length > 1 ? [sep(), ...sectionList().filter(s => s.id !== sectionOf(m)).slice(0, 12).map(s => item('layers', `Move to ${s.name}`, () => moveToSection([m.id], s.id)))] : []),
     sep(),
     m.modId ? item('external', 'Open on Nexus', () => api.openNexus(m.game, m.modId)) : null,
     item('file-code', 'Show files', () => openConfigFor(m.vortex ? `vx:${m.vortexId}` : `app:${m.id}`)),
@@ -669,7 +676,11 @@ window.addEventListener('blur', () => closeContextMenu());
 document.addEventListener('scroll', () => closeContextMenu(), true);
 
 function paintModSelection() {
-  paintSelection($('#mods-table tbody'), state.modSel, $('#mods-all'), visibleMods().map(m => m.id), $('#mods-bulk'), $('#mods-sel-count'), $('#mods-toolbar'));
+  // A row that is not on screen is never acted on by a bulk action: mods in a collapsed category leave the selection.
+  if (state.secCollapsed?.size && state.modSel.size && sectionList().length) {
+    for (const m of allMods()) if (state.modSel.has(m.id) && state.secCollapsed.has(sectionOf(m))) state.modSel.delete(m.id);
+  }
+  paintSelection($('#mods-table tbody'), state.modSel, $('#mods-all'), shownMods().map(m => m.id), $('#mods-bulk'), $('#mods-sel-count'), $('#mods-toolbar'));
   const picked = [...state.modSel].map(id => allMods().find(m => m.id === id)).filter(Boolean);
   const onlyVx = picked.length > 0 && picked.every(m => m.vortex);
   for (const act of ['reinstall', 'uninstall', 'delete']) $(`#mods-bulk [data-act="${act}"]`).hidden = onlyVx;
@@ -690,7 +701,17 @@ function paintModSelection() {
 /** A mod's requirements, resolved by the app: [{ id, modId, name, state, version, url, notes, inferred }]. */
 const reqsOf = id => state.snap.reqs?.[id] || [];
 /** An enabled mod with a requirement that is off or not installed. */
-const reqProblem = m => !!m.enabled && reqsOf(m.id).some(q => q.state === 'off' || q.state === 'missing' || q.state === 'official');
+// What the user chose to ignore for a mod (install warnings, its game-log errors, requirements it lists
+// that they don't need): kept by its Nexus mod, so an update keeps it. Missing files are never ignored.
+const ignKey = m => (Number(m.modId) > 0 ? `n:${Number(m.modId)}` : String(m.id));
+const ignOf = m => state.snap?.ignored?.[ignKey(m)] || {};
+const reqKey = q => (Number(q.modId) > 0 ? `m:${Number(q.modId)}` : `n:${q.name}`);
+const reqIgnored = (m, q) => (ignOf(m).req || []).includes(reqKey(q));
+const liveWarnings = m => (m.warnings || []).filter(w => !(ignOf(m).w || []).includes(w));
+const logCount = m => (ignOf(m).log ? 0 : state.modLogProblems[m.id] || 0);
+const ignoreProblem = (m, kind, value, on) => run(api.ignoreProblem(m.id, kind, value, on));
+const REQ_BAD = new Set(['off', 'missing', 'official']);
+const reqProblem = m => !!m.enabled && reqsOf(m.id).some(q => REQ_BAD.has(q.state) && !reqIgnored(m, q));
 /** Which enabled mods need each mod: id → [their names]. */
 function neededByMap(all = allMods()) {
   const out = new Map();
@@ -760,6 +781,7 @@ function reqRows(m, neededBy) {
       external: [h('span', { class: 'tag tag-off' }, 'Not on Nexus'),
         q.url ? h('button', { class: 'btn btn-sm btn-ghost', onclick: ev => { ev.stopPropagation(); api.openLink(q.url); } }, h('span', {}, 'Open page')) : null],
     }[q.state] || [];
+    if (REQ_BAD.has(q.state) && reqIgnored(m, q)) tags.splice(0, tags.length, h('span', { class: 'tag tag-off', title: 'You marked it as not needed' }, 'Not needed'));
     rows.push(h('tr', { class: `req-row req-${q.state}${i === list.length - 1 ? ' last' : ''}` },
       h('td'),
       // Under the mod's switch: the tree starts there, one step in from the mod.
@@ -776,7 +798,7 @@ function reqRows(m, neededBy) {
   return rows;
 }
 
-const hasProblem = m => !!(m.health || m.warnings?.length || state.modLogProblems[m.id] || reqProblem(m));
+const hasProblem = m => !!(m.health || liveWarnings(m).length || logCount(m) || reqProblem(m));
 
 /**
  * What a mod's Status says, most pressing first: [{ sev: 'err' | 'warn' | 'info' | 'ok', text,
@@ -788,15 +810,16 @@ function modStatusItems(m, neededBy, byId = {}) {
   const names = ids => ids.map(id => byId[id]?.name || String(id).replace(/^vx:/, '')).join(', ');
   const reqs = reqsOf(m.id);
   if (m.enabled) {
-    const missing = reqs.filter(q => q.state === 'missing' || q.state === 'official').length;
-    const off = reqs.filter(q => q.state === 'off').length;
+    const missing = reqs.filter(q => (q.state === 'missing' || q.state === 'official') && !reqIgnored(m, q)).length;
+    const off = reqs.filter(q => q.state === 'off' && !reqIgnored(m, q)).length;
     if (missing) items.push({ sev: 'err', text: missing === 1 ? 'Requirement missing' : `${missing} requirements missing`, section: 'reqs' });
     if (off) items.push({ sev: 'warn', text: off === 1 ? 'Requirement off' : `${off} requirements off`, section: 'reqs' });
   }
   if (m.health) items.push({ sev: m.health.missing ? 'err' : 'warn', text: m.health.missing ? `${plural(m.health.missing, 'file')} missing` : `${plural(m.health.replaced, 'file')} replaced`, section: 'health' });
-  const logIssues = state.modLogProblems[m.id];
+  const logIssues = logCount(m);
   if (logIssues) items.push({ sev: 'err', text: plural(logIssues, 'log error'), section: 'logs' });
-  if (m.warnings?.length) items.push({ sev: 'warn', text: plural(m.warnings.length, 'install warning'), section: 'warnings' });
+  const warns = liveWarnings(m).length;
+  if (warns) items.push({ sev: 'warn', text: plural(warns, 'install warning'), section: 'warnings' });
   const c = state.snap.conflicts[m.id];
   if (c?.loses) items.push({ sev: 'warn', text: `Loses ${plural(c.loses, 'file')}`, section: 'conflicts', detail: `to ${names(c.with)}` });
   const vxHits = state.snap.vortex?.overlaps?.[m.id] || [];
@@ -844,6 +867,30 @@ function dropDeadLinks(body) {
   for (const b of body.querySelectorAll('[data-goto-section]')) if (!body.querySelector(`[data-section="${b.dataset.gotoSection}"]`)) b.remove();
 }
 
+/**
+ * Install warnings in the details panel: each with Ignore (it stops counting as a problem); ignored ones
+ * folded under "N ignored", each with Stop ignoring. Notes (things worth knowing, not problems) after.
+ */
+function warningsSection(m) {
+  const ign = new Set(ignOf(m).w || []);
+  const live = (m.warnings || []).filter(w => !ign.has(w));
+  const off = (m.warnings || []).filter(w => ign.has(w));
+  const out = [];
+  if (live.length || off.length) out.push(h('h2', { dataset: { section: 'warnings' } }, 'Install warnings'));
+  if (live.length) {
+    out.push(h('ul', { class: 'warnlist' }, live.map((w, i) => h('li', { class: 'warn-li' }, h('span', {}, w),
+      h('button', { class: 'btn btn-sm btn-ghost warn-ignore', dataset: { key: `w:${m.id}:${i}` }, title: 'Stop counting this as a problem (you can undo it)', onclick: () => ignoreProblem(m, 'w', w, true) }, 'Ignore')))));
+  }
+  if (off.length) {
+    const box = h('details', { class: 'ignored-box' }, h('summary', {}, `${plural(off.length, 'ignored warning')}`),
+      h('ul', { class: 'warnlist muted-list' }, off.map(w => h('li', { class: 'warn-li' }, h('span', {}, w),
+        h('button', { class: 'btn btn-sm btn-ghost warn-ignore', onclick: () => ignoreProblem(m, 'w', w, false) }, 'Stop ignoring')))));
+    out.push(box);
+  }
+  if (m.notes?.length) out.push(h('h2', {}, 'Notes'), h('ul', { class: 'notelist' }, m.notes.map(n => h('li', {}, n))));
+  return out;
+}
+
 /** The details panel's Requires tab: each mod this one needs, whether it is there and on, and the fix. */
 function reqSection(m) {
   const list = reqsOf(m.id);
@@ -851,8 +898,11 @@ function reqSection(m) {
   const STATE = { on: ['tag-ok', 'On'], off: ['tag-warn', 'Off'], missing: ['tag-err', 'Missing'], outside: ['tag-off', 'Not managed here'], builtin: ['tag-ok', 'Part of the game'], official: ['tag-warn', 'Not installed'], external: ['tag-off', 'Not on Nexus'] };
   return [
     h('div', { class: 'drawer-list', dataset: { section: 'reqs' } }, list.map(q => {
-      const [cls, label] = STATE[q.state] || ['tag-off', String(q.state || '')];
+      const ignored = REQ_BAD.has(q.state) && reqIgnored(m, q);
+      const [cls, label] = ignored ? ['tag-off', 'Not needed (ignored)'] : STATE[q.state] || ['tag-off', String(q.state || '')];
       const page = Number(q.modId) > 0 ? `https://www.nexusmods.com/cyberpunk2077/mods/${Number(q.modId)}` : '';
+      // A requirement the user doesn't need (an optional one a mod lists): no longer a problem.
+      const skip = REQ_BAD.has(q.state) ? h('button', { class: 'btn btn-sm btn-ghost', dataset: { key: `dreq:${reqKey(q)}:ign` }, title: ignored ? 'Count it as a problem again' : 'You don\'t need it: stop counting it as a problem', onclick: () => ignoreProblem(m, 'req', reqKey(q), !ignored) }, ignored ? 'Undo' : 'Not needed') : null;
       const action = q.state === 'off' && q.id
         ? h('button', { class: 'btn btn-sm', dataset: { key: `dreq:${q.id}:on` }, onclick: () => setModsEnabled([q.id], true) }, icon('check'), h('span', {}, 'Enable'))
         : q.state === 'missing' && page
@@ -862,7 +912,7 @@ function reqSection(m) {
         h('span', { class: 'drawer-li-text' }, q.id || page
           ? h('button', { class: 'link-btn quiet', title: q.id ? `${q.name}: open its details` : `${q.name}: open its Nexus page`, onclick: () => { if (q.id) openDrawer(q.id); else api.openLink(page); } }, q.name)
           : q.name),
-        h('span', { class: `tag ${cls}` }, label), action);
+        h('span', { class: `tag ${cls}` }, label), ignored ? null : action, skip);
     })),
   ];
 }
@@ -880,18 +930,156 @@ function neededSection(m, neededBy) {
   }))];
 }
 
+// ---------------------------------------------------------------- my categories (sections on the Mods page)
+// Only how the list looks: each of the user's categories is a section, in their order, every mod sorted
+// within its own by the sort chosen above. None: the plain list as always. The first one made also
+// makes "Default", where every mod not put elsewhere is.
+
+const sectionList = () => state.snap?.sections?.list || [];
+const secKey = m => (Number(m.modId) > 0 ? `n:${Number(m.modId)}` : String(m.id));
+const defaultSection = () => sectionList().find(s => s.def) || sectionList()[0];
+/** The id of the category a mod is shown in (Default when it was not put elsewhere). */
+function sectionOf(m) {
+  const id = state.snap?.sections?.of?.[secKey(m)];
+  return id && sectionList().some(s => s.id === id) ? id : defaultSection()?.id || '';
+}
+state.secCollapsed = new Set(store.get('mods.secCollapsed', []));
+
+/** The visible mods in sections: [{ s, mods, total, collapsed }], or null with no categories. */
+function groupBySection(mods, all) {
+  const list = sectionList();
+  if (!list.length) return null;
+  const filtering = searching() || state.modFilter !== 'all' || !!state.modCat;
+  return list.map(s => {
+    const inIt = mods.filter(m => sectionOf(m) === s.id);
+    return { s, mods: inIt, total: all.filter(m => sectionOf(m) === s.id).length, collapsed: state.secCollapsed.has(s.id) };
+  }).filter(g => g.mods.length || !filtering); // while filtering, sections with nothing to show stay out
+}
+
+function sectionHeader(s, shown, total) {
+  const list = sectionList();
+  const i = list.findIndex(x => x.id === s.id);
+  const collapsed = state.secCollapsed.has(s.id);
+  const name = h('span', { class: 'sec-name', title: 'Double-click to rename', dataset: { sec: s.id }, ondblclick: () => startSectionRename(s.id) }, s.name);
+  const toggle = () => {
+    if (collapsed) state.secCollapsed.delete(s.id);
+    else {
+      state.secCollapsed.add(s.id);
+      // A hidden row is never acted on by a bulk action: its mods leave the selection.
+      for (const m of allMods()) if (sectionOf(m) === s.id) state.modSel.delete(m.id);
+    }
+    store.set('mods.secCollapsed', [...state.secCollapsed]);
+    renderMods();
+  };
+  const onlyDefaultBlocked = s.def && list.length > 1;
+  return h('tr', { class: `sec-row${collapsed ? ' collapsed' : ''}`, dataset: { key: `sec:${s.id}` } },
+    h('td', { colspan: '5' }, h('div', { class: 'sec-head' },
+      h('button', { type: 'button', class: 'sec-chev', 'aria-expanded': String(!collapsed), 'aria-label': `${collapsed ? 'Show' : 'Hide'} the mods in ${s.name}`, dataset: { key: `sec:${s.id}:chev` }, onclick: toggle }, icon('chevron-right')),
+      name,
+      h('button', { type: 'button', class: 'sec-btn', title: 'Rename', 'aria-label': `Rename ${s.name}`, dataset: { key: `sec:${s.id}:edit` }, onclick: () => startSectionRename(s.id) }, icon('edit')),
+      h('span', { class: 'sec-count' }, shown === total ? String(total) : `${shown} of ${total}`),
+      h('span', { class: 'sec-acts' },
+        h('button', { type: 'button', class: 'sec-btn', title: 'Move up', 'aria-label': `Move ${s.name} up`, disabled: i <= 0, dataset: { key: `sec:${s.id}:up` }, onclick: () => run(api.sectionMove(s.id, -1)) }, icon('arrow-up')),
+        h('button', { type: 'button', class: 'sec-btn', title: 'Move down', 'aria-label': `Move ${s.name} down`, disabled: i >= list.length - 1, dataset: { key: `sec:${s.id}:down` }, onclick: () => run(api.sectionMove(s.id, 1)) }, icon('arrow-down')),
+        h('button', {
+          type: 'button', class: 'sec-btn danger', dataset: { key: `sec:${s.id}:del` }, disabled: onlyDefaultBlocked,
+          title: onlyDefaultBlocked ? 'Default holds every mod not in another category: delete the others first' : 'Delete this category (its mods go to Default)',
+          'aria-label': `Delete ${s.name}`, onclick: () => deleteSection(s, total),
+        }, icon('trash'))))));
+}
+
+function sectionEmptyRow(s) {
+  return h('tr', { class: 'sec-empty' }, h('td', { colspan: '5' }, s.def ? 'Every mod is in another category.' : 'No mods here yet. Select some and use Move to…, or right-click a mod.'));
+}
+
+/** Rename in place: the name becomes a field with everything selected; Enter or leaving it saves, Esc cancels. */
+function startSectionRename(id) {
+  const el = $(`#mods-table .sec-name[data-sec="${CSS.escape(id)}"]`);
+  const s = sectionList().find(x => x.id === id);
+  if (!el || !s) return;
+  const input = h('input', { type: 'text', class: 'sec-input', value: s.name, maxlength: '40', 'aria-label': 'Category name' });
+  let done = false;
+  const finish = async save => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (save && v && v !== s.name) await run(api.sectionRename(id, v));
+    renderMods(); // the field always goes back to the name, saved or not (a refused name too)
+  };
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  el.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function deleteSection(s, count) {
+  const last = sectionList().length === 1;
+  const text = last ? 'This is the last category: the list goes back to one plain list. No mod changes.'
+    : `${count ? `Its ${plural(count, 'mod')} go to Default. ` : ''}Only how the list looks changes.`;
+  if (await confirmBox(`Delete the category ${s.name}?`, text, 'Delete', true)) await run(api.sectionDelete(s.id));
+}
+
+async function newSection() {
+  const id = await run(api.sectionCreate(''));
+  if (id) { state.renameSection = id; renderMods(); } // its name is ready to type over
+}
+
+async function moveToSection(ids, sectionId) {
+  const n = await run(api.sectionAssign(ids, sectionId));
+  const s = sectionList().find(x => x.id === sectionId);
+  if (n) toast(`Moved ${plural(n, 'mod')} to ${s?.name || 'the category'}`, 'success');
+}
+
+/** The details panel: which category the mod is in, to change. */
+function sectionPicker(m) {
+  const sel = h('select', { class: 'sec-pick', 'aria-label': 'Category' },
+    ...sectionList().map(s => h('option', { value: s.id }, s.name)));
+  sel.value = sectionOf(m);
+  sel.addEventListener('change', () => moveToSection([m.id], sel.value));
+  return sel;
+}
+
+/** The selection bar's Move to…: a small menu of the categories (and a new one). */
+function sectionMenu(anchor, ids) {
+  closeContextMenu();
+  const item = (label, fn) => h('button', { class: 'menu-item', role: 'menuitem', onclick: () => { closeContextMenu(true); fn(); } }, icon('layers'), h('span', { class: 'menu-label' }, label));
+  const menu = h('div', { class: 'menu ctx-menu', id: 'ctx-menu', role: 'menu', 'aria-label': 'Move to category' },
+    h('div', { class: 'menu-head' }, `Move ${plural(ids.length, 'mod')} to`),
+    ...sectionList().map(s => item(s.name, () => moveToSection(ids, s.id))),
+    h('div', { class: 'menu-sep', role: 'separator' }),
+    item('New category…', async () => { const id = await run(api.sectionCreate('')); if (id) { await moveToSection(ids, id); state.renameSection = id; renderMods(); } }));
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - menu.offsetHeight - 8))}px`;
+  menu.querySelector('.menu-item')?.focus();
+  menu.addEventListener('keydown', ev => {
+    const list = [...menu.querySelectorAll('.menu-item')];
+    const i = list.indexOf(document.activeElement);
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeContextMenu(); anchor.focus(); }
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    if (ev.key === 'ArrowUp') { ev.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+  });
+}
+
 function renderMods() {
   const all = allMods();
   renderModCats();
   renderModFilter();
-  const mods = visibleMods();
+  let mods = visibleMods();
+  const grouped = groupBySection(mods, all);
+  if (grouped) mods = grouped.flatMap(g => (g.collapsed ? [] : g.mods)); // keyboard and Shift-click follow what is shown
   const ids = mods.map(m => m.id);
   for (const id of [...state.modSel]) if (!all.some(m => m.id === id)) state.modSel.delete(id);
   const byId = Object.fromEntries(all.map(m => [m.id, m]));
   const tbody = $('#mods-table tbody');
   const neededBy = neededByMap(all);
 
-  keepFocus(tbody, () => tbody.replaceChildren(...mods.flatMap(m => {
+  const rowsFor = m => {
     // While the change is applied the switch stays focusable (aria-disabled), so focus isn't lost.
     const switchBtn = h('button', {
       class: `switch${m.enabled ? ' on' : ''}`, role: 'switch', 'aria-checked': m.enabled ? 'true' : 'false',
@@ -953,7 +1141,12 @@ function renderMods() {
       sub ? h('div', { class: 'subname', title: sub }, sub) : null)),
     h('td', { class: 'status-cell' }, h('div', { class: 'chips-row' }, statusTag(m, modStatusItems(m, neededBy, byId)))),
     h('td', { class: 'num ver-cell', title: m.versions ? `${m.versions.length} versions installed` : m.version || '' }, m.versions ? versionMenu(m) : h('span', { class: 'ver-text' }, m.version || ''))), ...reqRows(m, neededBy)];
-  })), null);
+  };
+  // The user's categories: a section each, in their order, every mod sorted within its own (none: the
+  // plain list as always).
+  keepFocus(tbody, () => tbody.replaceChildren(...(grouped ? grouped.flatMap(g => [sectionHeader(g.s, g.mods.length, g.total), ...(g.collapsed ? [] : g.mods.length ? g.mods.flatMap(rowsFor) : [sectionEmptyRow(g.s)])]) : mods.flatMap(rowsFor))), null);
+  if (state.renameSection) { const id = state.renameSection; state.renameSection = ''; startSectionRename(id); }
+  $('#mods-bulk-cat').hidden = !sectionList().length;
 
   const withReqs = mods.filter(m => reqsOf(m.id).length); // (the mods listed now: filtered, searched)
   $('#mods-req-all').hidden = !withReqs.length;
@@ -970,7 +1163,9 @@ function renderMods() {
     $('#mods-empty-title').textContent = 'No mods installed';
     $('#mods-empty-text').textContent = 'Download mods from Nexus, or install an archive you already have.';
     $('#mods-empty-actions').hidden = false;
+    $('#mods-empty-note').replaceChildren(...[managersNote(state.snap, { compact: true })].filter(Boolean));
   } else {
+    $('#mods-empty-note').replaceChildren();
     $('#mods-empty-title').textContent = 'No matching mods';
     $('#mods-empty-text').textContent = 'Try another search or filter.';
     $('#mods-empty-actions').hidden = true;
@@ -1053,7 +1248,7 @@ $('#mods-sort').addEventListener('change', ev => {
 });
 $('#mods-filter').addEventListener('change', ev => setModFilter(ev.target.value));
 $('#mods-all').addEventListener('change', ev => {
-  visibleMods().forEach(m => (ev.target.checked ? state.modSel.add(m.id) : state.modSel.delete(m.id)));
+  shownMods().forEach(m => (ev.target.checked ? state.modSel.add(m.id) : state.modSel.delete(m.id)));
   paintModSelection();
 });
 $('#mods-sel-clear').addEventListener('click', () => { state.modSel.clear(); paintModSelection(); });
@@ -1061,7 +1256,7 @@ $('#mods-sel-clear').addEventListener('click', () => { state.modSel.clear(); pai
 document.addEventListener('keydown', ev => {
   const typing = ev.target.closest('input,textarea,select');
   if (ev.ctrlKey && ev.key.toLowerCase() === 'a' && !typing && $('#modal-back').hidden) {
-    if ($('#page-mods').classList.contains('active')) { ev.preventDefault(); visibleMods().forEach(m => state.modSel.add(m.id)); paintModSelection(); }
+    if ($('#page-mods').classList.contains('active')) { ev.preventDefault(); shownMods().forEach(m => state.modSel.add(m.id)); paintModSelection(); }
     if ($('#page-downloads').classList.contains('active')) { ev.preventDefault(); visibleDownloads().forEach(d => state.dlSel.add(d.key)); paintDlSelection(); }
   }
   if (ev.key === 'Escape') {
@@ -1238,6 +1433,8 @@ window.addEventListener('drop', async ev => {
   if (r) toast(`Installing ${plural(r.count, 'archive')}${r.skipped ? ` · ${r.skipped} skipped (not .zip, .7z or .rar)` : ''}`, 'success');
 });
 $('#mods-import').addEventListener('click', importArchives);
+$('#mods-new-cat').addEventListener('click', newSection);
+$('#mods-bulk-cat').addEventListener('click', ev => sectionMenu(ev.currentTarget, [...state.modSel]));
 $('#mods-empty-import').addEventListener('click', importArchives);
 $('#mods-redeploy').addEventListener('click', () => run(api.redeploy(), 'Deployment checked'));
 $('#mods-update-all').addEventListener('click', () => {
@@ -1299,7 +1496,7 @@ function closeDrawer() {
 }
 
 /** What the drawer shows depends on these; a snapshot that changes none of them leaves it alone. */
-const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedAt, m.fileCount, m.warnings, m.health, state.snap.conflicts[m.id], state.snap.updates?.[m.id], state.modLogProblems[m.id],
+const drawerSignature = m => JSON.stringify([m.enabled, m.priority, m.installedAt, m.fileCount, m.warnings, m.notes, ignOf(m), m.health, state.snap.conflicts[m.id], state.snap.updates?.[m.id], state.modLogProblems[m.id],
   reqsOf(m.id), state.snap.vortex?.overlaps?.[m.id], state.snap.vortex?.twins?.[m.id], modCatOf(m), neededByMap(allMods()).get(m.id) || []]);
 // The tab the details panel shows (it stays while the same mod is open; another mod starts at Overview).
 let drawerTab = 'ov';
@@ -1517,19 +1714,19 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
             kv('Version', m.version ? `${m.version}${upd?.version ? ` (${upd.version} on Nexus)` : ''}` : '—'),
             m.author ? kv('Author', m.author) : null,
             kv('Type', m.type),
-            kv('Category', modCatOf(m) || 'Unassigned'),
+            ...(sectionList().length ? kv('Category', sectionPicker(m)) : []),
+            kv(sectionList().length ? 'Nexus category' : 'Category', modCatOf(m) || 'Unassigned'),
             kv('File category', CAT_LABEL[m.category] || m.category),
             m.dependencyOf ? kv('Required by', m.dependencyOf) : null,
             kv('Priority', `${m.priority}${hasConflicts ? ' — higher wins file conflicts' : ''}`),
             kv('Installed', new Date(m.installedAt).toLocaleString()),
             m.modId ? kv('Nexus mod', String(m.modId)) : null,
             m.skipped ? kv('Not installed', `${plural(m.skipped, 'file')} (readmes, images, unknown files)`) : null),
-          m.warnings?.length ? h('h2', { dataset: { section: 'warnings' } }, 'Install warnings') : null,
-          m.warnings?.length ? h('ul', { class: 'warnlist' }, m.warnings.map(w => h('li', {}, w))) : null,
+          ...warningsSection(m),
           ...drawerSections.flatMap(fn => fn(m) || []),
         ],
       },
-      { key: 'reqs', label: 'Requires', count: reqs.length, bad: reqs.some(q => q.state === 'missing' || (m.enabled && q.state === 'off')), nodes: reqSection(m) },
+      { key: 'reqs', label: 'Requires', count: reqs.length, bad: reqs.some(q => !reqIgnored(m, q) && (q.state === 'missing' || (m.enabled && q.state === 'off'))), nodes: reqSection(m) },
       { key: 'needed', label: 'Needed by', count: (neededBy.get(m.id) || []).length, nodes: neededSection(m, neededBy) },
       (conflicts || []).length ? { key: 'conflicts', label: 'Conflicts', count: conflicts.length, nodes: conflictSection(m, conflicts) } : null,
       {
@@ -1589,7 +1786,8 @@ function openVortexDrawer(m, takeFocus = true, focusSection = '') {
             kv('Version', m.version || '—'),
             m.author ? kv('Author', m.author) : null,
             kv('Vortex profile', vx.activeProfileName || '—'),
-            kv('Category', modCatOf(m) || 'Unassigned'),
+            ...(sectionList().length ? kv('Category', sectionPicker(m)) : []),
+            kv(sectionList().length ? 'Nexus category' : 'Category', modCatOf(m) || 'Unassigned'),
             kv('Files in the game', String(m.fileCount)),
             m.installedAt ? kv('Installed', new Date(m.installedAt).toLocaleString()) : null,
             m.modId ? kv('Nexus mod', String(m.modId)) : null,
@@ -1602,7 +1800,7 @@ function openVortexDrawer(m, takeFocus = true, focusSection = '') {
           ours.length ? h('ul', { class: 'warnlist' }, ours.map(o => h('li', {}, `${o.name}: whichever app deploys last wins those files`))) : null,
         ],
       },
-      { key: 'reqs', label: 'Requires', count: reqs.length, bad: reqs.some(q => q.state === 'missing' || (m.enabled && q.state === 'off')), nodes: reqSection(m) },
+      { key: 'reqs', label: 'Requires', count: reqs.length, bad: reqs.some(q => !reqIgnored(m, q) && (q.state === 'missing' || (m.enabled && q.state === 'off'))), nodes: reqSection(m) },
       { key: 'needed', label: 'Needed by', count: (neededBy.get(m.id) || []).length, nodes: neededSection(m, neededBy) },
     ]);
     dropDeadLinks($('#drawer-body'));
@@ -2142,13 +2340,34 @@ async function moveFromVortex(ids = null) {
   if (!ok || !(await confirmVortexClose(pv.enabled))) return null;
   const r = await run(api.adoptVortex(ids || 'all'));
   if (r) toast(`Moved ${plural(r.adopted.length, 'mod')} from Vortex`, 'success', { label: 'Show', fn: () => goTo('mods') });
+  // A few Vortex would not let go of (after three tries each): named, still with Vortex, safe to retry.
+  if (r?.failed?.length) {
+    await modal({
+      title: `${plural(r.failed.length, 'mod')} stayed with Vortex`,
+      sub: 'Vortex did not let go of them after three tries (it may have been busy, or Windows blocked it)',
+      body: h('div', {}, h('ul', { class: 'warnlist' }, ...r.failed.slice(0, 200).map(n => h('li', {}, n))),
+        h('p', { class: 'hint' }, 'Nothing about them changed: they are still in Vortex, as they were. Try moving them again in a moment (Settings → Vortex → Move), or close Vortex first if it is open.')),
+      buttons: [{ label: 'OK', value: true, kind: 'btn-primary' }],
+    });
+  }
   if (ids && state.drawerMod && ids.includes(state.drawerMod)) closeDrawer();
   return r;
 }
 $('#s-vx-move').addEventListener('click', () => moveFromVortex());
 
+/** Settings: the note at the top of the Vortex or MO2 section, when that one is on this PC. */
+function paintManagersNote(sel, which) {
+  const el = $(sel);
+  const o = otherManagers();
+  const sig = JSON.stringify(o);
+  if (!el || el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  el.replaceChildren(...[o[which] ? managersNote() : null].filter(Boolean));
+}
+
 function renderVortexMove() {
   const vx = state.snap.vortex;
+  paintManagersNote('#s-vx-note', 'vortex');
   // Windows: always there, so Vortex.exe can be chosen even when it was not found. Linux: Vortex is a Windows program.
   const win = api.platform === 'win32';
   $('#sec-vortex').hidden = !win && !vx?.installed;
@@ -2202,6 +2421,33 @@ async function askVortexAutoMove(vx) {
   toast(v === 'on' ? (vx.running ? 'Your Vortex mods move here as soon as Vortex is closed' : 'Moving your Vortex mods here…') : 'Vortex mods stay in Vortex (Settings → Vortex changes this)');
 }
 
+// ---------------------------------------------------------------- other mod managers
+
+/** Which other mod managers are on this PC: { vortex, mo2, names: 'Vortex and Mod Organizer 2' }. */
+function otherManagers(snap = state.snap) {
+  const vortex = !!snap?.vortex?.installed;
+  const mo2 = !!(snap?.mo2?.instances?.length || snap?.mo2?.programs?.length);
+  const names = [vortex ? 'Vortex' : '', mo2 ? 'Mod Organizer 2' : ''].filter(Boolean).join(' and ');
+  return { vortex, mo2, names };
+}
+
+/**
+ * Why this app switches mods off in other mod managers, and what it never does. Shown when Vortex or
+ * MO2 is found: in Settings, near the end of the welcome wizard, on an empty Mods page and on a
+ * Profiles page with only Default. Null when neither is found.
+ */
+function managersNote(snap = state.snap, { compact = false } = {}) {
+  const o = otherManagers(snap);
+  if (!o.vortex && !o.mo2) return null;
+  const parts = ['Mod managers that each have mods switched on usually don\u2019t work well together: both add files to the game, and the game ends up with a mix.'];
+  if (o.vortex) parts.push('So when a mod is switched on here that Vortex also has on, this app switches Vortex\u2019s copy off, and mods moved from Vortex are switched off there. Vortex\u2019s mods and profiles are never deleted, only switched off: Vortex can switch them on again.');
+  if (o.mo2) parts.push('Mod Organizer 2 is only read, never changed: its mods reach the game only when the game is started from MO2.');
+  parts.push(`Using a profile from ${o.vortex && o.mo2 ? 'either' : o.vortex ? 'Vortex' : 'MO2'} here (Profiles page) brings its mods over, with the same ones switched on.`);
+  return h('div', { class: `mgr-note${compact ? ' compact' : ''}`, role: 'note' },
+    h('span', { class: 'mgr-note-icon', 'aria-hidden': 'true' }, icon('info')),
+    h('div', { class: 'mgr-note-text' }, h('b', {}, `You also have ${o.names}`), h('span', {}, parts.join(' '))));
+}
+
 // ---------------------------------------------------------------- Mod Organizer 2 (read only)
 
 /** Settings → Mod Organizer 2: the setups found, bringing their mods over, folders to look in. */
@@ -2209,6 +2455,7 @@ function renderMo2Settings() {
   const mo = state.snap.mo2;
   const block = $('#s-mo2-block');
   if (!mo || !block) return;
+  paintManagersNote('#s-mo2-note', 'mo2');
   const sig = JSON.stringify(mo);
   if (sig === block.dataset.sig) return;
   block.dataset.sig = sig;

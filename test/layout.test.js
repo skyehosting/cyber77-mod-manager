@@ -115,12 +115,24 @@ test('unknown files are skipped with a warning', () => {
   assert.match(p.warnings[0], /weird\.bin/);
 });
 
-test('loader DLL slot in bin/x64 warns', () => {
-  const p = planLayout(['bin/x64/version.dll', 'bin/x64/plugins/cyber_engine_tweaks.asi'], 'CET');
+test('loader DLL slot in bin/x64: a warning for another mod, a note for CET itself', () => {
+  const p = planLayout(['bin/x64/version.dll', 'archive/pc/mod/x.archive'], 'Something else');
   assert.ok(p.warnings.some(w => /loader DLL/.test(w)));
+  const cet = planLayout(['bin/x64/version.dll', 'bin/x64/plugins/cyber_engine_tweaks.asi'], 'CET');
+  assert.ok(!cet.warnings.some(w => /loader DLL/.test(w)) && cet.notes.some(w => /loader DLL/.test(w)));
 });
 
 test('input loader xml and engine ini', () => {
   const p = planLayout(['keys.xml', 'tweak.ini'], 'X');
   assert.deepStrictEqual(dests(p), { 'keys.xml': 'r6/input/keys.xml', 'tweak.ini': 'engine/config/platform/pc/tweak.ini' });
+});
+
+test('CET\'s own version.dll and RED4ext\'s own winmm.dll are notes, not warnings; anyone else\'s is a warning', () => {
+  const cet = planLayout(['bin/x64/version.dll', 'bin/x64/global.ini', 'bin/x64/plugins/cyber_engine_tweaks.asi', 'bin/x64/plugins/cyber_engine_tweaks/LICENSE'], 'Cyber Engine Tweaks');
+  assert.deepStrictEqual(cet.warnings, []);
+  assert.strictEqual(cet.notes.length, 1);
+  const r4 = planLayout(['bin/x64/winmm.dll', 'red4ext/RED4ext.dll'], 'RED4ext');
+  assert.deepStrictEqual([r4.warnings.length, r4.notes.length], [0, 1]);
+  const other = planLayout(['bin/x64/version.dll', 'archive/pc/mod/x.archive'], 'Some ASI loader');
+  assert.deepStrictEqual([other.warnings.length, other.notes.length], [1, 0]);
 });

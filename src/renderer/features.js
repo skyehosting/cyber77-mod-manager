@@ -594,7 +594,7 @@ function renderProfilesPage(force = false) {
   if (!p.list.some(x => x.id === prof.selected)) prof.selected = p.active;
   const plays = typeof gl === 'undefined' ? [] : gl.plays.map(q => [q.id, q.profile?.id]);
   const mo = state.snap.mo2;
-  const next = JSON.stringify([p, prof.editing, prof.selected, vx?.profiles, vx?.mods?.length, mo?.instances, (state.snap.mods || []).length, (cfg.list || []).length, plays]);
+  const next = JSON.stringify([p, prof.editing, prof.selected, vx?.profiles, vx?.mods?.length, vx?.installed, mo?.instances, mo?.programs?.length, (state.snap.mods || []).length, (cfg.list || []).length, plays]);
   // Never throw away a rename in progress.
   if (!force && (next === prof.sig || prof.editing)) return;
   prof.sig = next;
@@ -604,7 +604,8 @@ function renderProfilesPage(force = false) {
   const sel = p.list.find(x => x.id === prof.selected) || active;
   keepFocus(page, () => {
     $('#prof-grid').replaceChildren(...[active, ...others].map(x => profileRow(x, p)));
-    $('#prof-outside').replaceChildren(...[outsideEl()].filter(Boolean));
+    // Only Default so far: what using another manager's profile here does, and why mods get switched off there.
+    $('#prof-outside').replaceChildren(...[outsideEl(), p.list.length === 1 ? managersNote(state.snap, { compact: true }) : null].filter(Boolean));
     $('#prof-panel').replaceChildren(...profilePanel(sel, p));
   }, '#prof-new');
   const vxList = vx?.installed ? vx.profiles || [] : [];

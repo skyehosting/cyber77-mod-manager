@@ -94,6 +94,23 @@ function localAddresses() {
   return out;
 }
 
+/**
+ * Why a join did not go through, in words a player can act on (the invite maker's PC is "your friend's").
+ * reached: some address answered (so the PC is there); err: the last error, if any.
+ */
+function joinFailure(reached, err) {
+  const msg = String(err?.message || '');
+  if (reached) {
+    return `Your friend's PC answered, but joining did not finish${msg ? ` (${msg.replace(/\.$/, '')})` : ''}. Try again; if it keeps happening, ask them for a new invite.`;
+  }
+  if (/different/.test(msg)) return msg; // the key check: not the PC the invite was made on
+  const code = err?.code || '';
+  const why = code === 'ECONNREFUSED' ? 'Their PC is there, but nothing is listening on the group port: the app may be closed, or Group Mods off.'
+    : code === 'EHOSTUNREACH' || code === 'ENETUNREACH' ? 'There is no route to their PC from this network.'
+      : 'Their PC did not answer within 10 seconds.';
+  return `Could not reach your friend's PC. ${why} Check that they have the app open with Group Mods on. If you are not on the same home network, their router has to let friends in on the group port (Settings → Group Mods on their PC shows it), and their firewall has to allow the app.`;
+}
+
 class GroupService extends EventEmitter {
   /**
    * dir: <userData>/groups. cipher: safeStorage wrapper or null. log: the app log.
@@ -354,9 +371,11 @@ class GroupService extends EventEmitter {
     if (this.groups.has(inv.g)) throw new Error(`You are already in "${this.groups.get(inv.g).st.name}".`);
     if (inv.exp && inv.exp < Date.now()) throw new Error('That invite has expired. Ask for a new one.');
     let lastErr = null;
+    let reached = false; // some address answered: the PC is there, the join itself went wrong
     for (const addr of inv.addrs) {
       let peer;
-      try { peer = await net.connect(this.me, addr, inv.fp); } catch (err) { lastErr = err; continue; }
+      try { peer = await net.connect(this.me, addr, inv.fp); } catch (err) { if (!reached) lastErr = err; continue; }
+      reached = true;
       try {
         // The log comes after the welcome, in pieces: gathered until the last one.
         const rec = this.record(inv.g, []);
@@ -395,7 +414,7 @@ class GroupService extends EventEmitter {
         lastErr = err;
       }
     }
-    throw new Error(`Could not reach the PC that made this invite${lastErr ? ` (${lastErr.message})` : ''}. It must have the app open with groups on, and its port reachable.`);
+    throw new Error(joinFailure(reached, lastErr));
   }
 
   /**

@@ -40,6 +40,31 @@ const escapeKey = k => String(k).replace(/\\/g, '\\\\').replace(/\./g, '\\.');
 
 const NO_EXE = 'Vortex.exe was not found. Choose it in Settings > Vortex.';
 
+// Windows takes at most 32,767 characters for one program's command line; Vortex is given its --set
+// changes in batches well under that (hundreds of mods at once would not fit in one).
+const CLI_BUDGET = 24000;
+const CLI_TRIES = 3; // each batch: tried up to three times before it counts as failed
+
+/**
+ * Split `--set <path>=<value>` pairs into batches whose command line stays under the budget (the exe
+ * path and quoting included). Each item: the value after --set. Returns [[args…], …].
+ */
+function cliBatches(exe, sets, budget = CLI_BUDGET) {
+  const cost = a => a.length + 3; // a space and two quotes, at worst
+  const base = cost(String(exe));
+  const out = [];
+  let cur = [];
+  let len = base;
+  for (const v of sets) {
+    const n = cost('--set') + cost(v);
+    if (cur.length && len + n > budget) { out.push(cur); cur = []; len = base; }
+    cur.push('--set', v);
+    len += n;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
 /** Vortex's uninstall entry (its installer's fixed id); its DisplayIcon is "<folder>\Vortex.exe,0". */
 const VORTEX_UNINSTALL = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\57979c68-f490-55b8-8fed-8b017a5af2fe';
 
@@ -85,6 +110,7 @@ class VortexBridge extends EventEmitter {
     super();
     this.getGameDir = getGameDir;
     this.log = log;
+    this.retryDelay = 1500; // ms before a failed Vortex command is tried again (times the try number)
     this.getExe = getExe;
     this.reg = reg;
     this.platform = platform;
@@ -281,9 +307,11 @@ class VortexBridge extends EventEmitter {
    *      hardlink deployment does, and vortex.deployment.json is updated to match.
    * Files two Vortex mods both ship are left to Vortex's own rules: a deployment is marked as
    * needed and Vortex settles them on its next start.
-   * changes: [{ vortexId, enabled }]
+   * changes: [{ vortexId, enabled }]. partial: a batch Vortex refuses (after three tries) leaves its
+   * mods as they were and the rest go ahead; their ids come back in `failed` (moving mods over).
+   * Without it, all or nothing: what went through is put back and an error says why.
    */
-  async apply(changes) {
+  async apply(changes, { partial = false } = {}) {
     if (this.busy) throw new Error('A change to Vortex is already being applied.');
     const exe = this.exePath();
     if (!exe) throw new Error(NO_EXE);
@@ -300,16 +328,70 @@ class VortexBridge extends EventEmitter {
       const manifestFile = this.deploymentFile();
       let manifest = null;
       try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); } catch { /* none */ }
-      const plan = manifest && gameDir ? planDeploy({ manifest, gameDir, changes }) : null;
-      const needVortex = !plan || plan.deferred.length > 0;
 
+      // 1. Vortex records the new on/off states, in batches that fit a command line, each tried up to
+      //    three times (Vortex can be slow to let go of its database).
       const pid = escapeKey(data.activeProfile);
-      const args = [];
-      for (const c of changes) {
-        args.push('--set', `persistent.profiles.${pid}.modState.${escapeKey(c.vortexId)}.enabled=${c.enabled ? 'true' : 'false'}`);
+      const stateSet = (id, on) => `persistent.profiles.${pid}.modState.${escapeKey(id)}.enabled=${on ? 'true' : 'false'}`;
+      const groups = [];
+      {
+        let at = 0;
+        for (const args of cliBatches(exe, changes.map(c => stateSet(c.vortexId, c.enabled)))) {
+          const n = args.length / 2;
+          groups.push({ args, changes: changes.slice(at, at + n) });
+          at += n;
+        }
       }
-      if (needVortex) args.push('--set', `persistent.deployment.needToDeploy.${GAME}=true`);
-      await this.runCli(exe, args);
+      const tryCli = async args => {
+        let last;
+        for (let i = 0; i < CLI_TRIES; i++) {
+          try { return await this.runCli(exe, args); } catch (err) { last = err; }
+          if (i < CLI_TRIES - 1) await new Promise(r => setTimeout(r, this.retryDelay * (i + 1)));
+        }
+        throw last;
+      };
+      const applied = [];
+      const failed = [];
+      let firstErr = null;
+      const was = new Map(data.mods.map(m => [m.vortexId, !!m.enabled]));
+      const backOf = list => list.map(c => stateSet(c.vortexId, was.get(c.vortexId) ?? !c.enabled));
+      let unsettled = false; // a failed batch that may have been written in part and could not be put back
+      for (let gi = 0; gi < groups.length; gi++) {
+        const g = groups[gi];
+        try {
+          await tryCli(g.args);
+          applied.push(...g.changes);
+        } catch (err) {
+          firstErr ||= err;
+          if (partial) {
+            // A run that failed may still have written some of it: those mods are put back as they were,
+            // so a mod reported as left with Vortex really is as it was.
+            for (const args of cliBatches(exe, backOf(g.changes))) { try { await this.runCli(exe, args); } catch { unsettled = true; } }
+            failed.push(...g.changes);
+            continue; // the others still go ahead
+          }
+          // All or nothing: what went through (and whatever of the failed batch got written) is put back.
+          let undone = true;
+          for (const args of cliBatches(exe, backOf([...applied, ...g.changes]))) { try { await tryCli(args); } catch { undone = false; } }
+          if (wasRunning) this.startVortex(exe);
+          const why = err.code === 'ENAMETOOLONG' ? 'too many mods at once' : err.message;
+          if (!undone) this.log.warn('Vortex: some changes could not be undone; Vortex may show some mods switched.');
+          throw new Error(`Vortex could not record the change${groups.length > 1 ? ` (part ${gi + 1} of ${groups.length})` : ''} after ${CLI_TRIES} tries: ${why}. ${undone ? 'Nothing was changed.' : 'Some of it could not be undone: check Vortex.'}`);
+        }
+      }
+      if (!applied.length) {
+        if (wasRunning) this.startVortex(exe);
+        throw new Error(`Vortex could not record the change after ${CLI_TRIES} tries: ${firstErr?.code === 'ENAMETOOLONG' ? 'too many mods at once' : firstErr?.message || 'unknown'}. Nothing was changed.`);
+      }
+      // 2. Only what Vortex took in moves on: files are placed for those changes alone.
+      const plan = manifest && gameDir ? planDeploy({ manifest, gameDir, changes: applied }) : null;
+      const needVortex = !plan || plan.deferred.length > 0 || unsettled;
+      if (unsettled) this.log.warn('Vortex: a batch that failed could not be put back; Vortex is asked to deploy again.');
+      if (needVortex) {
+        await tryCli(['--set', `persistent.deployment.needToDeploy.${GAME}=true`])
+          .catch(err => this.log.warn(`Vortex: could not ask Vortex to deploy again (${err.message}). Deploy in Vortex once it is open.`));
+      }
+      changes = applied;
 
       let result = null;
       if (plan) {
@@ -345,7 +427,7 @@ class VortexBridge extends EventEmitter {
       } else {
         this.emit('changed', true);
       }
-      return { reopened: reopen, ...(result || {}) };
+      return { reopened: reopen, ...(result || {}), failed: failed.map(c => c.vortexId) };
     } finally {
       this.busy = false;
     }
@@ -411,4 +493,4 @@ class VortexBridge extends EventEmitter {
   }
 }
 
-module.exports = { VortexBridge, escapeKey, parseFolderName, isVortexExe, exeFromRegValue, expandEnv, NO_EXE };
+module.exports = { VortexBridge, cliBatches, CLI_BUDGET, escapeKey, parseFolderName, isVortexExe, exeFromRegValue, expandEnv, NO_EXE };

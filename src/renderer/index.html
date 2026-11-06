@@ -222,6 +222,7 @@
               <button class="menu-item" role="menuitem" id="mods-update-all" hidden><svg class="i"><use href="#i-up-circle"/></svg><span><span class="menu-label">Update all</span><span class="menu-sub">Download and install every available update</span></span></button>
               <button class="menu-item" role="menuitem" id="mods-check-updates"><svg class="i"><use href="#i-refresh"/></svg><span><span class="menu-label">Check for updates</span><span class="menu-sub" id="mods-check-sub">Ask Nexus for newer versions of your mods</span></span></button>
               <button class="menu-item redmod-btn" role="menuitem" id="mods-redmod" hidden><svg class="i"><use href="#i-wrench"/></svg><span><span class="menu-label" id="mods-redmod-label">Deploy REDmods</span><span class="menu-sub" id="mods-redmod-sub"></span></span></button>
+              <button class="menu-item" role="menuitem" id="mods-new-cat"><svg class="i"><use href="#i-layers"/></svg><span><span class="menu-label">New category</span><span class="menu-sub">Group your mods in sections (only how the list looks)</span></span></button>
               <button class="menu-item" role="menuitem" id="mods-redeploy"><svg class="i"><use href="#i-deploy"/></svg><span><span class="menu-label">Redeploy</span><span class="menu-sub">Re-check every enabled mod's files</span></span></button>
               <button class="menu-item" role="menuitem" data-open="game"><svg class="i"><use href="#i-folder"/></svg><span><span class="menu-label">Open game folder</span></span></button>
               <button class="menu-item" role="menuitem" id="mods-open-vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span><span class="menu-label">Open Vortex</span></span></button>
@@ -237,6 +238,7 @@
             <button class="btn" data-act="update" id="mods-bulk-update" title="Download and install the newer versions"><svg class="i"><use href="#i-up-circle"/></svg><span>Update</span></button>
             <button class="btn" data-act="repair" id="mods-bulk-repair" hidden title="Put back missing or replaced files"><svg class="i"><use href="#i-wrench"/></svg><span>Repair</span></button>
             <button class="btn" data-act="prioritize" id="mods-bulk-win" title="Selected mods win every file conflict (moves them to the top priority)"><svg class="i"><use href="#i-flag"/></svg><span>Win conflicts</span></button>
+            <button class="btn" id="mods-bulk-cat" hidden title="Put the selected mods in one of your categories"><svg class="i"><use href="#i-layers"/></svg><span>Move to…</span></button>
             <button class="btn" data-act="reinstall" title="Reinstall"><svg class="i"><use href="#i-rotate"/></svg><span>Reinstall</span></button>
             <button class="btn" data-act="uninstall" title="Uninstall (keeps the downloaded archive)"><svg class="i"><use href="#i-minus-circle"/></svg><span>Uninstall</span></button>
             <button class="btn btn-danger" data-act="delete" title="Uninstall and delete the downloaded archive"><svg class="i"><use href="#i-trash"/></svg><span>Delete</span></button>
@@ -266,6 +268,7 @@
               <button class="btn btn-primary" data-goto="downloads"><svg class="i"><use href="#i-download"/></svg><span>Go to Downloads</span></button>
               <button class="btn" id="mods-empty-import"><svg class="i"><use href="#i-file-plus"/></svg><span>Install from file</span></button>
             </div>
+            <div id="mods-empty-note"></div>
           </div>
         </div>
       </section>
@@ -842,6 +845,7 @@
 
             <section class="set-sec" data-sec="vortex" id="sec-vortex" aria-labelledby="sh-vortex">
               <h2 class="set-title" id="sh-vortex"><svg class="i"><use href="#i-vortex"/></svg>Vortex</h2>
+              <div id="s-vx-note"></div>
               <div class="set-card" id="s-vx-block">
                 <div class="set-row">
                   <div class="set-label"><label for="s-vx-exe">Vortex program</label><p class="set-desc" id="s-vx-exe-text">Vortex.exe, used to switch Vortex's mods on and off. Found by itself; choose it if Vortex is installed somewhere else.</p></div>
@@ -899,6 +903,7 @@
 
             <section class="set-sec" data-sec="mo2" id="sec-mo2" aria-labelledby="sh-mo2">
               <h2 class="set-title" id="sh-mo2"><svg class="i"><use href="#i-mo2"/></svg>Mod Organizer 2</h2>
+              <div id="s-mo2-note"></div>
               <div class="set-card" id="s-mo2-block"></div>
             </section>
 

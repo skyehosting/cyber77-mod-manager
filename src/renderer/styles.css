@@ -1317,6 +1317,16 @@ tr.row:hover .link-btn.quiet, tr.row:focus-within .link-btn.quiet { text-decorat
 .toast.success .i { color: var(--ok); }
 .toast.error .i { color: var(--err); }
 .toast.warn .i { color: var(--warn); }
+/* Install warnings with Ignore; ignored ones folded; notes (not problems) in plain colours. */
+.warn-li { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.warn-li > span { flex: 1; min-width: 0; }
+.warn-ignore { flex: none; }
+.ignored-box { margin: 0.3rem 0 0.6rem; color: var(--muted); font-size: var(--fs-sm); }
+.ignored-box summary { cursor: pointer; }
+.muted-list li { color: var(--muted); }
+.notelist { margin: 0.2rem 0 0.6rem; padding-left: 1.1rem; color: var(--text-2); font-size: var(--fs-sm); }
+.h2-with-act { display: flex; align-items: center; gap: var(--sp-2); }
+.h2-with-act .btn { margin-left: auto; text-transform: none; letter-spacing: normal; }
 /* News toasts (Group Mods): a title, a few lines, an ×, and a bar along the bottom that shrinks until it closes. */
 .toast-news { position: relative; overflow: hidden; padding-right: 2.4rem; padding-bottom: calc(var(--sp-3) + 3px); }
 .toast-title { display: block; font-weight: var(--fw-bold); margin-bottom: 0.15rem; }
@@ -3344,3 +3354,42 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .gm-member + .gm-member { border-top: 1px solid var(--line-soft); }
 .gm-member-main { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: var(--fs-sm); }
 .gm-member-name { display: flex; align-items: center; gap: var(--sp-2); font-weight: var(--fw-medium); font-size: 1rem; }
+
+/* ================================================================== my categories (Mods page sections)
+   A header row per category: the arrow folds it, the name renames on double-click (or the pencil),
+   up / down / delete at the end. Light: a tinted band, not a box. */
+.sec-row td { padding: 0 !important; background: var(--surface-2); border-top: 1px solid var(--line); }
+.sec-row:first-child td { border-top: 0; }
+.sec-head { display: flex; align-items: center; gap: 0.45rem; min-height: 2.4rem; padding: 0.15rem 0.9rem 0.15rem 0.55rem; }
+.sec-chev { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); cursor: pointer; }
+.sec-chev .i { width: 0.9rem; transform: rotate(90deg); transition: transform .12s var(--ease); }
+.sec-row.collapsed .sec-chev .i { transform: none; }
+.sec-chev:hover, .sec-btn:hover:not(:disabled) { background: var(--hover-bg); color: var(--text); }
+.sec-name { font-weight: var(--fw-bold); font-size: var(--fs-sm); letter-spacing: .02em; color: var(--text); cursor: text; user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.sec-input { height: 1.8rem; width: min(18rem, 40%); font-weight: var(--fw-bold); font-size: var(--fs-sm); padding: 0 0.45rem; }
+.sec-btn { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); cursor: pointer; }
+.sec-btn .i { width: 0.85rem; }
+.sec-btn:disabled { opacity: 0.35; cursor: default; }
+.sec-btn.danger:hover:not(:disabled) { color: var(--err-text); }
+.sec-count { color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.sec-acts { margin-left: auto; display: flex; gap: 0.1rem; opacity: 0.55; transition: opacity .12s; }
+.sec-row:hover .sec-acts, .sec-acts:focus-within { opacity: 1; }
+.sec-empty td { color: var(--muted); font-size: var(--fs-sm); padding: 0.7rem 1rem 0.8rem 3rem !important; }
+.sec-pick { max-width: 100%; }
+
+/* Other mod managers: why this app switches their mods off, and what it never does. */
+.mgr-note { display: flex; gap: var(--sp-3); align-items: flex-start; margin: 0 0 var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--r-sm, 4px); background: var(--surface); text-align: left; }
+.mgr-note-icon { flex: none; color: var(--accent); line-height: 0; padding-top: 2px; }
+.mgr-note-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 0.86rem; color: var(--text-2); line-height: 1.45; }
+.mgr-note-text b { color: var(--text); font-size: 0.9rem; }
+.mgr-note.compact { max-width: 620px; margin: var(--sp-4) auto 0; }
+.prof-outside .mgr-note.compact { margin: 0; max-width: none; }
+.su-mgr:empty { display: none; }
+.su-mgr .mgr-note { margin: var(--sp-3) auto 0; }
+
+/* Group Mods off, or on with no group yet: the block sits in the middle of the free space (a warning banner stays on top). */
+.gm.gm-centered { flex: 1 0 auto; }
+.gm.gm-centered > .gm-empty, .gm.gm-centered > .gm-start { margin-block: auto; }
+/* An empty Mods list with the other-managers note: the block sizes the card, so nothing is cut off. */
+.table-card.is-empty .empty:has(.mgr-note) { position: relative; inset: auto; }
+.table-card.is-empty:has(.mgr-note) thead { display: none; }

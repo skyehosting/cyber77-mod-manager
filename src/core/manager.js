@@ -21,6 +21,8 @@ const { Mo2Bridge } = require('./mo2');
 const { ProfileSaves, defaultStoreDir, defaultHomeDir, ID: PROFILE_ID } = require('./profileSaves');
 const { SaveTrash, defaultTrashDir } = require('./saveTrash');
 
+/** A category name: plain text, 1–40 characters. */
+const cleanSectionName = v => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, 40) : '');
 const GAME_RUNNING_SAVES = 'Close Cyberpunk 2077 first: each profile has its own saves, and they change with the profile. (Just closed it? Give it a few seconds to finish syncing its saves.)';
 const { SaveBackups, scanSaves, groupPlaythroughs, savesFingerprint, defaultSavesDir, defaultBackupDir, REASONS, SLOT: SAVE_SLOT, hashFile } = require('./saves');
 const loadOrder = require('./loadOrder');
@@ -167,6 +169,22 @@ class ModManager extends EventEmitter {
       this.library.data.reqPage20 = true;
       this.library.save();
     }
+    // CET's own version.dll (RED4ext's winmm.dll) was once a warning on CET (RED4ext) itself: it is a note.
+    if (!this.library.data.loaderNotes) {
+      const { ownLoader } = require('./layout');
+      for (const m of Object.values(this.library.data.mods || {})) {
+        if (!Array.isArray(m.warnings) || !m.warnings.length) continue;
+        const dests = new Set((m.files || []).map(f => String(f).toLowerCase()));
+        const keep = [];
+        for (const w of m.warnings) {
+          const dll = String(w).match(/^(bin\/x64\/[^ /]+\.dll) is a loader DLL slot/i)?.[1]?.toLowerCase();
+          if (dll && ownLoader(dll, dests)) (m.notes ||= []).push(w); else keep.push(w);
+        }
+        m.warnings = keep;
+      }
+      this.library.data.loaderNotes = true;
+      this.library.save();
+    }
     this.nexus = new NexusClient(() => settings.apiKey, log);
     this.downloader = new Downloader(this.nexus, log, () => settings.get('concurrentDownloads'));
     // Nexus refused a direct link: ask again whether the account is still Premium (true / false / null).
@@ -301,7 +319,142 @@ class ModManager extends EventEmitter {
       mo2: this.mo2View(),
       reqs: this.requirementsView(vortex),
       modCats: this.categoriesView(),
+      ignored: this.data.ignored || {},
+      sections: this.sectionsView(),
     };
+  }
+
+  // ---------------------------------------------------------------- categories of my own (Mods page)
+  /*
+   * The user's own categories on the Mods page: only how the list is shown (sections, in the user's order),
+   * nothing else changes. None: the list is as always. The first one made also makes "Default", where every
+   * mod not put elsewhere is. data.sections = { list: [{ id, name, def? }], of: { [mod key]: id } }, a mod
+   * key being "n:<Nexus mod id>" (an update keeps its place) or its row id.
+   */
+  sectionsView() {
+    const s = this.data.sections;
+    return s && Array.isArray(s.list) && s.list.length ? { list: s.list, of: s.of || {} } : { list: [], of: {} };
+  }
+
+  sectionStore() {
+    if (!this.data.sections || !Array.isArray(this.data.sections.list)) this.data.sections = { list: [], of: {} };
+    this.data.sections.of ||= {};
+    return this.data.sections;
+  }
+
+  sectionsChanged() {
+    const s = this.data.sections;
+    // Everything deleted: back to one plain list (no Default left behind).
+    if (s && !s.list.length) delete this.data.sections;
+    this.library.save();
+    this.emit('changed');
+    return this.sectionsView();
+  }
+
+  /** A new category ("Category N"); the very first also makes "Default". Returns its id. */
+  sectionCreate(name = '') {
+    const s = this.sectionStore();
+    if (s.list.length >= 50) throw new Error('That is as many categories as there can be (50).');
+    const newId = () => crypto.randomBytes(6).toString('hex');
+    if (!s.list.length) s.list.push({ id: newId(), name: 'Default', def: true });
+    const taken = new Set(s.list.map(x => x.name.toLowerCase()));
+    let n = 1;
+    while (taken.has(`category ${n}`)) n++;
+    const id = newId();
+    s.list.push({ id, name: cleanSectionName(name) || `Category ${n}` });
+    this.sectionsChanged();
+    return id;
+  }
+
+  sectionRename(id, name) {
+    const s = this.sectionStore();
+    const sec = s.list.find(x => x.id === String(id));
+    if (!sec) throw new Error('That category no longer exists.');
+    const v = cleanSectionName(name);
+    if (!v) throw new Error('Give the category a name.');
+    sec.name = v;
+    return this.sectionsChanged();
+  }
+
+  /**
+   * Delete a category: its mods go to Default (made again if it was deleted). Default itself goes only
+   * when it is the last one (it holds every mod not put elsewhere); then the list is plain again.
+   */
+  sectionDelete(id) {
+    const s = this.sectionStore();
+    const i = s.list.findIndex(x => x.id === String(id));
+    if (i < 0) throw new Error('That category no longer exists.');
+    const gone = s.list[i];
+    if (gone.def && s.list.length > 1) throw new Error('Default holds every mod not in another category: delete the others first.');
+    s.list.splice(i, 1);
+    for (const [k, v] of Object.entries(s.of)) if (v === gone.id) delete s.of[k]; // → Default
+    if (s.list.length && !s.list.some(x => x.def)) s.list.unshift({ id: crypto.randomBytes(6).toString('hex'), name: 'Default', def: true });
+    return this.sectionsChanged();
+  }
+
+  /** Move a category up (-1) or down (+1). */
+  sectionMove(id, dir) {
+    const s = this.sectionStore();
+    const i = s.list.findIndex(x => x.id === String(id));
+    const j = i + (dir < 0 ? -1 : 1);
+    if (i < 0 || j < 0 || j >= s.list.length) return this.sectionsView();
+    [s.list[i], s.list[j]] = [s.list[j], s.list[i]];
+    return this.sectionsChanged();
+  }
+
+  /** Put mods (row ids) in a category (its id; Default's or '' for Default). */
+  sectionAssign(rowIds, id) {
+    const s = this.sectionStore();
+    const sec = s.list.find(x => x.id === String(id));
+    if (!sec && id !== '') throw new Error('That category no longer exists.');
+    const rows = new Map([...Object.values(this.data.mods), ...this.vortexView().mods].map(m => [m.id, m]));
+    let n = 0;
+    for (const rid of (Array.isArray(rowIds) ? rowIds : []).slice(0, 5000)) {
+      const m = rows.get(String(rid));
+      if (!m) continue;
+      const key = Number(m.modId) > 0 ? `n:${Number(m.modId)}` : String(m.id);
+      delete s.of[key]; // re-set below goes last, so the trim past 5000 drops the oldest
+      if (sec && !sec.def) s.of[key] = sec.id;
+      n++;
+    }
+    // Kept small: places of mods long gone are dropped past 5000.
+    const keys = Object.keys(s.of);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete s.of[k];
+    this.sectionsChanged();
+    return n;
+  }
+
+  /**
+   * Things the user chose to stop counting as a problem, per mod (by its Nexus mod, so an update or a
+   * reinstall keeps them; by its row for a mod not from Nexus):
+   *   { [key]: { w: [install warning texts], log: true (its game-log errors), req: [requirement keys] } }
+   * key: "n:<modId>" or the row id. Missing or replaced files are never ignored (they break the game).
+   */
+  setIgnored(id, kind, value, on) {
+    const m = (Object.hasOwn(this.data.mods, id) ? this.data.mods[id] : null) || this.vortexView().mods.find(x => x.id === id);
+    if (!m || m.id !== id) throw new Error('That mod is not installed.');
+    const key = Number(m.modId) > 0 ? `n:${Number(m.modId)}` : String(m.id);
+    if (!['w', 'log', 'req'].includes(kind)) throw new Error('Unknown kind.');
+    this.data.ignored ||= {};
+    const e = { ...(this.data.ignored[key] || {}) };
+    if (kind === 'log') { if (on) e.log = true; else delete e.log; } else {
+      const v = String(value || '').slice(0, 400);
+      if (!v) throw new Error('Nothing to ignore.');
+      // Only what the mod really shows can be ignored: one of its install warnings, or a requirement key.
+      if (on && kind === 'w' && !(Array.isArray(m.warnings) && m.warnings.includes(v))) throw new Error('That warning is not on this mod.');
+      if (on && kind === 'req' && !/^(m:[1-9]\d{0,9}|n:[^\r\n]{1,300})$/.test(v)) throw new Error('Not a requirement.');
+      const list = new Set(Array.isArray(e[kind]) ? e[kind] : []);
+      if (on) list.add(v); else list.delete(v);
+      if (list.size) e[kind] = [...list].slice(-50); else delete e[kind];
+    }
+    delete this.data.ignored[key]; // re-set goes last, so the trim past 2000 drops the oldest
+    if (Object.keys(e).length) this.data.ignored[key] = e;
+    // Kept small: at most 2000 mods with something ignored (the oldest go first).
+    const keys = Object.keys(this.data.ignored);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 2000))) delete this.data.ignored[k];
+    this.library.save();
+    this.emit('changed');
+    return this.data.ignored[key] || {};
   }
 
   /** Each Nexus mod's category as Nexus has it (modId → "Appearance"), for the ones known. */
@@ -924,7 +1077,7 @@ class ModManager extends EventEmitter {
     const mod = {
       id, key: rec.key, name: rec.name, modName: rec.modName, modId: rec.modId, fileId: rec.fileId,
       game: rec.game, version: rec.version, category: rec.category, author: rec.author,
-      type: plan.type, files, skipped: plan.skipped.length, warnings: plan.warnings,
+      type: plan.type, files, skipped: plan.skipped.length, warnings: plan.warnings, notes: plan.notes || [],
       enabled: false, priority: old?.priority ?? this.data.nextPriority++, installedAt: Date.now(), enabledAt: Date.now(),
       fomod: !!selections, fomodChoices: selections || undefined, dependencyOf: rec.dependencyOf || old?.dependencyOf || '',
     };
@@ -1187,13 +1340,22 @@ class ModManager extends EventEmitter {
     const vxDownloads = path.join(this.vortex.root, 'downloads', 'cyberpunk2077');
 
     // 1. Vortex lets go of them: its record says disabled, its files leave the game folder.
+    // A batch Vortex refuses (after three tries) leaves those mods with Vortex: they are not taken over
+    // (never managed by both apps) and are named at the end; the others move.
     const live = mods.filter(m => m.enabled);
-    if (live.length) await this.vortex.apply(live.map(m => ({ vortexId: m.vortexId, enabled: false })));
+    let stayed = [];
+    if (live.length) {
+      const r = await this.vortex.apply(live.map(m => ({ vortexId: m.vortexId, enabled: false })), { partial: true });
+      const failedIds = new Set(r?.failed || []);
+      stayed = mods.filter(m => failedIds.has(m.vortexId)).map(m => m.name || m.vortexId);
+      mods = mods.filter(m => !failedIds.has(m.vortexId));
+      if (stayed.length) this.log.warn(`Not moved from Vortex (Vortex did not let go of them after three tries): ${stayed.join(', ')}`);
+    }
 
     return this.op(async () => {
       // Another move (a double click, the automatic one) may have taken some of them meanwhile.
       mods = mods.filter(m => !adopted[m.vortexId]);
-      if (!mods.length) return { adopted: [] };
+      if (!mods.length) return { adopted: [], failed: stayed };
       // 2. Their order: a mod that won a shared file in Vortex goes above the ones it beat.
       const wins = new Map(mods.map(m => [m.vortexId, 0]));
       const shippers = new Map();
@@ -1268,7 +1430,7 @@ class ModManager extends EventEmitter {
       this.log.success(`Took over ${plural(out.length, 'mod')} from Vortex (${out.filter(o => this.data.mods[o.id]?.enabled).length} enabled). Vortex keeps them, switched off.`);
       this.emit('changed');
       this.resolveSoon(); // their Nexus files, now (Vortex kept only the mod)
-      return { adopted: out };
+      return { adopted: out, failed: stayed };
     }).then(async r => {
       const back = (this.adoptFailed || []).filter(v => v.enabled);
       this.adoptFailed = [];

@@ -1,5 +1,5 @@
 'use strict';
-/* global renderProfilesPage, store, api, $, h, askAi, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus, confirmBox, modal, $$ */
+/* global renderProfilesPage, store, api, $, h, askAi, exportReport, icon, run, toast, plural, fmtTime, state, renderMods, renderPlay, pageHooks, snapshotHooks, drawerSections, goTo, setSegActive, debounce, openDrawer, closeDrawer, keepFocus, confirmBox, modal, $$, ignOf, ignoreProblem */
 
 // ---------------------------------------------------------------- game log page
 
@@ -381,8 +381,11 @@ drawerSections.push(m => {
   if (!roots.size) return [];
   const list = problems(gl.entries, e => e.id > gl.clearedAfter && e.root && roots.has(e.root.toLowerCase())).slice(0, 8);
   if (!list.length) return [];
+  // Ignored: still listed (they are real lines), but no longer counted as the mod's problem.
+  const ignored = !!ignOf(m).log;
   return [
-    h('h2', { dataset: { section: 'logs' } }, `Game log problems · ${list.length}`),
+    h('h2', { dataset: { section: 'logs' }, class: 'h2-with-act' }, `Game log problems · ${list.length}${ignored ? ' (ignored)' : ''}`,
+      h('button', { class: 'btn btn-sm btn-ghost', title: ignored ? 'Count them as a problem again' : 'Stop counting this mod\'s game-log errors as a problem', onclick: () => ignoreProblem(m, 'log', '', !ignored) }, ignored ? 'Stop ignoring' : 'Ignore')),
     h('div', { class: 'mini-log' }, list.map(p => h('button', {
       class: `mini-row lv-${p.last.level}`,
       title: `${p.last.source} · ${new Date(p.last.time).toLocaleString()}\nOpen in the game log`,

@@ -878,6 +878,12 @@ async function boot() {
   handle('saves:profileCount', (id, stored) => manager.profileSaveCount(String(id), { stored: stored === true }));
   handle('saves:copyPlaythrough', (pt, source, targets) => manager.copyPlaythrough(String(pt), String(source), Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
   handle('saves:copyAll', (source, target) => manager.copyAllSaves(String(source), String(target)));
+  handle('sections:create', name => manager.sectionCreate(typeof name === 'string' ? name : ''));
+  handle('sections:rename', (id, name) => manager.sectionRename(String(id), typeof name === 'string' ? name : ''));
+  handle('sections:delete', id => manager.sectionDelete(String(id)));
+  handle('sections:move', (id, dir) => manager.sectionMove(String(id), Number(dir) < 0 ? -1 : 1));
+  handle('sections:assign', (ids, id) => manager.sectionAssign(Array.isArray(ids) ? ids.slice(0, 5000).map(String) : [], typeof id === 'string' ? id : ''));
+  handle('mods:ignore', (id, kind, value, on) => manager.setIgnored(String(id), String(kind), typeof value === 'string' ? value : '', on === true));
   const folderList = f => (Array.isArray(f) ? f.map(String).slice(0, 500) : []);
   const idList = t => (Array.isArray(t) ? t.map(String).slice(0, 100) : []);
   handle('saves:presence', (source, folders, targets) => manager.savesPresence(String(source), folderList(folders), idList(targets)));

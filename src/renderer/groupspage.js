@@ -92,6 +92,8 @@ function paintGroups() {
   paintGroupSettings();
   if (gm.mode !== 'groups') return;
   const root = $('#groups-view');
+  // Off, or on with no group yet: what is shown sits in the middle of the free space.
+  root.classList.toggle('gm-centered', !!v && (!v.enabled || !v.groups.length));
   if (!v) { root.replaceChildren(h('div', { class: 'gm-loading' }, 'Loading your groups…')); return; }
   const lists = v.groups.reduce((k, g) => k + g.lists.length, 0);
   $('#groups-sub').textContent = v.groups.length ? [plural(v.groups.length, 'group'), plural(lists, 'list'), n ? `${plural(n, 'change')} to review` : ''].filter(Boolean).join(' · ') : 'Share a mod list with the friends you play co-op with';

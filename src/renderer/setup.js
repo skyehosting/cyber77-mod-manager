@@ -1,5 +1,5 @@
 'use strict';
-/* global plainHttpRemote, renderVortexMove, appName, api, $, h, icon, run, store, state, THEMES, THEME_ORDER, themeMini, chooseTheme, themeState, loadSettings, renderStatus */
+/* global managersNote, plainHttpRemote, renderVortexMove, appName, api, $, h, icon, run, store, state, THEMES, THEME_ORDER, themeMini, chooseTheme, themeState, loadSettings, renderStatus */
 
 // ---------------------------------------------------------------- the setup wizard
 
@@ -156,6 +156,13 @@ function vortexPart() {
   };
   return h('div', { class: 'su-ctl su-vortex', role: 'group', 'aria-label': 'Vortex (optional)' },
     h('span', { class: 'su-sub' }, 'Vortex (only if you use it)'), status, h('div', { class: 'su-row' }, find, pick));
+}
+
+/** Near the end: with Vortex or MO2 on this PC, a short word on why this app switches mods off there. */
+function managersPart() {
+  const box = h('div', { class: 'su-mgr' });
+  api.snapshot().then(r => { const n = managersNote(r.ok, { compact: true }); if (n) box.replaceChildren(n); }).catch(() => {});
+  return box;
 }
 
 // Pictures of what each step is for, drawn in the theme's own colours.
@@ -375,6 +382,7 @@ const SETUP_BUILD = {
         item(!!r.ai, 'AI helper', r.ai ? `Using ${r.ai}` : 'Skipped: Settings > AI Assistant'),
         item(true, 'Look', THEMES[themeState.id]?.name || 'Custom'),
         item(r.backups !== false, 'Save backups', r.backups !== false ? `Automatic${r.perProfile ? ', and each profile has its own saves' : ''}` : 'Off: Settings > Save manager')),
+      managersPart(),
       h('p', { class: 'su-hello-text' }, 'Settings > Advanced can run this setup again any time.'),
       h('div', { class: 'su-hello-go' }, h('button', { type: 'button', class: 'btn btn-primary su-next', onclick: closeSetup }, h('span', {}, 'Open the app'), icon('chevron-right'))))];
   },

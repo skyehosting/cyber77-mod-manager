@@ -22,6 +22,12 @@ const AUDIO_EXT = new Set(['.wav', '.ogg', '.mp3', '.flac']);
 const REDMOD_SUBDIRS = new Set(['archives', 'scripts', 'tweaks', 'customsounds']);
 // DLLs straight in bin/x64 are proxy loaders (CET's version.dll, RED4ext's winmm.dll, ...).
 const LOADER_DLLS = new Set(['version.dll', 'winmm.dll', 'dxgi.dll', 'd3d11.dll', 'dinput8.dll']);
+/** Is this loader DLL (lower-case game path) the one this mod is? CET's version.dll, RED4ext's winmm.dll. */
+function ownLoader(dll, dests) {
+  if (dll === 'bin/x64/version.dll') return dests.has('bin/x64/plugins/cyber_engine_tweaks.asi');
+  if (dll === 'bin/x64/winmm.dll') return dests.has('red4ext/red4ext.dll');
+  return false;
+}
 
 const ext = p => { const b = base(p); const i = b.lastIndexOf('.'); return i > 0 ? b.slice(i).toLowerCase() : ''; };
 const base = p => p.slice(p.lastIndexOf('/') + 1);
@@ -188,14 +194,20 @@ function planLayout(files, modName) {
     unique.push(m);
   }
 
+  // A loader DLL in bin/x64 is worth a warning (it can clash with CET or RED4ext), except when the
+  // archive IS that loader: CET ships version.dll with its .asi, RED4ext winmm.dll with RED4ext.dll.
+  // Then it is just a note (shown, never counted as a problem).
+  const notes = [];
+  const dests = new Set(unique.map(m => m.dest.toLowerCase()));
   for (const m of unique) {
     const d = m.dest.toLowerCase();
     if (d.startsWith('bin/x64/') && !d.slice(8).includes('/') && LOADER_DLLS.has(d.slice(8))) {
-      warnings.push(`${m.dest} is a loader DLL slot (CET uses version.dll, RED4ext uses winmm.dll). The game's existing file will be backed up and restored on disable.`);
+      const text = `${m.dest} is a loader DLL slot (CET uses version.dll, RED4ext uses winmm.dll). The game's existing file will be backed up and restored on disable.`;
+      if (ownLoader(d, dests)) notes.push(text); else warnings.push(text);
     }
   }
 
-  return { type: describeType(unique.map(m => m.dest)), mappings: unique, skipped, warnings };
+  return { type: describeType(unique.map(m => m.dest)), mappings: unique, skipped, warnings, notes };
 }
 
 /** Keep only directories that are not inside another listed directory. */
@@ -227,4 +239,4 @@ function describeType(dests) {
   return list.length > 3 ? 'Mixed' : list.join(' + ');
 }
 
-module.exports = { planLayout, describeType, sanitizeName, commonDir };
+module.exports = { ownLoader, planLayout, describeType, sanitizeName, commonDir };

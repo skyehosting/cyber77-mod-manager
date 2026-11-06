@@ -138,6 +138,12 @@ contextBridge.exposeInMainWorld('api', {
   // The path of a file dropped on the window (files from the disk only).
   pathForFile: file => webUtils.getPathForFile(file),
   enable: ids => call('mods:enable', ids),
+  ignoreProblem: (id, kind, value, on) => call('mods:ignore', id, kind, value, on),
+  sectionCreate: name => call('sections:create', name),
+  sectionRename: (id, name) => call('sections:rename', id, name),
+  sectionDelete: id => call('sections:delete', id),
+  sectionMove: (id, dir) => call('sections:move', id, dir),
+  sectionAssign: (ids, id) => call('sections:assign', ids, id),
   disable: ids => call('mods:disable', ids),
   switchVersion: (offIds, onId) => call('mods:switchVersion', offIds, onId),
   uninstall: ids => call('mods:uninstall', ids),

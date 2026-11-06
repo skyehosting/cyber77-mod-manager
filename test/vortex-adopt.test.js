@@ -300,3 +300,75 @@ test('Vortex files are left alone whenever it is not certain they are left behin
     assert.deepStrictEqual(await mgr.clearVortexLeftovers(), { removed: 0 });
   }
 });
+
+test('hundreds of Vortex mods: their changes go to Vortex in batches that fit a Windows command line', async () => {
+  const { cliBatches, CLI_BUDGET } = require('../src/core/vortex');
+  const sets = Array.from({ length: 600 }, (_, i) => `persistent.profiles.rJ3kQ1xYz.modState.A Very Long Vortex Mod Name With Spaces-${i}-2-12-1-1730000000.enabled=false`);
+  const exe = 'C:\Users\Someone\AppData\Local\Programs\vortex\Vortex.exe';
+  const batches = cliBatches(exe, sets);
+  assert.ok(batches.length > 1);
+  for (const b of batches) {
+    const len = exe.length + 3 + b.reduce((n, a) => n + a.length + 3, 0);
+    assert.ok(len <= CLI_BUDGET && len < 32767, `a batch of ${len} characters`);
+    assert.ok(b.every((a, i) => (i % 2 === 0 ? a === '--set' : a !== '--set')));
+  }
+  assert.deepStrictEqual(batches.flat().filter(a => a !== '--set'), sets, 'every change once, in order');
+});
+
+test('a batch that fails puts the earlier ones back, and Vortex reopens if it was open', async () => {
+  const { mgr, cli } = setup();
+  const { cliBatches } = require('../src/core/vortex');
+  const data = mgr.vortex.read();
+  // Pretend there are enough changes for three batches: the second one fails.
+  const many = Array.from({ length: 700 }, (_, i) => ({ vortexId: `${'x'.repeat(60)}-${i}`, enabled: false }));
+  let calls = 0;
+  mgr.vortex.retryDelay = 1;
+  // The second batch fails all three of its tries (calls 2, 3 and 4).
+  mgr.vortex.runCli = async (_exe, args) => { calls++; cli.push(args); if (calls >= 2 && calls <= 4) throw new Error('database locked'); return 'changed'; };
+  let reopened = false;
+  mgr.vortex.isRunning = async () => false;
+  mgr.vortex.startVortex = () => { reopened = true; };
+  mgr.vortex.isRunning = (() => { let first = true; return async () => { if (first) { first = false; return true; } return false; }; })();
+  mgr.vortex.closeVortex = async () => {};
+  assert.ok(cliBatches('Vortex.exe', many.map(c => `persistent.profiles.p1.modState.${c.vortexId}.enabled=false`)).length >= 3);
+  await assert.rejects(mgr.vortex.apply(many), /part 2 of \d+.*Nothing was changed/);
+  const first = cli[0].filter(a => a !== '--set');
+  const undo = cli.slice(4).flat().filter(a => a !== '--set');
+  const second = cli[1].filter(a => a !== '--set');
+  assert.strictEqual(undo.length, first.length + second.length, 'the first batch is put back, and the failed one too (it may have been written in part)');
+  assert.ok(undo.every(a => a.endsWith('.enabled=true')), 'to how they were (enabled)');
+  assert.ok(reopened, 'Vortex was open, so it opens again');
+  assert.ok(data.activeProfile);
+});
+
+test('moving from Vortex: a batch is tried three times; one that still fails stays with Vortex and is named, the rest move', async () => {
+  const { mgr, cli } = setup();
+  mgr.vortex.retryDelay = 1;
+  let calls = 0;
+  // alpha and beta are enabled: one batch. Fail it twice, then let it through: retries make it work.
+  mgr.vortex.runCli = async (_exe, args) => { calls++; cli.push(args); if (args.some(a => a.includes('modState')) && calls <= 2) throw new Error('database locked'); return 'changed'; };
+  const r = await mgr.adoptFromVortex('all');
+  assert.strictEqual(r.adopted.length, 3, 'three tries were enough');
+  assert.deepStrictEqual(r.failed, []);
+});
+
+test('moving from Vortex: a batch that fails all three tries leaves its mods with Vortex, untouched, and names them', async () => {
+  const { mgr, game } = setup();
+  mgr.vortex.retryDelay = 1;
+  let tries = 0;
+  mgr.vortex.runCli = async (_exe, args) => { if (args.some(a => a.includes('modState'))) { tries++; throw new Error('database locked'); } return 'changed'; };
+  await assert.rejects(mgr.adoptFromVortex('all'), /after 3 tries.*Nothing was changed/, 'nothing went through: nothing to move');
+  assert.strictEqual(tries, 4, 'three tries, then one run that puts the batch back as it was');
+  assert.ok(fs.existsSync(path.join(game, 'archive/pc/mod/alpha.archive')), 'Vortex\'s files stay in the game');
+  assert.deepStrictEqual(Object.keys(mgr.data.mods), [], 'nothing was taken over');
+});
+
+test('toggling Vortex mods (all or nothing): a later batch failing three times puts the earlier ones back', async () => {
+  const { mgr, cli } = setup();
+  mgr.vortex.retryDelay = 1;
+  const many = Array.from({ length: 700 }, (_, i) => ({ vortexId: `${'x'.repeat(60)}-${i}`, enabled: false }));
+  mgr.vortex.runCli = async (_exe, args) => { cli.push(args); if (cli.length >= 2 && cli.length <= 4) throw new Error('locked'); return 'changed'; };
+  await assert.rejects(mgr.vortex.apply(many), /part 2 of \d+\) after 3 tries.*Nothing was changed/);
+  const undo = cli.slice(4).flat().filter(a => a !== '--set');
+  assert.ok(undo.length > 0 && undo.every(a => a.endsWith('.enabled=true')), 'the first batch put back');
+});
