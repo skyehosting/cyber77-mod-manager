@@ -40,6 +40,7 @@
       <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
       <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+      <symbol id="i-move" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
       <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 9-9M16 6l3 3M14 8l2 2"/></symbol>
@@ -167,22 +168,6 @@
             <h1 id="h-mods">Mods</h1>
             <p class="page-sub" id="mods-sub">Nothing installed yet</p>
           </div>
-          <div class="head-actions">
-            <button class="btn btn-primary collapsible" id="mods-update-all" hidden title="Download and install every available update" aria-label="Update all"><svg class="i"><use href="#i-up-circle"/></svg><span>Update all</span></button>
-            <button class="btn btn-ghost collapsible" id="mods-check-updates" title="Ask Nexus for newer versions of your mods" aria-label="Check for updates"><svg class="i"><use href="#i-refresh"/></svg><span>Check for updates</span></button>
-            <button class="btn btn-ghost collapsible redmod-btn" id="mods-redmod" hidden aria-label="Deploy REDmods"><svg class="i"><use href="#i-wrench"/></svg><span id="mods-redmod-label">Deploy REDmods</span></button>
-            <button class="btn collapsible" id="mods-import" title="Install a mod archive (.zip, .7z, .rar) from your computer" aria-label="Install from file"><svg class="i"><use href="#i-file-plus"/></svg><span>Install from file</span></button>
-            <div class="menu-wrap">
-              <button class="btn btn-icon" id="mods-more" aria-haspopup="menu" aria-expanded="false" aria-controls="mods-more-menu" title="More actions" aria-label="More actions"><svg class="i"><use href="#i-more"/></svg></button>
-              <div class="menu" id="mods-more-menu" role="menu" hidden>
-                <button class="menu-item" role="menuitem" id="mods-redeploy"><svg class="i"><use href="#i-deploy"/></svg><span><span class="menu-label">Redeploy</span><span class="menu-sub">Re-check every enabled mod's files</span></span></button>
-                <button class="menu-item" role="menuitem" data-open="game"><svg class="i"><use href="#i-folder"/></svg><span><span class="menu-label">Open game folder</span></span></button>
-                <button class="menu-item" role="menuitem" id="mods-open-vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span><span class="menu-label">Open Vortex</span></span></button>
-                <div class="menu-sep" role="separator"></div>
-                <button class="menu-item danger" role="menuitem" id="mods-purge"><svg class="i"><use href="#i-power"/></svg><span><span class="menu-label">Disable all</span><span class="menu-sub">Take this app's mods out of the game</span></span></button>
-              </div>
-            </div>
-          </div>
         </header>
 
         <div class="banner banner-warn" id="mods-running" hidden role="status">
@@ -216,6 +201,20 @@
               <option value="priority" title="Priority: the mod that wins file conflicts first">Priority</option>
             </select>
           </label>
+          <button class="btn" id="mods-import" title="Install a mod archive (.zip, .7z, .rar) from your computer"><svg class="i"><use href="#i-file-plus"/></svg><span>Install from file</span></button>
+          <div class="menu-wrap">
+            <button class="btn btn-icon" id="mods-more" aria-haspopup="menu" aria-expanded="false" aria-controls="mods-more-menu" title="More actions" aria-label="More actions"><svg class="i"><use href="#i-more"/></svg><span class="more-dot" id="mods-more-dot" hidden></span></button>
+            <div class="menu menu-left" id="mods-more-menu" role="menu" hidden>
+              <button class="menu-item" role="menuitem" id="mods-update-all" hidden><svg class="i"><use href="#i-up-circle"/></svg><span><span class="menu-label">Update all</span><span class="menu-sub">Download and install every available update</span></span></button>
+              <button class="menu-item" role="menuitem" id="mods-check-updates"><svg class="i"><use href="#i-refresh"/></svg><span><span class="menu-label">Check for updates</span><span class="menu-sub" id="mods-check-sub">Ask Nexus for newer versions of your mods</span></span></button>
+              <button class="menu-item redmod-btn" role="menuitem" id="mods-redmod" hidden><svg class="i"><use href="#i-wrench"/></svg><span><span class="menu-label" id="mods-redmod-label">Deploy REDmods</span><span class="menu-sub" id="mods-redmod-sub"></span></span></button>
+              <button class="menu-item" role="menuitem" id="mods-redeploy"><svg class="i"><use href="#i-deploy"/></svg><span><span class="menu-label">Redeploy</span><span class="menu-sub">Re-check every enabled mod's files</span></span></button>
+              <button class="menu-item" role="menuitem" data-open="game"><svg class="i"><use href="#i-folder"/></svg><span><span class="menu-label">Open game folder</span></span></button>
+              <button class="menu-item" role="menuitem" id="mods-open-vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span><span class="menu-label">Open Vortex</span></span></button>
+              <div class="menu-sep" role="separator"></div>
+              <button class="menu-item danger" role="menuitem" id="mods-purge"><svg class="i"><use href="#i-power"/></svg><span><span class="menu-label">Disable all</span><span class="menu-sub">Take this app's mods out of the game</span></span></button>
+            </div>
+          </div>
           <button type="button" class="btn btn-ghost btn-sm req-all" id="mods-req-all" hidden title="Show or hide the requirements under every mod"><svg class="i"><use href="#i-updown"/></svg><span>Collapse all</span></button>
           <div class="selbar" id="mods-bulk" hidden>
             <span class="sel-count" id="mods-sel-count">0 selected</span>
@@ -639,8 +638,10 @@
             <button class="seg-btn active" data-t="playthroughs" aria-pressed="true"><span id="saves-pt-label">Playthroughs</span> <span class="seg-count seg-count-neutral" id="saves-pt-count"></span></button>
             <button class="seg-btn" data-t="others" id="saves-tab-others" aria-pressed="false" hidden>Other profiles <span class="seg-count seg-count-neutral" id="saves-ot-count"></span></button>
             <button class="seg-btn" data-t="backups" aria-pressed="false">Backups <span class="seg-count seg-count-neutral" id="saves-bk-count"></span></button>
+            <button class="seg-btn" data-t="trash" aria-pressed="false">Trash <span class="seg-count seg-count-neutral" id="saves-tr-count"></span></button>
           </div>
           <div class="saves-bar-end">
+            <button class="btn btn-sm btn-ghost-danger" id="saves-purge" hidden title="Delete every save in the Trash for good"><svg class="i"><use href="#i-trash"/></svg><span id="saves-purge-label">Purge bin</span></button>
             <button class="btn btn-sm collapsible" id="saves-open" title="Open the game's save folder" aria-label="Open the game's save folder"><svg class="i"><use href="#i-folder"/></svg><span>Save folder</span></button>
             <button class="btn btn-sm btn-primary collapsible" id="saves-backup" title="Back up every save now" aria-label="Back up now"><svg class="i"><use href="#i-save"/></svg><span>Back up now</span></button>
             <label class="saves-pp" title="Each profile keeps its own saves: switching profiles swaps them (off: every profile shares the game's saves)">
@@ -650,6 +651,19 @@
           </div>
         </div>
         <div id="saves-body"></div>
+        <!-- Ticked saves: what to do with them (Copy to, Move to, Delete). Docks at the bottom of the page. -->
+        <div class="sv-fbar" id="saves-fbar" role="region" aria-label="Selected saves" hidden>
+          <span class="sv-fcount" id="saves-fcount" aria-live="polite"></span>
+          <span class="sv-vsep" aria-hidden="true"></span>
+          <div class="sv-fpick-wrap">
+            <button class="btn" id="saves-fcopy" aria-haspopup="dialog" aria-expanded="false"><svg class="i"><use href="#i-copy"/></svg><span>Copy to…</span></button>
+            <button class="btn" id="saves-fmove" aria-haspopup="dialog" aria-expanded="false"><svg class="i"><use href="#i-move"/></svg><span>Move to…</span></button>
+            <div class="sv-fpick" id="saves-fpick" role="dialog" aria-labelledby="saves-fpick-title" hidden></div>
+          </div>
+          <button class="btn btn-ghost-danger" id="saves-fdelete"><svg class="i"><use href="#i-trash"/></svg><span>Delete</span></button>
+          <span class="sv-vsep" aria-hidden="true"></span>
+          <button class="btn btn-ghost btn-icon" id="saves-fclear" title="Clear the selection (Esc)" aria-label="Clear the selection"><svg class="i"><use href="#i-x"/></svg></button>
+        </div>
       </section>
 
       <section class="page" id="page-profiles" aria-labelledby="h-prof">

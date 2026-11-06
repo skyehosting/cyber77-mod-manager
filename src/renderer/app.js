@@ -566,6 +566,8 @@ const SORTS = {
 };
 const SORT_TIME = { installed: ['installedAt', 'installed'], enabled: ['enabledAt', 'enabled'], disabled: ['disabledAt', 'disabled'] };
 state.modSort = store.get('modSort', 'az');
+// What the Mods page's ⋯ button flags (paintMoreDot): updates waiting, REDmods to deploy.
+const moreAttention = { updates: 0, redmod: false };
 const ago = t => {
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
   if (s < 60) return 'just now';
@@ -967,11 +969,14 @@ function renderMods() {
 
   const updAll = $('#mods-update-all');
   updAll.hidden = updates.length === 0;
-  updAll.querySelector('span').textContent = `Update all (${updates.length})`;
+  updAll.querySelector('.menu-label').textContent = `Update all (${updates.length})`;
   updAll.setAttribute('aria-label', `Update all ${plural(updates.length, 'mod')}`);
+  moreAttention.updates = updates.length;
+  paintMoreDot();
   const checkBtn = $('#mods-check-updates');
   const checked = state.snap.lastUpdateCheck;
-  checkBtn.title = `Ask Nexus for newer versions of your mods${checked ? ` (last checked ${new Date(checked).toLocaleString()})` : ''}`;
+  if (!checkBtn.disabled) $('#mods-check-sub').textContent = checked ? `Last checked ${ago(checked)}` : 'Ask Nexus for newer versions of your mods';
+  checkBtn.title = checked ? `Last checked ${new Date(checked).toLocaleString()}` : '';
   checkBtn.hidden = all.length === 0;
   $('#mods-redeploy').disabled = enabled === 0;
   $('#mods-purge').disabled = enabled === 0;
@@ -1203,9 +1208,11 @@ $('#mods-update-all').addEventListener('click', () => {
 });
 $('#mods-check-updates').addEventListener('click', async ev => {
   const btn = ev.currentTarget;
-  const label = btn.querySelector('span');
+  if (btn.disabled) return;
+  const label = btn.querySelector('.menu-label');
   btn.disabled = true;
   label.textContent = 'Checking…';
+  toast('Checking Nexus for updates…');
   try {
     const r = await run(api.checkUpdates());
     if (r) toast(r.available ? `${plural(r.available, 'update')} available` : `All mods are up to date (${plural(r.checked, 'mod')} checked)`, r.available ? 'info' : 'success');
@@ -2541,7 +2548,7 @@ window.addEventListener('resize', () => closeProfileMenu());
 function menuButton(btnSel, menuSel) {
   const btn = $(btnSel);
   const menu = $(menuSel);
-  const items = () => [...menu.querySelectorAll('.menu-item:not([hidden])')];
+  const items = () => [...menu.querySelectorAll('.menu-item:not([hidden]):not(:disabled)')];
   const close = (refocus = false) => {
     menu.hidden = true;
     btn.setAttribute('aria-expanded', 'false');
@@ -2565,6 +2572,20 @@ function menuButton(btnSel, menuSel) {
   document.addEventListener('mousedown', ev => { if (!menu.hidden && !ev.target.closest('.menu-wrap')) close(); });
 }
 menuButton('#mods-more', '#mods-more-menu');
+/**
+ * The ⋯ button beside the Mods filters: updates and REDmod deploys live in its menu, so it carries a
+ * count while updates wait (a plain dot when only REDmods need a deploy), and they are never hidden.
+ */
+function paintMoreDot() {
+  const dot = $('#mods-more-dot');
+  const n = moreAttention.updates;
+  dot.hidden = !n && !moreAttention.redmod;
+  dot.textContent = n ? String(n > 99 ? '99+' : n) : '';
+  dot.classList.toggle('plain', !n);
+  const why = [n ? plural(n, 'update') + ' available' : '', moreAttention.redmod ? 'REDmods need a deploy' : ''].filter(Boolean).join(', ');
+  $('#mods-more').setAttribute('aria-label', why ? `More actions (${why})` : 'More actions');
+  $('#mods-more').title = why ? `More actions: ${why}` : 'More actions';
+}
 $('#mods-open-vortex').addEventListener('click', () => run(api.openVortex()));
 
 // ---------------------------------------------------------------- Play
@@ -2837,6 +2858,8 @@ async function refreshRedmod(st) {
   const s = st || (await api.redmodStatus()).ok;
   const btn = $('#mods-redmod');
   btn.hidden = !s?.count;
+  moreAttention.redmod = false;
+  paintMoreDot();
   if (!s?.count) return;
   const when = s.last?.at ? new Date(s.last.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
   const failed = s.last && !s.last.ok;
@@ -2845,6 +2868,8 @@ async function refreshRedmod(st) {
   const mode = s.running ? 'running' : missing ? 'missing' : needs ? 'needs' : failed ? 'failed' : s.upToDate ? 'ok' : 'waiting';
   btn.dataset.state = mode;
   btn.disabled = s.running;
+  moreAttention.redmod = mode === 'waiting' || mode === 'failed';
+  paintMoreDot();
   $('#mods-redmod-label').textContent = { running: 'Deploying REDmods…', missing: 'REDmod tools missing', needs: 'REDmod needs protontricks', failed: 'REDmod deploy failed', ok: 'REDmods deployed', waiting: 'Deploy REDmods' }[mode];
   // Once per session: REDmods are here (just installed, say) but nothing can deploy them.
   if (missing && !redmodToolsWarned) {
@@ -2858,6 +2883,10 @@ async function refreshRedmod(st) {
     failed: `The last REDmod deploy failed${when ? ` (${when})` : ''}. Click to try again; Play also tries before starting the game.\n\n${s.last?.reason || ''}`,
     ok: `${s.count} REDmods, deployed${when ? ` ${when}` : ''}. Play deploys again by itself when they change. Click to deploy now anyway.`,
     waiting: `Your REDmods changed since the last deploy: Play deploys them before starting the game, or click to do it now.`,
+  }[mode];
+  $('#mods-redmod-sub').textContent = {
+    running: 'Running now', missing: 'Click to see how to get them', needs: 'Click for how to get it', failed: 'Click to try again',
+    ok: `${plural(s.count, 'REDmod')}${when ? `, deployed ${when}` : ''}`, waiting: 'Your REDmods changed since the last deploy',
   }[mode];
 }
 

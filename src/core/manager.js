@@ -19,9 +19,10 @@ const { VortexBridge, parseFolderName } = require('./vortex');
 const { listFiles, removeEmptyDirs } = require('./vortexDeploy');
 const { Mo2Bridge } = require('./mo2');
 const { ProfileSaves, defaultStoreDir, defaultHomeDir, ID: PROFILE_ID } = require('./profileSaves');
+const { SaveTrash, defaultTrashDir } = require('./saveTrash');
 
 const GAME_RUNNING_SAVES = 'Close Cyberpunk 2077 first: each profile has its own saves, and they change with the profile. (Just closed it? Give it a few seconds to finish syncing its saves.)';
-const { SaveBackups, scanSaves, groupPlaythroughs, savesFingerprint, defaultSavesDir, defaultBackupDir, REASONS, SLOT: SAVE_SLOT } = require('./saves');
+const { SaveBackups, scanSaves, groupPlaythroughs, savesFingerprint, defaultSavesDir, defaultBackupDir, REASONS, SLOT: SAVE_SLOT, hashFile } = require('./saves');
 const loadOrder = require('./loadOrder');
 
 const PROFILE_FORMAT = 'cyber-mod-manager-profile';
@@ -191,6 +192,7 @@ class ModManager extends EventEmitter {
     this.saves = new SaveBackups({ savesDir: () => this.gameSavesDir(), root: () => settings.get('saveBackupDir') || defaultBackupDir(), log });
     // Per-profile saves (Settings, Save manager): other profiles' saves wait in folders of their own.
     this.profileSaves = new ProfileSaves({ savesDir: () => this.saves.savesDir(), root: defaultStoreDir, log });
+    this.trash = new SaveTrash({ root: defaultTrashDir, log });
     this.gameRunning = () => false; // main.js puts the real check here
     // README.txt beside the backups and profile saves (what the uninstaller points to), kept current.
     this.savesHome = defaultHomeDir;
@@ -1940,6 +1942,7 @@ class ModManager extends EventEmitter {
         playthroughs: this.profileSaves.overview(Object.keys(this.data.profiles.list), this.savesOwner()),
       } : null,
       stored: this.settings.get('perProfileSaves') ? null : this.storedSaves(),
+      trash: this.trash.list(),
     };
   }
 
@@ -1973,7 +1976,17 @@ class ModManager extends EventEmitter {
       dir = this.profileSaves.dirOf(profileId);
     }
     if (!dir || !path.isAbsolute(dir)) return ''; // the save folder is not known yet (Linux)
-    const file = path.join(dir, s, 'screenshot.png');
+    return this.pngDataUrl(path.join(dir, s, 'screenshot.png'));
+  }
+
+  /** A deleted save's screenshot (the Trash tab). */
+  trashScreenshot(id) {
+    const file = this.trash.screenshot(String(id));
+    return file ? this.pngDataUrl(file) : '';
+  }
+
+  /** A save picture file as a data URL: a real PNG of at most 4 MB, else ''. */
+  pngDataUrl(file) {
     try {
       const st = fs.lstatSync(file);
       if (!st.isFile() || st.size > 4 << 20) return '';
@@ -2210,6 +2223,180 @@ class ModManager extends EventEmitter {
     let copied = 0;
     for (const pt of pts) copied += (await this.copyPlaythrough(pt, sourceId, [targetId])).copied;
     return { copied };
+  }
+
+  // ---------------------------------------------------------------- selecting saves: move, delete (Trash)
+
+  /**
+   * The folder a source's saves are in. '' is the game's own saves (per-profile saves off: they are
+   * no profile's). Off, a profile's saves are the ones its own folder still holds.
+   */
+  sourceDirOf(sourceId) {
+    if (sourceId === '') return this.saves.savesDir();
+    if (!this.isProfile(sourceId)) throw new Error('That profile no longer exists.');
+    return this.settings.get('perProfileSaves') ? this.savesDirOf(sourceId) : this.profileSaves.dirOf(sourceId);
+  }
+
+  /** Where copies addressed to a profile land (off: only the game's saves, asked for as the owner). */
+  targetDirOf(targetId) {
+    if (!this.settings.get('perProfileSaves')) return targetId === this.savesOwner() ? this.saves.savesDir() : '';
+    return this.isProfile(targetId) ? this.savesDirOf(targetId) : '';
+  }
+
+  /** The source's saves among `folders`, with their sav.dat hashes: [{ folder, hash }]. */
+  async pickedSaves(sourceId, folders) {
+    const want = new Set((Array.isArray(folders) ? folders : []).map(String).filter(f => SAVE_SLOT.test(f)).slice(0, 500));
+    if (!want.size) throw new Error('No such save.');
+    const dir = this.sourceDirOf(sourceId);
+    const out = [];
+    for (const f of want) {
+      try { out.push({ folder: f, hash: await hashFile(path.join(dir, f, 'sav.dat')) }); } catch { /* gone meanwhile */ }
+    }
+    return out;
+  }
+
+  /** sav.dat hashes in a folder. */
+  async folderHashes(dir) {
+    const out = new Set();
+    for (const s of scanSaves(dir)) {
+      try { out.add(await hashFile(path.join(dir, s.folder, 'sav.dat'))); } catch { /* gone meanwhile */ }
+    }
+    return out;
+  }
+
+  /** For the Copy/Move picker: how many of the chosen saves each profile has already. { [id]: n }. */
+  async savesPresence(sourceId, folders, targetIds) {
+    const picked = await this.pickedSaves(sourceId, folders);
+    const out = {};
+    for (const t of [...new Set((Array.isArray(targetIds) ? targetIds : []).map(String))].slice(0, 100)) {
+      const dir = t === sourceId ? '' : this.targetDirOf(t);
+      if (!dir) continue;
+      const there = await this.folderHashes(dir);
+      out[t] = picked.filter(p => there.has(p.hash)).length;
+    }
+    return out;
+  }
+
+  /**
+   * Move saves to other profiles: copied first (a save already there is skipped), then each original
+   * goes to the Trash, but only once every target has it (same sav.dat). One locked step: nothing else
+   * (a switch, a backup) runs in between, and nothing leaves the game's folder while the game runs.
+   */
+  async moveSaves(sourceId, folders, targetIds) {
+    if (sourceId === '') throw new Error('Turn on "Saves per profile" to move saves between profiles.');
+    const asked = [...new Set((Array.isArray(folders) ? folders : []).map(String).filter(f => SAVE_SLOT.test(f)))].slice(0, 500);
+    if (!asked.length) throw new Error('No such save.');
+    return this.saves.exclusive(async () => {
+      if (this.settings.get('perProfileSaves')) await this.recoverSwap();
+      const src = this.sourceDirOf(sourceId);
+      const targets = [...new Set((Array.isArray(targetIds) ? targetIds : []).map(String))].filter(t => t !== sourceId && this.targetDirOf(t));
+      if (!targets.length) return { copied: 0, renamed: 0, present: 0, moved: 0, profiles: 0 };
+      const game = this.saves.savesDir();
+      const isGame = d => !!game && !!d && path.resolve(d) === path.resolve(game);
+      if ((isGame(src) || targets.some(t => isGame(this.targetDirOf(t)))) && await this.gameRunning()) throw new Error('Close Cyberpunk 2077 first: saves cannot be moved in or out of the game while it runs.');
+      const picked = [];
+      for (const f of asked) {
+        try { picked.push({ folder: f, hash: await hashFile(path.join(src, f, 'sav.dat')) }); } catch { /* gone meanwhile */ }
+      }
+      const want = new Set(picked.map(p => p.folder));
+      let copied = 0;
+      let renamed = 0;
+      let present = 0;
+      const sets = [];
+      for (const t of targets) {
+        const dir = this.targetDirOf(t);
+        const r = await this.profileSaves.copySaves(src, s => want.has(s.folder), dir);
+        copied += r.copied;
+        renamed += r.renamed;
+        present += r.present;
+        if (this.isProfile(t)) { try { this.profileSaves.label(t, this.data.profiles.list[t].name); } catch { /* named next time */ } }
+        sets.push(await this.folderHashes(dir));
+      }
+      const safe = picked.filter(p => sets.every(set => set.has(p.hash))).map(p => p.folder);
+      const ids = await this.trashIn(src, safe, sourceId, isGame(src));
+      if (ids.length) this.log.success(`Moved ${plural(ids.length, 'save')} to ${plural(targets.length, 'profile')} (the originals are in the Trash)`);
+      this.emit('saves');
+      return { copied, renamed, present, moved: ids.length, profiles: targets.length };
+    });
+  }
+
+  /** Move slot folders of `dir` to the Trash (the caller holds the saves lock). Returns the item ids. */
+  async trashIn(dir, folders, sourceId, inGame) {
+    const name = sourceId ? this.data.profiles.list[sourceId]?.name || '' : '';
+    const ids = [];
+    for (const f of folders) {
+      if (!fs.existsSync(path.join(dir, f, 'sav.dat'))) continue;
+      ids.push(await this.trash.put(dir, f, { profile: sourceId, name, game: inGame }));
+    }
+    return ids;
+  }
+
+  /** Delete saves: each goes to the Trash (Saves page), never removed for good here. */
+  async trashSaves(sourceId, folders) {
+    const want = [...new Set((Array.isArray(folders) ? folders : []).map(String).filter(f => SAVE_SLOT.test(f)))].slice(0, 500);
+    if (!want.length) throw new Error('No such save.');
+    return this.saves.exclusive(async () => {
+      if (this.settings.get('perProfileSaves')) await this.recoverSwap();
+      // Where the saves are is read inside the lock, after any unfinished switch is sorted out.
+      const dir = this.sourceDirOf(sourceId);
+      const game = this.saves.savesDir();
+      const inGame = !!dir && !!game && path.resolve(dir) === path.resolve(game);
+      if (inGame && await this.gameRunning()) throw new Error('Close Cyberpunk 2077 first: saves cannot be deleted while the game runs.');
+      const ids = await this.trashIn(dir, want, sourceId, inGame);
+      if (ids.length) this.log.success(`Moved ${plural(ids.length, 'save')} to the Trash`);
+      this.emit('saves');
+      return { trashed: ids.length, ids };
+    });
+  }
+
+  /**
+   * Put deleted saves back. Each goes where it came from (its profile; the game's saves if that is
+   * where it was and profiles share them), or into `targetId` when given (the profile it came from is
+   * gone, or the user chose). { restored, present, renamed, missing } (missing: no place to go).
+   */
+  async restoreTrash(ids, targetId = '') {
+    const asked = new Set((Array.isArray(ids) ? ids : []).map(String));
+    if (targetId && !this.isProfile(targetId)) throw new Error('That profile no longer exists.');
+    return this.saves.exclusive(async () => {
+      if (this.settings.get('perProfileSaves')) await this.recoverSwap();
+      // Everything about where they go is read inside the lock (a switch may have just finished).
+      const list = this.trash.list();
+      const want = ids === 'all' ? list : list.filter(x => asked.has(x.id));
+      if (!want.length) throw new Error('Those deleted saves are no longer in the Trash.');
+      const on = !!this.settings.get('perProfileSaves');
+      const game = this.saves.savesDir();
+      const destOf = x => {
+        if (targetId) return on ? this.targetDirOf(targetId) : game;
+        if (x.from.profile && this.isProfile(x.from.profile)) return on ? this.savesDirOf(x.from.profile) : (x.from.game ? game : this.profileSaves.dirOf(x.from.profile));
+        return !on && (x.from.game || !x.from.profile) ? game : '';
+      };
+      const plan = want.map(x => ({ x, dir: destOf(x) }));
+      if (plan.some(p => p.dir && game && path.resolve(p.dir) === path.resolve(game)) && await this.gameRunning()) throw new Error('Close Cyberpunk 2077 first: saves cannot be put back while the game runs.');
+      let restored = 0;
+      let present = 0;
+      let renamed = 0;
+      let missing = 0;
+      for (const { x, dir } of plan) {
+        if (!dir) { missing++; continue; }
+        const r = await this.trash.restore(x.id, dir);
+        if (r.present) present++; else restored++;
+        if (!r.present && r.slot !== x.folder) renamed++;
+      }
+      if (restored) this.log.success(`Put back ${plural(restored, 'save')} from the Trash${renamed ? ` (${renamed} under a new slot name)` : ''}`);
+      this.emit('saves');
+      return { restored, present, renamed, missing };
+    });
+  }
+
+  /** Delete saves in the Trash for good (ids, or 'all' to empty it). */
+  async purgeTrash(ids) {
+    // Locked like a restore, so the two never run over each other.
+    return this.saves.exclusive(async () => {
+      const r = await this.trash.purge(ids === 'all' ? 'all' : (Array.isArray(ids) ? ids.map(String).slice(0, 5000) : []));
+      if (r.removed) this.log.info(`Deleted ${plural(r.removed, 'save')} from the Trash for good`);
+      this.emit('saves');
+      return r;
+    });
   }
 
   // ---------------------------------------------------------------- requirements (the Mods page)

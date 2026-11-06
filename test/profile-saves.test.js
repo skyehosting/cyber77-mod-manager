@@ -30,6 +30,7 @@ function setup() {
   const mgr = new ModManager({ settings, log: quiet });
   mgr.saves.savesDir = () => saves;
   mgr.profileSaves.root = () => path.join(root, 'profile saves');
+  mgr.trash.root = () => path.join(root, 'trash');
   mgr.data.profiles.list.p2 = { id: 'p2', name: 'Photo mode', enabled: [], created: Date.now() };
   const first = mgr.data.profiles.active;
   return { mgr, saves, root, first, save };

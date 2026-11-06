@@ -856,6 +856,14 @@ async function boot() {
   handle('saves:profileCount', (id, stored) => manager.profileSaveCount(String(id), { stored: stored === true }));
   handle('saves:copyPlaythrough', (pt, source, targets) => manager.copyPlaythrough(String(pt), String(source), Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
   handle('saves:copyAll', (source, target) => manager.copyAllSaves(String(source), String(target)));
+  const folderList = f => (Array.isArray(f) ? f.map(String).slice(0, 500) : []);
+  const idList = t => (Array.isArray(t) ? t.map(String).slice(0, 100) : []);
+  handle('saves:presence', (source, folders, targets) => manager.savesPresence(String(source), folderList(folders), idList(targets)));
+  handle('saves:move', (source, folders, targets) => manager.moveSaves(String(source), folderList(folders), idList(targets)));
+  handle('saves:trash', (source, folders) => manager.trashSaves(String(source), folderList(folders)));
+  handle('saves:trashRestore', (ids, target) => manager.restoreTrash(ids === 'all' ? 'all' : (Array.isArray(ids) ? ids.map(String).slice(0, 5000) : []), typeof target === 'string' ? target : ''));
+  handle('saves:trashPurge', ids => manager.purgeTrash(ids === 'all' ? 'all' : (Array.isArray(ids) ? ids.map(String).slice(0, 5000) : [])));
+  handle('saves:trashShot', id => manager.trashScreenshot(String(id)));
   handle('saves:copySaves', (source, folders, targets) => manager.copySaves(String(source), Array.isArray(folders) ? folders.map(String).slice(0, 500) : [], Array.isArray(targets) ? targets.map(String).slice(0, 100) : []));
   handle('saves:open', async which => {
     let dir;
