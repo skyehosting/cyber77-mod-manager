@@ -182,7 +182,8 @@ class ModioClient {
    * has a few hundred mods at most) so pages count only mods this app can install.
    */
   async search({ query = '', tag = '', lang = '', sort = 'trending', period = '', page = 1, perPage = 20 } = {}) {
-    const q = { _sort: SORTS[sort] || SORTS.trending, _limit: '100' };
+    // platforms=windows: mod.io sends only mods with a PC file (as its site's Windows filter); the check below stays.
+    const q = { _sort: SORTS[sort] || SORTS.trending, _limit: '100', platforms: 'windows' };
     if (query) q._q = String(query).slice(0, 100);
     const tags = [tag, lang].map(t => String(t || '').slice(0, 100)).filter(Boolean);
     if (tags.length) q.tags = tags.join(',');

@@ -3425,7 +3425,7 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .md-gallery { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .md-pic-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--console-bg); }
 .md-pic { width: 100%; height: 100%; object-fit: contain; display: block; }
-.md-reveal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; }
+.md-reveal { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 1; }
 .md-thumbs { display: flex; gap: var(--sp-2); overflow-x: auto; padding-bottom: 2px; }
 .md-thumb-btn { flex: none; width: 6.5rem; aspect-ratio: 16 / 9; padding: 0; border: 2px solid transparent; border-radius: var(--r-sm); overflow: hidden; background: var(--console-bg); cursor: pointer; }
 .md-thumb-btn.on { border-color: var(--accent); }
@@ -3537,3 +3537,8 @@ iframe.fx-anim { color-scheme: normal; }
 .gm-link-tag { display: inline-flex; align-items: center; gap: 4px; }
 .gm-unlink { border: 0; background: none; color: inherit; padding: 0 2px; cursor: pointer; font: inherit; line-height: 1; opacity: 0.7; }
 .gm-unlink:hover, .gm-unlink:focus-visible { opacity: 1; }
+
+/* Buttons laid over a picture stay exactly where they are: no lift on hover, no dip on press
+   (the general button lift is a transform, which would move them off their centring). */
+.drawer-reveal, .drawer-reveal:hover:not(:disabled), .drawer-reveal:active:not(:disabled),
+.md-reveal, .md-reveal:hover:not(:disabled), .md-reveal:active:not(:disabled) { transform: none; box-shadow: none; }
