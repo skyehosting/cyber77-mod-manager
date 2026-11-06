@@ -60,7 +60,7 @@ Separate setups, a share code for friends, and a Vortex or Mod Organizer 2 profi
 
 ### Themes
 
-Seven built-in looks (Settings → Interface), or your own in the custom theme editor with a colour picker.
+Seven built-in looks (Settings → Interface), or your own in **Theme Studio**: colours (with a colour picker and readability checks), a background picture of your own (fit, dim, blur), see-through sidebar and panels, frosted glass, and animation drawn behind the app, over the page or over everything: falling cherry blossom petals, snow, rain, embers, bubbles or stars (count, size, speed, wind, colours, or your own picture as the particle), or your own animation code, which runs sealed off (it can only draw: no files, no internet, no access to the app). Save themes by name in `Documents/Edgerunners Mod Manager/Themes` (one `.emmtheme` file each, pictures included, ready to share), load them back, or import one someone sent you.
 
 [![Themes](docs/assets/shots/themes.webp)](docs/assets/shots/themes.webp)
 

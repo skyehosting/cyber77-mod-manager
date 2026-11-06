@@ -288,10 +288,12 @@ function applyTheme(id, customText = themeStore.get('theme.custom', '')) {
   else id = 'netrunner';
   for (const [k, v] of Object.entries(tokens)) root.style.setProperty(k, v);
   themeState.applied = Object.keys(tokens);
+  themeState.tokens = tokens; // (the effects put these back when they let a colour show through: themefx.js)
   themeState.id = id;
   root.style.colorScheme = scheme;
   root.dataset.theme = id;
   root.dataset.scheme = scheme;
+  globalThis.applyThemeFx?.(); // the custom theme's picture, glass and animation (themefx.js), on the new colours
 }
 
 applyTheme(themeStore.get('theme', 'netrunner'));

@@ -3448,3 +3448,70 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .gm-game-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; max-height: 50vh; overflow: auto; }
 .gm-game-list li { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
 .gm-game-name { flex: 1 1 12rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
+
+/* ================================================================== Theme Studio: effects (themefx.js) */
+/* The background picture, behind the app; its dim is a dark layer over it. */
+#fx-bg { position: fixed; inset: calc(var(--fx-bg-blur, 0px) * -2); z-index: 0; pointer-events: none; background-position: center; background-repeat: no-repeat; background-size: cover; filter: blur(var(--fx-bg-blur, 0px)); }
+#fx-bg[data-fit="contain"] { background-size: contain; }
+#fx-bg[data-fit="center"] { background-size: auto; }
+#fx-bg[data-fit="tile"] { background-size: auto; background-repeat: repeat; background-position: 0 0; }
+#fx-bg::after { content: ''; position: absolute; inset: 0; background: rgb(0 0 0 / var(--fx-dim, 0)); }
+:root.fx-image body { background: var(--fx-bg-solid, var(--bg)); }
+:root.fx-image .shell, :root.fx-see .shell { z-index: 1; }
+/* The animation: behind the app, over the page (not the sidebar), or over everything; never in the way of the pointer. */
+.fx-anim { pointer-events: none; border: 0; background: transparent; }
+/* The sealed frame stays see-through only if its colour scheme matches the element's (else Chromium paints it opaque). */
+iframe.fx-anim { color-scheme: normal; }
+.fx-layer-background { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.fx-layer-page { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 20; }
+.fx-layer-top { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 24; } /* over the app; under dialogs, menus and messages */
+.shell > .main { position: relative; isolation: isolate; } /* its animation layer stays inside it, under dialogs */
+/* Frosted glass behind see-through surfaces. */
+:root.fx-glass .sidebar, :root.fx-glass .table-card, :root.fx-glass .set-card, :root.fx-glass .mod-card, :root.fx-glass .drawer,
+:root.fx-glass .menu, :root.fx-glass .modal, :root.fx-glass .prof-row, :root.fx-glass .browse-bar select, :root.fx-glass .toolbar,
+:root.fx-glass .gm-start-card, :root.fx-glass .md-facts, :root.fx-glass .modio-key-card { -webkit-backdrop-filter: blur(var(--fx-glass-blur)); backdrop-filter: blur(var(--fx-glass-blur)); }
+
+/* ================================================================== Theme Studio (themestudio.js) */
+.theme-tabs { align-self: flex-start; margin: var(--sp-2) 0 var(--sp-3); flex-wrap: wrap; }
+.theme-ed-head.ts-colours-only .theme-ed-from, .theme-ed-head.ts-colours-only #theme-ed-load, .theme-ed-head.ts-colours-only #theme-ed-copy { display: none; }
+.theme-pane { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.ts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: var(--sp-3) var(--sp-5); }
+.ts-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ts-field select, .ts-field input[type="text"] { width: 100%; }
+.ts-toggle { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.ts-label { display: flex; flex-direction: column; gap: 2px; font-weight: var(--fw-bold, 600); font-size: var(--fs-sm); color: var(--text); }
+.ts-hint { font-weight: normal; color: var(--muted); font-size: var(--fs-sm); }
+.ts-slider { display: flex; align-items: center; gap: var(--sp-2); }
+.ts-slider input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.ts-val { min-width: 3.4rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: var(--fs-sm); }
+.ts-note { margin: 0; color: var(--muted); font-size: var(--fs-sm); max-width: 70ch; }
+.ts-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.ts-picture { display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap; }
+.ts-pic-frame { width: 12rem; aspect-ratio: 16 / 9; height: auto; border-radius: var(--r-sm); border: 1px solid var(--line); background: repeating-linear-gradient(135deg, var(--surface-2) 0 8px, var(--surface-3) 8px 16px); display: grid; place-items: center; overflow: hidden; font-size: var(--fs-sm); }
+.ts-pic-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ts-pic-side { display: flex; flex-direction: column; gap: 6px; min-width: 12rem; flex: 1; }
+.ts-layers { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ts-layer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md, 6px); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.ts-layer.on { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
+/* The layer pictures: a sidebar (i), the page (b), and where the dots go (em). */
+.ts-layer-pic { position: relative; width: 5.5rem; aspect-ratio: 16 / 10; height: auto; border-radius: 4px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+.ts-layer-pic i { position: absolute; inset: 0 auto 0 0; width: 26%; background: var(--side-bg); z-index: 2; }
+.ts-layer-pic b { position: absolute; inset: 18% 8% 14% 34%; background: var(--surface-2); border-radius: 2px; z-index: 2; }
+.ts-layer-pic em { position: absolute; inset: 0; background-image: radial-gradient(var(--accent) 1.2px, transparent 1.6px); background-size: 9px 9px; }
+.ts-layer-background em { z-index: 1; }
+.ts-layer-page em { z-index: 3; left: 26%; }
+.ts-layer-top em { z-index: 3; }
+.ts-colours { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.ts-colour { display: inline-flex; align-items: center; gap: 2px; }
+.ts-colour input[type="color"] { width: 2.2rem; height: 2rem; padding: 0; border: 1px solid var(--field-line); border-radius: var(--r-sm); background: none; cursor: pointer; }
+.ts-code { width: 100%; min-height: 14rem; resize: vertical; padding: var(--sp-3); border: 1px solid var(--field-line); border-radius: var(--r-sm); background: var(--console-bg); color: var(--text); font-size: 0.82rem; line-height: 1.5; tab-size: 2; }
+.ts-code-err { margin: 0; font-size: var(--fs-sm); color: var(--err-text); }
+.ts-code-err.ok { color: var(--muted); }
+.ts-save { display: flex; gap: var(--sp-3); align-items: flex-end; flex-wrap: wrap; }
+.ts-save .ts-field { flex: 1 1 16rem; }
+.ts-lib-head { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); align-items: center; }
+.ts-path { flex: 1 1 14rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+.ts-lib { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.ts-lib li { display: flex; align-items: center; gap: var(--sp-2); padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.ts-lib-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ts-lib-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

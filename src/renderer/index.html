@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; frame-src https://*.nexusmods.com; object-src 'none'; base-uri 'none'; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: https:; frame-src 'self' https://*.nexusmods.com; object-src 'none'; base-uri 'none'; form-action 'none';">
   <title>Edgerunners Mod Manager</title>
   <link rel="stylesheet" href="styles.css">
   <script src="themes.js"></script>
@@ -1080,13 +1080,15 @@
                 </div>
                 <div class="theme-ed" id="theme-ed" hidden>
                   <div class="theme-ed-head">
-                    <div class="theme-ed-title"><span class="set-name">Custom theme</span><span class="set-desc">One "--token: colour;" per line. Every change shows at once; only colours are taken from it.</span></div>
+                    <div class="theme-ed-title"><span class="set-name">Theme Studio</span><span class="set-desc">Your own theme: colours, a background picture, glass, animation. Every change shows at once; save it by name in Library.</span></div>
                     <label class="theme-ed-from"><span>Start from</span>
                       <select id="theme-ed-base" aria-label="Start from a theme"></select>
                     </label>
                     <button type="button" class="btn btn-sm" id="theme-ed-load" title="Replace the text with the chosen theme's colours"><svg class="i"><use href="#i-rotate"/></svg><span>Load</span></button>
                     <button type="button" class="btn btn-sm" id="theme-ed-copy" title="Copy the theme, to share it"><svg class="i"><use href="#i-copy"/></svg><span>Copy</span></button>
                   </div>
+                  <div class="seg theme-tabs" id="theme-tabs" role="tablist" aria-label="Theme Studio"></div>
+                  <div class="theme-pane" id="theme-pane" hidden></div>
                   <div class="theme-ed-main">
                     <div class="ed-body theme-ed-code">
                       <pre class="ed-gutter" id="theme-ed-gutter" aria-hidden="true"></pre>
@@ -1376,6 +1378,8 @@
   <script src="modconfig.js"></script>
   <script src="editor.js"></script>
   <script src="theme-editor.js"></script>
+  <script src="themefx.js"></script>
+  <script src="themestudio.js"></script>
   <script src="setup.js"></script>
   <script src="assistant.js"></script>
   <script src="savespage.js"></script>

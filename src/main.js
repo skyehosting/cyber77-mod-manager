@@ -30,6 +30,7 @@ const { PerfMonitor } = require('./core/perf');
 const { Assistant } = require('./core/ai');
 const { makeTools } = require('./core/aiTools');
 const { siteUrl } = require('./core/modio');
+const { ThemeFiles } = require('./core/themeFiles');
 const { WebReader } = require('./core/web');
 const { GameFiles } = require('./core/gameFiles');
 const { ModConfig } = require('./core/modConfig');
@@ -365,6 +366,13 @@ function createWindow() {
   let movedTimer = null;
   win.on('moved', () => { clearTimeout(movedTimer); movedTimer = setTimeout(applyScale, 300); });
   win.webContents.on('will-navigate', ev => ev.preventDefault());
+  // A frame in the window is only ever the custom theme's sealed animation frame: it stays on its own page.
+  win.webContents.on('will-frame-navigate', ev => {
+    if (ev.isMainFrame) return;
+    let ok = false;
+    try { const u = new URL(ev.url); ok = u.protocol === 'file:' && path.resolve(require('url').fileURLToPath(u)) === path.join(__dirname, 'renderer', 'fx-sandbox.html'); } catch { /* not a file */ }
+    if (!ok) ev.preventDefault();
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -829,6 +837,32 @@ async function boot() {
   handle('modio:download', (id, withDeps) => manager.queueModio(Number(id), { withDeps: withDeps !== false }));
   handle('modio:test', async () => { manager.modio.cache.delete('game'); manager.modio.blockedUntil = 0; return (await manager.modio.tags()).length; });
   handle('modio:open', url => { shell.openExternal(siteUrl(url)); }); // a page on mod.io only (else the game's page)
+  // Theme Studio: named themes in Documents (CMM_THEMES_DIR for tests and demos), pictures of the theme in use in the app's data.
+  const themes = new ThemeFiles({
+    dir: process.env.CMM_THEMES_DIR || path.join(app.getPath('documents'), 'Edgerunners Mod Manager', 'Themes'),
+    assets: path.join(app.getPath('userData'), 'theme-assets'),
+    trash: file => shell.trashItem(file),
+  });
+  const themeName = n => (typeof n === 'string' ? n.slice(0, 80) : '');
+  handle('themes:list', () => ({ dir: themes.dir, list: themes.list() }));
+  handle('themes:save', (name, theme, overwrite) => {
+    if (themes.exists(themeName(name)) && overwrite !== true) throw new Error('A theme with that name is saved already.');
+    const t = theme && typeof theme === 'object' ? theme : {};
+    return themes.save(themeName(name), { colors: t.colors, fx: t.fx, code: t.code, imageUrls: t.imageUrls && typeof t.imageUrls === 'object' ? t.imageUrls : {} });
+  });
+  handle('themes:load', name => themes.load(themeName(name)));
+  handle('themes:remove', name => themes.remove(themeName(name)));
+  handle('themes:openFolder', async () => { fs.mkdirSync(themes.dir, { recursive: true }); const err = await shell.openPath(themes.dir); if (err) throw new Error(err); return themes.dir; });
+  handle('themes:import', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Import a theme', properties: ['openFile'], filters: [{ name: 'Edgerunners themes', extensions: ['emmtheme'] }] });
+    return r.canceled || !r.filePaths[0] ? null : themes.importFile(r.filePaths[0]);
+  });
+  handle('themes:pickImage', async kind => {
+    if (!['background', 'particle'].includes(kind)) throw new Error('Unknown picture.');
+    const r = await dialog.showOpenDialog(win, { title: kind === 'background' ? 'Choose a background picture' : 'Choose a particle picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] });
+    return r.canceled || !r.filePaths[0] ? null : themes.putAssetFile(kind, r.filePaths[0]);
+  });
+  handle('themes:clearImage', kind => { if (['background', 'particle'].includes(kind)) themes.clearAssets(kind); return true; });
   handle('export:json', async () => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     const r = await dialog.showSaveDialog(win, {

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- The script below is allowed by its sha256 (test/themes.test.js checks it); a sandboxed frame cannot load files.
+       A custom theme's animation code runs here and only here: a sandboxed frame (no app, no files),
+       with no network either. It can draw on its canvas; that is all. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-O8qFShcbhz39Dg1Ap2ft4h+E0dXvhd3yKPtZCiW2+Eg=' 'unsafe-eval'; worker-src blob:; img-src data: blob:; style-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+  <style>html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; } canvas { display: block; width: 100%; height: 100%; }</style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script>
+'use strict';
+/*
+ * A custom theme's animation code, sealed off. The code is the body of a function given `fx`; it sets
+ * fx.setup and fx.frame, and they are called with a canvas to draw on:
+ *
+ *   fx.setup = (ctx, w, h) => { ... };          // once, and again when the size changes
+ *   fx.frame = (ctx, t, dt, w, h) => { ... };   // every frame: t seconds since start, dt since the last
+ *   fx.colors  the theme's particle colours (['#ffc0d9', …])
+ *   fx.image   the theme's particle picture (an ImageBitmap) or null
+ *   fx.speed   the speed setting (1 = normal)
+ *   fx.random(a, b)  a random number from a to b
+ *
+ * It runs in a Worker started from this sandboxed frame: no page to reach (no DOM, no WebRTC), no network
+ * (this frame's CSP, which the worker keeps), no app (the frame is sandboxed). The frames come from the
+ * app's own animation loop ("tick"); a frame not done within 3 seconds stops the worker (a hang never
+ * holds anything up). An error stops the animation and is shown in the theme's Animation tab.
+ */
+(() => {
+  const WORKER = "\n'use strict';\n(() => {\nconst send = self.postMessage.bind(self); // taken before the theme's code runs: replacing postMessage does not reach it\nfor (const k of ['Worker', 'SharedWorker']) { try { Object.defineProperty(self, k, { value: undefined, configurable: false }); } catch (err) { /* not there */ } } // no workers of its own\nlet nonce = '';\nlet ctx = null; let canvas = null; let fx = null; let start = 0; let last = 0; let w = 0; let h = 0; let dpr = 1;\nconst report = err => { fx = null; send({ type: 'error', n: nonce, message: String(err && err.message ? err.message : err).slice(0, 300) }); };\nfunction size(m) {\n  w = m.w; h = m.h; dpr = m.dpr;\n  canvas.width = Math.max(1, Math.round(w * dpr)); canvas.height = Math.max(1, Math.round(h * dpr));\n  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n  if (fx && typeof fx.setup === 'function') { try { fx.setup(ctx, w, h); } catch (err) { report(err); } }\n}\nself.onmessage = e => {\n  const m = e.data || {};\n  if (m.type === 'init') { nonce = String(m.n); canvas = m.canvas; ctx = canvas.getContext('2d'); size(m); }\n  else if (m.type === 'size') size(m);\n  else if (m.type === 'run') {\n    fx = { setup: null, frame: null, colors: Array.isArray(m.colors) ? m.colors.slice(0, 6) : [], image: m.image || null, speed: Number(m.speed) || 1, random: (a = 0, b = 1) => a + Math.random() * (b - a) };\n    try { new Function('fx', String(m.code || ''))(fx); } catch (err) { report(err); return; }\n    size({ w, h, dpr });\n    start = last = performance.now();\n  } else if (m.type === 'tick') {\n    if (fx) {\n      const now = performance.now();\n      const t = (now - start) / 1000; const dt = Math.min(0.05, (now - last) / 1000); last = now;\n      try { if (typeof fx.frame === 'function') fx.frame(ctx, t, dt, w, h); } catch (err) { report(err); }\n    }\n    send({ type: 'ack', n: nonce });\n  } else if (m.type === 'resume') last = performance.now();\n};\n})();\n";
+  const canvas = document.getElementById('c');
+  const report = message => parent.postMessage({ type: 'error', message: String(message).slice(0, 300) }, '*');
+  let worker = null;
+  let waiting = 0; // when the last tick was sent and not done yet
+  let dog = 0;
+  let nonce = '';
+  let count = 0; // messages from the worker in the current second (a flood stops it)
+  const dims = () => ({ w: canvas.clientWidth, h: canvas.clientHeight, dpr: Math.min(window.devicePixelRatio || 1, 2) });
+
+  function stop(why) {
+    if (worker) worker.terminate();
+    worker = null;
+    clearInterval(dog);
+    if (why) report(why);
+  }
+
+  let begun = false;
+  function begin(m) {
+    if (begun) return; // one run per frame (its canvas goes to one worker only)
+    begun = true;
+    stop();
+    try {
+      worker = new Worker(URL.createObjectURL(new Blob([WORKER], { type: 'text/javascript' })));
+    } catch (err) { report(err && err.message ? err.message : err); return; }
+    nonce = Array.from(crypto.getRandomValues(new Uint32Array(4)), x => x.toString(36)).join('');
+    count = 0;
+    worker.onmessage = e => {
+      const d = e.data || {};
+      // Only the runner's own messages count (the theme's code never sees the nonce); anything else sent
+      // from the theme's code is ignored, and a flood of it (over 200 a second) stops the animation.
+      if (d.n !== nonce) { if (++count > 200) stop('the animation sent too many messages, so it was stopped'); return; }
+      if (d.type === 'ack') waiting = 0;
+      else if (d.type === 'error') stop(d.message);
+    };
+    worker.onerror = e => { e.preventDefault(); stop(e.message || 'error'); };
+    const off = canvas.transferControlToOffscreen();
+    worker.postMessage({ type: 'init', n: nonce, canvas: off, ...dims() }, [off]);
+    worker.postMessage({ type: 'run', code: String(m.code || ''), colors: m.colors, image: m.image || null, speed: m.speed });
+    waiting = 0;
+    dog = setInterval(() => {
+      count = 0;
+      if (waiting && performance.now() - waiting > 3000) stop('a frame took longer than 3 seconds, so the animation was stopped');
+    }, 1000);
+  }
+
+  window.addEventListener('message', ev => {
+    if (ev.source !== parent || !ev.data || typeof ev.data !== 'object') return;
+    const m = ev.data;
+    if (m.type === 'run') begin(m);
+    else if (m.type === 'tick' && worker && !waiting) { waiting = performance.now(); worker.postMessage({ type: 'tick' }); }
+    else if (m.type === 'resume' && worker) worker.postMessage({ type: 'resume' });
+  });
+  window.addEventListener('resize', () => { if (worker) worker.postMessage({ type: 'size', ...dims() }); });
+  parent.postMessage({ type: 'ready' }, '*');
+})();
+</script>
+</body>
+</html>
