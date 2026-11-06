@@ -7,6 +7,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, screen, session
 const IS_APPIMAGE = process.platform === 'linux' && require('./core/hostEnv').runsAsAppImage();
 if (IS_APPIMAGE) require('./core/hostEnv').dropAppImagePaths(process.env);
 const { logger } = require('./core/logger');
+/** For best-effort work whose failure changes nothing for the user: kept in the debug log, never silent. */
+const noted = what => err => logger.debug(`${what} failed`, String(err?.message || err));
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { ModImages } = require('./core/modImages');
@@ -224,7 +226,7 @@ function quickExit(startedAt) {
   if (process.platform === 'win32' || startedAt - appStartedAt < 10e3) return;
   setTimeout(() => {
     const c = crashSince(startedAt);
-    if (!c || sccCrash(c)) timezoneHint('quick-exit').catch(() => {});
+    if (!c || sccCrash(c)) timezoneHint('quick-exit').catch(noted('Time-zone hint'));
   }, 12e3).unref?.();
 }
 
@@ -401,7 +403,7 @@ async function boot() {
   manager.on('job', job => send('job', job));
   modImages = new ModImages({ dir: path.join(app.getPath('userData'), 'mod-images'), nexus: manager.nexus, log: logger });
   // A finished download brings its mod's picture into the cache, ready for the details panel.
-  manager.downloader.on('done', job => { if (job.modId) modImages.get(job.game, job.modId, job.version).catch(() => {}); });
+  manager.downloader.on('done', job => { if (job.modId) modImages.get(job.game, job.modId, job.version).catch(noted('Caching the mod picture')); });
   groups = setupGroups({ manager, settings, userData: app.getPath('userData'), cipher, log: logger, send, handle, gameRunning: () => manager.gameRunning() });
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
@@ -442,7 +444,7 @@ async function boot() {
     manager.resolveSoon(); // mods that know their Nexus mod but not the exact file (moved from Vortex): look them up once
   }
   applyAdBlock();
-  groups?.start().catch(() => {}); // groups on: listen and reconnect (a busy port is said in the log and on the page)
+  groups?.start().catch(noted('Starting Group Mods')); // groups on: listen and reconnect (a busy port is said in the log and on the page)
 
   gameLogs = new GameLogMonitor({
     getGameDir: () => settings.get('gamePath'),
@@ -492,9 +494,9 @@ async function boot() {
   app.on('before-quit', ev => {
     if (groupsQuitDone || !groups) return;
     groupsQuitDone = true;
-    if (!groups.hasMapping()) { groups.stop().catch(() => {}); return; }
+    if (!groups.hasMapping()) { groups.stop().catch(noted('Stopping Group Mods')); return; }
     ev.preventDefault();
-    Promise.race([groups.stop(), new Promise(r => setTimeout(r, 3000))]).catch(() => {}).finally(() => app.quit());
+    Promise.race([groups.stop(), new Promise(r => setTimeout(r, 3000))]).catch(noted('Stopping Group Mods')).finally(() => app.quit());
   });
   app.on('before-quit', () => {
     gameLogs.stop();
@@ -509,7 +511,7 @@ async function boot() {
   gameLogs.on('crash', id => {
     const c = crashes.list(5).find(x => x.id === id);
     send('crash', c || crashes.list(1)[0] || { id });
-    if (sccCrash(c)) timezoneHint('crash').catch(() => {}); // this crash's report only, never an older one
+    if (sccCrash(c)) timezoneHint('crash').catch(noted('Time-zone hint')); // this crash's report only, never an older one
   });
   modConfig = new ModConfig({ manager, files: gameFiles, ownerRoot, backupDir: path.join(app.getPath('userData'), 'edited-originals') });
   const tools = makeTools({
@@ -700,7 +702,7 @@ async function boot() {
       const at = launchedFromApp;
       setTimeout(() => {
         if (gameStartedAt >= at || launchedFromApp !== at) return; // seen (the exit check covers it), or Play again
-        if (sccCrash(crashSince(at))) timezoneHint('crash').catch(() => {});
+        if (sccCrash(crashSince(at))) timezoneHint('crash').catch(noted('Time-zone hint'));
       }, 120e3).unref?.();
     }
     return r;
@@ -825,7 +827,16 @@ async function boot() {
       gameLog: gameLogs.entries, gameStatus: gameLogs.status(), sources: gameLogs.sources(),
       app: { version: app.getVersion() },
     });
-    fs.writeFileSync(r.filePath, JSON.stringify(doc, null, 2));
+    const tmp = `${r.filePath}.${process.pid}.tmp`;
+    const text = JSON.stringify(doc, null, 2);
+    try {
+      fs.writeFileSync(tmp, text);
+      fs.renameSync(tmp, r.filePath);
+    } catch {
+      // Something held the temp file (antivirus, OneDrive): write the file itself, as before.
+      try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+      fs.writeFileSync(r.filePath, text);
+    }
     lastExport = r.filePath;
     logger.success(`Exported a report (${doc.summary.errors} errors, ${doc.summary.warnings} warnings, ${doc.summary.mods} mods) to ${r.filePath}`);
     return { file: r.filePath, ...doc.summary };
@@ -961,7 +972,16 @@ async function boot() {
     if (r.canceled || !r.filePath) return null;
     lastExport = r.filePath;
     if (/\.zip$/i.test(r.filePath)) return manager.exportProfileZip(id, r.filePath);
-    fs.writeFileSync(r.filePath, JSON.stringify(doc, null, 2));
+    const tmp = `${r.filePath}.${process.pid}.tmp`;
+    const text = JSON.stringify(doc, null, 2);
+    try {
+      fs.writeFileSync(tmp, text);
+      fs.renameSync(tmp, r.filePath);
+    } catch {
+      // Something held the temp file (antivirus, OneDrive): write the file itself, as before.
+      try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+      fs.writeFileSync(r.filePath, text);
+    }
     lastExport = r.filePath;
     logger.success(`Exported profile "${doc.name}" (${doc.mods.length} mods) to ${r.filePath}`);
     return { file: r.filePath, count: doc.mods.length };
@@ -1107,10 +1127,10 @@ async function updateAtLaunch() {
   // A light theme's page colour gets dark words (#rrggbb, as Settings stores it).
   const bg = /^#[0-9a-f]{6}$/i.exec(settings.get('windowBg') || '') ? settings.get('windowBg') : '#0d0f12';
   const light = [1, 3, 5].map(i => parseInt(bg.slice(i, i + 2), 16)).reduce((a, c, i) => a + c * [0.299, 0.587, 0.114][i], 0) > 150;
-  splash.loadFile(path.join(__dirname, 'renderer', 'splash.html'), { query: light ? { light: '1' } : {} }).catch(() => {});
+  splash.loadFile(path.join(__dirname, 'renderer', 'splash.html'), { query: light ? { light: '1' } : {} }).catch(noted('The splash screen'));
   const say = (text, pct) => {
     if (!splash || splash.isDestroyed()) return;
-    splash.webContents.executeJavaScript(`window.say && window.say(${JSON.stringify(String(text))}, ${Number(pct) || 0})`).catch(() => {});
+    splash.webContents.executeJavaScript(`window.say && window.say(${JSON.stringify(String(text))}, ${Number(pct) || 0})`).catch(noted('Splash progress'));
   };
   launchUpdate = await updateBeforeOpening({ autoUpdater, say, skip });
   // The same version again after installing it before opening: the install did not take (a
@@ -1351,7 +1371,7 @@ function guardWebviews() {
   // session-only cookies (no expiry) are given 30 days so they are saved to disk, and the cookie
   // store is written out soon after a change and on quit (an update restart included).
   let flushTimer = null;
-  const flush = () => nexusSession.cookies.flushStore().catch(() => {});
+  const flush = () => nexusSession.cookies.flushStore().catch(() => logger.debug('Saving the Nexus sign-in failed'));
   nexusSession.cookies.on('changed', (_e, cookie, _cause, removed) => {
     const host = String(cookie.domain || '').replace(/^\./, '');
     if (!/(^|\.)nexusmods\.com$/i.test(host)) return;
@@ -1364,7 +1384,7 @@ function guardWebviews() {
       domain: String(cookie.domain).startsWith('.') ? cookie.domain : undefined, // host-only stays host-only
       path: cookie.path, secure: cookie.secure, httpOnly: cookie.httpOnly, sameSite: cookie.sameSite,
       expirationDate: Math.floor(Date.now() / 1000) + 30 * 86400,
-    }).catch(() => {});
+    }).catch(() => logger.debug('Keeping the Nexus sign-in failed')); // a fixed text: never anything about the cookie
   });
   app.on('before-quit', flush);
   nexusSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
