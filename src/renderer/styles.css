@@ -3137,7 +3137,13 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .drawer-actions .btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn.btn-danger-text { color: var(--err-text); }
 .btn.btn-danger-text:hover:not(:disabled) { background: var(--err-soft); color: var(--err-text); }
-.drawer-tabs { display: flex; padding: 0 0.5rem; overflow-x: auto; scrollbar-width: none; }
+.drawer-tabs { display: flex; padding: 0 0.5rem; overflow-x: auto; overscroll-behavior-x: contain; }
+/* When the tabs do not fit: a thin slider under the tab line, in the tab line's own colours (the wheel scrolls it too). */
+.drawer-tabs::-webkit-scrollbar { height: 3px; }
+.drawer-tabs::-webkit-scrollbar-thumb { background: var(--line-strong); border: 0; border-radius: 0; }
+.drawer-tabs:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
+.drawer-tabs::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+.drawer-tabs::-webkit-scrollbar-track { background: transparent; }
 .drawer-tab { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; height: 2.5rem; padding: 0 0.55rem; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
 .drawer-tab:hover { color: var(--text); }
 .drawer-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: var(--fw-bold); }

@@ -1342,6 +1342,8 @@ function paintDrawerTabs(panes) {
   $('#drawer-body').replaceChildren(...panes.map(p => h('div', {
     class: 'dpane', role: 'tabpanel', tabindex: '0', id: `dpane-${p.key}`, 'aria-labelledby': `dtab-${p.key}`, dataset: { pane: p.key }, hidden: p.key !== drawerTab,
   }, ...p.nodes.filter(Boolean))));
+  const chosen = $('#drawer-tabs [aria-selected="true"]');
+  if (chosen) revealDrawerTab(chosen); // a redrawn row keeps the chosen tab in view
 }
 
 function showDrawerTab(key) {
@@ -1351,10 +1353,40 @@ function showDrawerTab(key) {
     const on = t.dataset.tab === key;
     t.setAttribute('aria-selected', String(on));
     t.tabIndex = on ? 0 : -1;
+    if (on) revealDrawerTab(t);
   }
   for (const p of $$('#drawer-body .dpane')) p.hidden = p.dataset.pane !== key;
   $('#drawer-body').scrollTop = 0;
 }
+
+/**
+ * A tab partly or wholly outside the tab row snaps into it (the row only, never the page). An
+ * instant snap: smooth scrolling is not always run (seen not to in a window without focus).
+ */
+function revealDrawerTab(tab) {
+  const row = $('#drawer-tabs');
+  if (!row.clientWidth) return; // not laid out (the panel is hidden)
+  const pad = 8;
+  const r = tab.getBoundingClientRect();
+  const left = r.left - row.getBoundingClientRect().left + row.scrollLeft;
+  const right = left + r.width;
+  let to = null;
+  if (left - pad < row.scrollLeft) to = left - pad;
+  else if (right + pad > row.scrollLeft + row.clientWidth) to = right + pad - row.clientWidth;
+  if (to !== null) row.scrollLeft = Math.max(0, to);
+}
+
+// The wheel over the tab row scrolls it sideways when the tabs do not fit (and only then).
+$('#drawer-tabs').addEventListener('wheel', ev => {
+  const row = ev.currentTarget;
+  if (row.scrollWidth <= row.clientWidth + 1 || ev.ctrlKey) return;
+  if (Math.abs(ev.deltaX) >= Math.abs(ev.deltaY)) return; // a sideways swipe scrolls the row by itself
+  const d = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? row.clientWidth : 1);
+  // At either end, the wheel goes on to the panel as usual.
+  if ((d < 0 && row.scrollLeft <= 0) || (d > 0 && row.scrollLeft >= row.scrollWidth - row.clientWidth - 1)) return;
+  ev.preventDefault();
+  row.scrollLeft += d;
+}, { passive: false });
 
 /** Shows the tab holding a section (status, reqs, needed, conflicts, update, health, logs, warnings, files) and scrolls to it. */
 function showDrawerSection(sec, smooth = false) {
