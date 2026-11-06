@@ -134,12 +134,12 @@ function renderSaves() {
   $('#saves-sub').textContent = [v.saves.length ? `${plural(v.saves.length, 'save')} in ${plural(pts.length, 'playthrough')}` : 'No saves on this PC yet', backupText].join(' · ');
   $('#saves-backup').disabled = !v.saves.length || !!sv.busy;
   $('#saves-perprofile').checked = !!v.perProfile;
-  // Cloud saves: backups only copy, so they are safe with them; restoring changes the saves Steam then uploads.
+  // No standing banner (the page explains itself). Only the unusual case shows: the saves in the game are
+  // not the active profile's (a switch could not swap them). Steam Cloud is said where it matters: Restore.
   const pp = v.perProfile;
   const ownerName = pp ? v.profiles.find(p => p.id === pp.owner)?.name || '' : '';
-  $('#saves-cloud').replaceChildren(...(pp ? [h('div', { class: 'banner banner-cloud', role: 'note' }, icon('users'),
-    h('span', {}, `Each profile has its own saves. These are the saves of "${ownerName}"${pp.owner !== pp.active ? ' (the profile that had them last)' : ''}.${v.steamCloud ? ' Steam Cloud is on for this game: it may bring a switched-out save back; this app keeps it out of the wrong profile.' : ''}`))] : []), ...(v.steamCloud && !pp ? [h('div', { class: 'banner banner-cloud', role: 'note' }, icon('info'),
-    h('span', {}, 'Steam Cloud syncs this game\'s saves. Backups only copy them, so they are safe with it. Restoring changes your saves, and Steam uploads that the next time the game closes.'))] : []));
+  $('#saves-cloud').replaceChildren(...(pp && pp.owner !== pp.active ? [h('div', { class: 'banner banner-cloud', role: 'note' }, icon('users'),
+    h('span', {}, `The saves in the game now are "${ownerName}"'s, the profile that had them last.`))] : []));
   // Tabs: this profile's playthroughs (all of them with per-profile saves off), other profiles', backups.
   // (off: the tab shows only while profiles' own folders still hold saves from when it was on)
   if (sv.tab === 'others' && !profileFolders(v)) sv.tab = 'playthroughs';
@@ -248,19 +248,13 @@ async function copyHere(from, what, call) {
 
 function otherProfilesView(v) {
   const pp = v.perProfile;
-  const ownerName = v.profiles.find(x => x.id === pp?.owner)?.name || 'this profile';
   const groups = otherProfiles(v);
   if (!groups.length) {
     return [h('div', { class: 'empty' }, h('div', { class: 'empty-icon' }, icon('users')), h('div', { class: 'empty-title' }, 'No saves in other profiles'),
       h('div', { class: 'empty-text' }, pp ? 'Each profile keeps its own saves. When another profile has some, they show here, and you can copy a playthrough or a single save into this one.'
         : 'No profile\'s own folder holds saves now.'))];
   }
-  const lead = pp
-    ? `Saves the other profiles keep in their own folders. Open a playthrough to copy one save into "${ownerName}", or copy the whole playthrough. A copy never replaces a save here.`
-    // Off: these stayed behind when each profile stopped having its own saves.
-    : "Saves left in profiles' own folders from when each profile had its own saves. The game does not see them. Open a playthrough to copy one save into the game's saves, or copy the whole playthrough. A copy never replaces a save there.";
-  return [h('p', { class: 'sv-lead' }, lead),
-    ...groups.map(g => h('section', { class: 'sv-day', 'aria-label': g.name },
+  return [...groups.map(g => h('section', { class: 'sv-day', 'aria-label': g.name },
       h('div', { class: 'section-head' }, h('h2', {}, g.name), h('span', { class: 'section-note' }, plural(g.list.length, 'playthrough'))),
       h('div', { class: 'sv-list', role: 'list', 'aria-label': `Playthroughs of ${g.name}` }, ...g.list.map(p => otherPlaythrough(v, g, p)))))];
 }
@@ -412,7 +406,7 @@ async function restoreBackup(b) {
       h('label', { class: 'check' }, some, h('span', {}, h('span', {}, 'Put back the saves I choose'), h('span', { class: 'check-sub' }, 'All of them are ticked. Saves in other slots stay; a slot the game reused since (autosaves, quick saves) gets its save from the backup.'))),
       pick,
       h('label', { class: 'check' }, all, h('span', {}, h('span', {}, `Replace all my saves with this backup (${plural(b.saves.length, 'save')})`), h('span', { class: 'check-sub' }, 'Saves made after it leave the game\'s folder (they stay in the backup taken first).'))),
-      h('p', { class: 'hint' }, 'Your saves as they are now are backed up first, so this can be undone.')),
+      h('p', { class: 'hint' }, `Your saves as they are now are backed up first, so this can be undone.${sv.view?.steamCloud ? ' Steam Cloud is on for this game: it uploads the restored saves the next time the game closes.' : ''}`)),
     buttons: [{ label: 'Cancel', value: false, safe: true }, { label: 'Restore', value: true, kind: 'btn-primary' }],
   });
   if (!ok) return;

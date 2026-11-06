@@ -2922,13 +2922,14 @@ html[data-setup="open"] #shell { visibility: hidden; }
 .sv-row > .sv-pt:hover { background: none; }
 .sv-item.open > .sv-row { background: var(--surface-2); }
 .sv-save.has-act { grid-template-columns: 4rem minmax(0, 1fr) 6rem 7rem 7.5rem 4.5rem auto; }
-.sv-lead { color: var(--muted); font-size: var(--fs-sm); margin: 0 0 var(--sp-2); }
 .sv-sname { display: flex; flex-direction: column; min-width: 0; color: var(--text-2); }
 .sv-folder { color: var(--muted); font-size: var(--fs-xs); font-family: var(--mono); }
 .sv-cell { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sv-cell.num { text-align: right; font-family: var(--mono); }
 .sv-day + .sv-day { margin-top: var(--sp-2); }
 .sv-day .section-head { margin-top: var(--sp-3); }
+/* The first day's heading: as far below the tabs as the list is below it (the bar above already has its margin). */
+#saves-body > .sv-day:first-child .section-head { margin-top: calc(var(--sp-3) - var(--sp-4)); }
 .sv-bk { display: flex; align-items: center; gap: 1rem; min-height: 4.2rem; padding: 0.6rem 1.3rem; }
 .sv-bk.pinned { box-shadow: inset 3px 0 0 var(--accent); }
 .sv-time { flex: none; min-width: 5.6rem; font: var(--fs-md) var(--mono); color: var(--text); white-space: nowrap; }
@@ -3082,18 +3083,25 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .perf-block { margin-bottom: var(--sp-5); }
 .perf-block-head { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); min-width: 0; }
 .perf-meta { color: var(--muted); font-size: var(--fs-sm); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.perf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--sp-3); }
-.perf-tile { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; padding: var(--sp-3) var(--sp-4) var(--sp-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+/* Five tiles to a row while each still gets about 11rem; fewer on a narrow window (the block's own width decides). */
+.perf-block { container-type: inline-size; }
+.perf-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.6rem; }
+@container (max-width: 58rem) { .perf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 46rem) { .perf-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 34rem) { .perf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 22rem) { .perf-grid { grid-template-columns: minmax(0, 1fr); } }
+.perf-tile { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; padding: 0.6rem 0.8rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .perf-tile-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .perf-label { color: var(--muted); font-size: var(--fs-sm); font-weight: var(--fw-medium); flex: none; }
 .perf-readout { margin-left: auto; min-width: 0; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.perf-value { font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--text); }
+.perf-value { font-size: 1.4rem; font-weight: var(--fw-bold); line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--text); }
 .perf-sub { display: flex; flex-wrap: wrap; gap: 0.2rem var(--sp-3); min-height: 1.3em; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.perf-legend { display: inline-flex; align-items: center; gap: 0.35rem; }
+.perf-legend { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.perf-sub-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .perf-swatch { width: 0.75rem; height: 2px; border-radius: 1px; flex: none; }
 .perf-swatch.perf-s0 { background: var(--accent); }
 .perf-swatch.perf-s1 { background: var(--info); }
-.perf-graph-wrap { margin-top: var(--sp-2); height: 3.2rem; cursor: crosshair; touch-action: none; }
+.perf-graph-wrap { margin-top: 0.35rem; height: 2.5rem; cursor: crosshair; touch-action: none; }
 .perf-graph { display: block; width: 100%; height: 100%; overflow: visible; border-bottom: 1px solid var(--line); }
 .perf-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .perf-line.perf-s0 { stroke: var(--accent); }

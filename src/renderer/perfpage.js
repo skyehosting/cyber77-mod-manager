@@ -172,9 +172,12 @@ function paintPerfTiles(list, s, pts, span, graphs) {
     x.tile.querySelector('.perf-value').textContent = x.t.value(s);
     const sub = x.t.sub(s);
     // Two lines: the legend is the line under the number (a swatch per line, in its colour).
-    x.tile.querySelector('.perf-sub').replaceChildren(...(Array.isArray(sub)
+    const subEl = x.tile.querySelector('.perf-sub');
+    subEl.replaceChildren(...(Array.isArray(sub)
       ? sub.map(([name, val], i) => h('span', { class: 'perf-legend' }, h('span', { class: `perf-swatch perf-s${i}`, 'aria-hidden': 'true' }), `${name} ${val}`))
-      : [sub || '']));
+      : [h('span', { class: 'perf-sub-text' }, sub || '')]));
+    // Narrow tiles cut a long line (a GPU's full name) with an ellipsis: the whole line on hover.
+    subEl.title = Array.isArray(sub) ? sub.map(([name, val]) => `${name} ${val}`).join(' · ') : (sub || '');
     x.tile.classList.toggle('no-graph', !graphs);
     if (graphs) perfGraph(x, pts, span);
   }
