@@ -51,6 +51,44 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
 };
 
+/**
+ * A toast with a title, a few lines, an × and a bar that shrinks until it closes (pointing at it
+ * pauses it): news that should not vanish unread (Group Mods). action: { label, fn }.
+ */
+function newsToast({ title, lines = [], action = null, life = 12000, kind = 'info' }) {
+  const bar = h('span', { class: 'toast-bar', 'aria-hidden': 'true' });
+  bar.style.animationDuration = `${life}ms`;
+  const el = h('div', { class: `toast toast-news ${kind}`, role: 'status' }, icon(kind === 'warn' ? 'alert' : 'users'),
+    h('span', { class: 'toast-text' }, h('b', { class: 'toast-title' }, title),
+      lines.length ? h('ul', { class: 'toast-lines' }, ...lines.slice(0, 5).map(l => h('li', {}, l)), lines.length > 5 ? h('li', { class: 'more' }, `and ${lines.length - 5} more`) : null) : null,
+      action ? h('span', { class: 'toast-acts' }, h('button', { class: 'btn btn-sm btn-primary', onclick: () => { el.remove(); action.fn(); } }, action.label)) : null),
+    h('button', { class: 'toast-x', 'aria-label': 'Close', title: 'Close', onclick: () => el.remove() }, icon('x')),
+    bar);
+  $('#toasts').append(el);
+  while ($('#toasts').childElementCount > 4) $('#toasts').firstElementChild.remove();
+  // Closed by a timer (not the bar's animation: reduced motion turns animations off), paused while the
+  // pointer or focus is on it; the bar only shows the time left.
+  let left = life;
+  let since = Date.now();
+  let timer = setTimeout(() => el.remove(), left);
+  // Paused while the pointer is on it or focus is in it (each counted once, however they overlap).
+  const held = { hover: false, focus: false };
+  let paused = false;
+  const pause = (why, on) => {
+    held[why] = on;
+    const now = held.hover || held.focus;
+    if (now === paused) return;
+    paused = now;
+    bar.style.animationPlayState = now ? 'paused' : 'running';
+    if (now) { clearTimeout(timer); left -= Date.now() - since; } else { since = Date.now(); clearTimeout(timer); timer = setTimeout(() => el.remove(), Math.max(1500, left)); }
+  };
+  el.addEventListener('mouseenter', () => pause('hover', true));
+  el.addEventListener('mouseleave', () => pause('hover', false));
+  el.addEventListener('focusin', () => pause('focus', true));
+  el.addEventListener('focusout', () => pause('focus', false));
+  return el;
+}
+
 function toast(msg, kind = 'info', action = null) {
   const name = kind === 'error' || kind === 'warn' ? 'alert' : kind === 'success' ? 'check' : 'terminal';
   const el = h('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status' }, icon(name), h('span', { class: 'toast-text' }, msg),
@@ -1990,7 +2028,7 @@ const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
   dataDir: '#s-data', sevenZipPath: '#s-7z', vortexExe: '#s-vx-exe',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
-  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode', perfInterval: '#s-perf-interval', perfHistory: '#s-perf-history',
+  aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', groupsPort: '#s-groups-port', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode', perfInterval: '#s-perf-interval', perfHistory: '#s-perf-history',
 };
 // ---------------------------------------------------------------- app updates
 
@@ -2276,7 +2314,7 @@ function updLaunchState() {
     : 'Only when new versions install automatically (above).';
 }
 $('#s-upd-mode').addEventListener('change', updLaunchState);
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs' };
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs', groupsUpnp: '#s-groups-upnp' };
 
 const AI_EXAMPLES = {
   openai: { endpoint: 'https://api.openai.com/v1 (or http://localhost:11434/v1 for Ollama)', model: 'e.g. gpt-5.1, or the model your endpoint serves' },

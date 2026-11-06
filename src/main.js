@@ -10,6 +10,7 @@ const { logger } = require('./core/logger');
 const { Settings } = require('./core/settings');
 const { ModManager } = require('./core/manager');
 const { ModImages } = require('./core/modImages');
+const { setupGroups } = require('./core/groups/app');
 const { findCyberpunk, findInstalls, installingNow, storeOf, isGameDir, steamLaunchOptions, missingLaunchOptions, linuxLaunchOptions, setsTimezone, STEAM_APP_ID } = require('./core/gameFinder');
 const { backupDirProblem, needDir, SAVES_UNKNOWN } = require('./core/saves');
 const { findGameProcess, isGameProcess } = require('./core/gameProcess');
@@ -43,6 +44,7 @@ let crashes = null;
 let plays = null;
 let perf = null; // the Performance page's readings (only while it is open)
 let modImages = null; // the mods' Nexus pictures (the details panel)
+let groups = null; // Group Mods (src/core/groups): off until the user turns groups on
 let lastExport = '';
 // Update before opening: the small window shown meanwhile, and what the check found.
 let splash = null;
@@ -400,6 +402,7 @@ async function boot() {
   modImages = new ModImages({ dir: path.join(app.getPath('userData'), 'mod-images'), nexus: manager.nexus, log: logger });
   // A finished download brings its mod's picture into the cache, ready for the details panel.
   manager.downloader.on('done', job => { if (job.modId) modImages.get(job.game, job.modId, job.version).catch(() => {}); });
+  groups = setupGroups({ manager, settings, userData: app.getPath('userData'), cipher, log: logger, send, handle, gameRunning: () => manager.gameRunning() });
   manager.on('fomod', req => send('fomod', req));
   manager.startHealthChecks();
   // Vortex.exe wherever it was installed (the registry knows), unless one was chosen in Settings;
@@ -439,6 +442,7 @@ async function boot() {
     manager.resolveSoon(); // mods that know their Nexus mod but not the exact file (moved from Vortex): look them up once
   }
   applyAdBlock();
+  groups?.start().catch(() => {}); // groups on: listen and reconnect (a busy port is said in the log and on the page)
 
   gameLogs = new GameLogMonitor({
     getGameDir: () => settings.get('gamePath'),
@@ -461,6 +465,7 @@ async function boot() {
     if (status.running && !gameWasRunning) gameStartedAt = status.since || Date.now();
     if (gameWasRunning && !status.running) {
       gameExitedAt = Date.now();
+      groups?.onGameExit(); // mods removed from a group list while playing are disabled now
       // Linux: gone within a minute of starting (the time-zone crash leaves no report at times).
       if (gameExitedAt - gameStartedAt < 60e3) quickExit(gameStartedAt);
     }
@@ -482,8 +487,18 @@ async function boot() {
   const panelBack = () => setTimeout(() => { if (aiPanel && !aiPanel.isDestroyed() && !aiPanelVisible(aiPanel.getBounds())) resetAiPanel(); }, 500);
   screen.on('display-removed', panelBack);
   screen.on('display-metrics-changed', panelBack);
+  // Group Mods on with a router port mapping: quitting waits (up to 3 s) for it to be removed first.
+  let groupsQuitDone = false;
+  app.on('before-quit', ev => {
+    if (groupsQuitDone || !groups) return;
+    groupsQuitDone = true;
+    if (!groups.hasMapping()) { groups.stop().catch(() => {}); return; }
+    ev.preventDefault();
+    Promise.race([groups.stop(), new Promise(r => setTimeout(r, 3000))]).catch(() => {}).finally(() => app.quit());
+  });
   app.on('before-quit', () => {
     gameLogs.stop();
+    // (Group Mods: stopped by the before-quit handler below, which waits for the router's port mapping.)
     // A play the game has left (its last minute of logs not saved yet) is saved now, not lost.
     if (plays?.current?.closeTimer) { clearTimeout(plays.current.closeTimer); plays.finish(); }
   });
@@ -553,6 +568,11 @@ async function boot() {
     }
     const before = settings.get('dataDir');
     const gameBefore = settings.get('gamePath');
+    const groupsBefore = `${settings.get('groupsPort')}:${settings.get('groupsUpnp')}`;
+    if (patch && 'groupsPort' in patch) {
+      const port = Number(patch.groupsPort);
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('The Group Mods port must be a number from 1024 to 65535.');
+    }
     settings.update(patch);
     if (settings.get('dataDir') !== before) logger.warn('Data folder changed. Restart the app to use it.');
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
@@ -562,6 +582,8 @@ async function boot() {
     if ('uiScale' in patch) applyScale();
     if ('perfInterval' in patch && perf?.running) perf.start(settings.get('perfInterval'));
     if ('updateEvery' in patch || 'updateUnit' in patch || 'updateMode' in patch) updater?.start();
+    // Groups on, and their port or router setting changed: listen again with the new one.
+    if (`${settings.get('groupsPort')}:${settings.get('groupsUpnp')}` !== groupsBefore && settings.get('groupsEnabled')) groups?.stop().then(() => groups.start()).catch(err => logger.warn('Group Mods could not restart', err.message));
     logger.success('Settings saved');
     pushSnapshot();
     // The AI chat's settings column and the Settings page show the same settings: both follow.

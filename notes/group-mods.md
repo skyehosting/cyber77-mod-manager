@@ -47,7 +47,7 @@ group-mods-plan). Chosen by the operator.
 - Limits: trust within the group. Hard limits stay only for connections not yet authenticated
   (strangers reaching the port).
 
-## Phase 1 scope (draft, before research results)
+## Phase 1 scope (built 2026-11-06)
 
 Goal: friends share a mod list that stays in sync between their apps, and each one installs the list's
 Nexus files through the app's normal download path after an OK.
@@ -71,3 +71,32 @@ Done means:
 - Members: online, last seen, game version, sync state.
 Non-goals for phase 1: installer (FOMOD) choices, conflict order, version picker beyond "the list's
 version or the newest", share list as code, any file transfer between members.
+
+## How phase 1 is built (src/core/groups) and why
+
+- identity.js: an ECDSA P-256 key and a self-signed certificate per PC (the DER is built here, verified
+  with node:crypto). P-256 because Electron 45's TLS (BoringSSL) refuses Ed25519 certificates and TLS-PSK
+  (tested). The key is encrypted with safeStorage; an identity that can't be read is never replaced.
+- net.js: TLS 1.3 both ways, each side pins the other's certificate fingerprint (no CA). Framed JSON;
+  16 KB before admission, 8 MB after; handshake 10 s, hello 10 s, 300 frames / 10 s, 32 MB send
+  backlog, per-address caps (IPv6 by /64), 512 connections; a ping every 40 s.
+- log.js: a causal signed log. Each event names its parents and its counter must be 1 + the largest
+  parent's; the group id is sha256(creator key + nonce) so only its creator can make it; per-type data
+  keys only, 12 KB per event; 1000 counted events per member; a member other than the host lets in at
+  most 4 people counted over everyone below them; a departure cuts what the departed signed that the
+  departure does not build on; a new passcode counts only if it is new, ≥16 characters and built on
+  the latest departure; only the host removes and only the host re-admits someone removed.
+- service.js: joins need a one-time invite token (stored hashed) and the passcode; the history goes in
+  1 MB pieces; events waiting for parents are capped (50 per member, 200 in all) and signature-checked;
+  removed members get only their own removal and then nothing; "have" every 10 minutes.
+- firewall.js: Windows: one UAC prompt, PowerShell by its System32 path with -EncodedCommand (no
+  script file); Linux: ufw / firewalld commands, pkexec by absolute path.
+- upnp.js: SSDP + SOAP, answers held to the responding private IPv4 host; finite 1 h lease, renewed;
+  removed when groups go off and on quit (quit waits up to 3 s).
+
+Audits (2026-11-06): two security reviews and two bug reviews, every finding fixed and re-verified
+(reproductions went red → green). Accepted, low: the router's reported internet address is trusted; a
+list entry holds one file per mod; replacing a version applies in every profile (as updates do); a
+Main plus a separate Update file of one mod are left side by side (two candidates, nothing replaced).
+Not done yet: running in the background (tray) while in a group; installer (FOMOD) choices, conflict
+order, version picker (phase 2).

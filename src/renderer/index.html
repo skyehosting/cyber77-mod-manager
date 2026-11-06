@@ -41,6 +41,10 @@
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
       <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
       <symbol id="i-move" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></symbol>
+      <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></symbol>
+      <symbol id="i-log-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
       <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 9-9M16 6l3 3M14 8l2 2"/></symbol>
@@ -165,8 +169,16 @@
       <section class="page active" id="page-mods" aria-labelledby="h-mods">
         <header class="page-head">
           <div class="page-title">
-            <h1 id="h-mods">Mods</h1>
+            <div class="title-row">
+              <h1 id="h-mods">Mods</h1>
+              <!-- Your mods, or the lists you share with friends (Group Mods). -->
+              <div class="seg mods-mode" id="mods-mode" role="group" aria-label="Show">
+                <button class="seg-btn active" data-mode="mods" aria-pressed="true">Mods</button>
+                <button class="seg-btn" data-mode="groups" aria-pressed="false">Group Mods <span class="seg-count" id="mods-mode-count" hidden></span></button>
+              </div>
+            </div>
             <p class="page-sub" id="mods-sub">Nothing installed yet</p>
+            <p class="page-sub" id="groups-sub" hidden></p>
           </div>
         </header>
 
@@ -174,6 +186,8 @@
           <svg class="i"><use href="#i-alert"/></svg>
           <span>Cyberpunk 2077 is running. Changes to mods take effect the next time you start the game, and files the game has open can't be replaced.</span>
         </div>
+
+        <div class="gm" id="groups-view" hidden></div>
 
         <div class="toolbar" id="mods-toolbar">
           <label class="search">
@@ -715,6 +729,7 @@
             <button type="button" class="set-nav-item" data-sec="ai"><svg class="i"><use href="#i-sparkle"/></svg><span>AI Assistant</span></button>
             <button type="button" class="set-nav-item" data-sec="display"><svg class="i"><use href="#i-eye"/></svg><span>Interface</span></button>
             <button type="button" class="set-nav-item" data-sec="perf"><svg class="i"><use href="#i-gauge"/></svg><span>Performance</span></button>
+            <button type="button" class="set-nav-item" data-sec="groups"><svg class="i"><use href="#i-users"/></svg><span>Group Mods</span></button>
             <button type="button" class="set-nav-item" data-sec="app"><svg class="i"><use href="#i-wrench"/></svg><span>Advanced</span></button>
             <button type="button" class="set-nav-item" data-sec="credits"><svg class="i"><use href="#i-heart"/></svg><span>Credits</span></button>
           </nav>
@@ -1057,6 +1072,32 @@
               </div>
             </section>
 
+            <section class="set-sec" data-sec="groups" id="sec-groups" aria-labelledby="sh-groups">
+              <h2 class="set-title" id="sh-groups"><svg class="i"><use href="#i-users"/></svg>Group Mods</h2>
+              <div class="set-card">
+                <div class="set-row">
+                  <div class="set-label"><span class="set-name">Groups</span><p class="set-desc" id="s-groups-desc">Share a mod list with the friends you play co-op with. Off: nothing on this PC listens for connections.</p></div>
+                  <div class="set-ctl"><button type="button" class="btn" id="s-groups-toggle">Turn on…</button></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><label for="s-groups-port">Port</label><p class="set-desc">Friends' apps connect to this TCP port. Change it only if another program uses 47077.</p></div>
+                  <div class="set-ctl"><input type="number" id="s-groups-port" min="1024" max="65535" step="1"></div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Open the port on my router</span><span class="set-desc">Asks your router (UPnP) while groups are on, and closes it again when they are off. Not needed on one home network, or over a VPN such as Tailscale, ZeroTier or Radmin.</span></span>
+                  <input type="checkbox" class="toggle" id="s-groups-upnp">
+                </label>
+                <div class="set-row">
+                  <div class="set-label"><span class="set-name">Firewall</span><p class="set-desc" id="s-groups-fw">Checked when groups are on.</p></div>
+                  <div class="set-ctl" id="s-groups-fw-ctl"></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><span class="set-name">Router</span><p class="set-desc" id="s-groups-router">Checked when groups are on.</p></div>
+                  <div class="set-ctl" id="s-groups-router-ctl"></div>
+                </div>
+              </div>
+            </section>
+
             <section class="set-sec" data-sec="app" id="sec-app" aria-labelledby="sh-app">
               <h2 class="set-title" id="sh-app"><svg class="i"><use href="#i-wrench"/></svg>Advanced</h2>
               <div class="set-card">
@@ -1230,5 +1271,6 @@
   <script src="assistant.js"></script>
   <script src="savespage.js"></script>
   <script src="perfpage.js"></script>
+  <script src="groupspage.js"></script>
 </body>
 </html>

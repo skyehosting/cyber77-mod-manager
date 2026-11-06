@@ -28,6 +28,9 @@ class Settings {
       installDependencies: true,
       handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
+      groupsEnabled: false, // Group Mods: listen for friends' apps (off until turned on, with the firewall step)
+      groupsPort: 47077, // the TCP port friends connect to
+      groupsUpnp: true, // try to open that port on the router (UPnP) while groups are on
       updateEvery: 1, // how often the app looks for a new version of itself (also each time it opens)…
       updateUnit: 'days', // …in 'minutes' | 'hours' | 'days'
       updateMode: 'auto', // 'auto' install with a restart | 'ask' before restarting | 'off' no checks by itself
@@ -292,6 +295,9 @@ class Settings {
     if ('perfInterval' in patch) d.perfInterval = Math.min(10000, Math.max(500, parseInt(patch.perfInterval, 10) || 1000));
     if ('perfHistory' in patch) d.perfHistory = Math.min(600, Math.max(10, parseInt(patch.perfHistory, 10) || 60));
     if ('perfGraphs' in patch) d.perfGraphs = !!patch.perfGraphs;
+    if ('groupsEnabled' in patch) d.groupsEnabled = !!patch.groupsEnabled;
+    if ('groupsUpnp' in patch) d.groupsUpnp = !!patch.groupsUpnp;
+    if ('groupsPort' in patch) { const p = parseInt(patch.groupsPort, 10); if (p >= 1024 && p <= 65535) d.groupsPort = p; }
     if ('playsKeep' in patch) d.playsKeep = Math.min(500, Math.max(1, parseInt(patch.playsKeep, 10) || 25));
     if ('concurrentDownloads' in patch) {
       d.concurrentDownloads = Math.min(10, Math.max(1, parseInt(patch.concurrentDownloads, 10) || 4));
