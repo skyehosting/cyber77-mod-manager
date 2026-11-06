@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { JsonStore } = require('./jsonStore');
 const { backupDirProblem } = require('./saves');
+const { cleanApiPath } = require('./modio');
 
 const DEFAULT_SEVEN_ZIP = 'C:\\Program Files\\7-Zip\\7z.exe';
 /** The AI's reasoning effort: '' leaves it to the model. */
@@ -70,6 +71,11 @@ class Settings {
       windowBg: '', // the theme's page colour (#rrggbb), so the window opens in it instead of flashing dark
       aiKeyEnc: '',
       aiKeyPlain: '',
+      // mod.io: the user's own read-only API key and API path (mod.io/me/access), stored like the Nexus key.
+      modioKeyEnc: '',
+      modioKeyPlain: '',
+      modioApiPath: '', // '' = https://api.mod.io/v1
+      showMature: false, // mod.io mods marked mature: blurred until shown
     });
     // The old default ticked nearly every file of a mod. Someone still on it moves to Main only.
     const d = this.store.data;
@@ -146,9 +152,33 @@ class Settings {
     }
   }
 
+  /** The mod.io API key, encrypted like the Nexus key. */
+  get modioKey() {
+    const d = this.store.data;
+    if (d.modioKeyEnc && this.cipher?.available()) {
+      try { return this.cipher.decrypt(d.modioKeyEnc); } catch { return ''; }
+    }
+    return d.modioKeyPlain || '';
+  }
+
+  set modioKey(value) {
+    const d = this.store.data;
+    value = String(value || '').trim();
+    // mod.io keys are 32 letters and digits: anything else is a paste of something else.
+    if (value && !/^[a-z0-9]{32}$/i.test(value)) throw new Error('That is not a mod.io API key: it is 32 letters and digits, from mod.io/me/access.');
+    if (this.cipher?.available()) {
+      d.modioKeyEnc = value ? this.cipher.encrypt(value) : '';
+      d.modioKeyPlain = '';
+    } else {
+      d.modioKeyPlain = value;
+      d.modioKeyEnc = '';
+    }
+  }
+
   /** Settings as shown to the UI: the keys themselves never leave the main process. */
   publicView() {
-    const { apiKeyEnc, apiKeyPlain, aiKeyEnc, aiKeyPlain, aiPresets, ...rest } = this.store.data;
+    const { apiKeyEnc, apiKeyPlain, aiKeyEnc, aiKeyPlain, aiPresets, modioKeyEnc, modioKeyPlain, ...rest } = this.store.data;
+    const mio = this.modioKey;
     const key = this.apiKey;
     const ai = this.aiKey;
     const hint = k => (k ? `••••••••${k.slice(-4)}` : '');
@@ -156,7 +186,7 @@ class Settings {
       const k = this.presetKey({ keyEnc, keyPlain });
       return { ...p, hasKey: !!k, keyHint: hint(k) };
     });
-    return { ...rest, aiPresets: presets, launchMode: this.get('launchMode'), hasApiKey: !!key, apiKeyHint: hint(key), hasAiKey: !!ai, aiKeyHint: hint(ai), aiKeySaved: this.aiKeySaved() };
+    return { ...rest, aiPresets: presets, launchMode: this.get('launchMode'), hasApiKey: !!key, apiKeyHint: hint(key), hasAiKey: !!ai, aiKeyHint: hint(ai), aiKeySaved: this.aiKeySaved(), hasModioKey: !!mio, modioKeyHint: hint(mio) };
   }
 
   // ---------------------------------------------------------------- saved AI setups
@@ -227,6 +257,9 @@ class Settings {
     const d = this.store.data;
     if ('apiKey' in patch) this.apiKey = patch.apiKey;
     if ('aiKey' in patch) this.aiKey = patch.aiKey;
+    if ('modioKey' in patch) this.modioKey = patch.modioKey;
+    if (typeof patch.modioApiPath === 'string') d.modioApiPath = cleanApiPath(patch.modioApiPath);
+    if ('showMature' in patch) d.showMature = !!patch.showMature;
     if ('aiProvider' in patch && ['openai', 'anthropic'].includes(patch.aiProvider)) d.aiProvider = patch.aiProvider;
     if ('aiReasoning' in patch && AI_REASONING.includes(patch.aiReasoning)) d.aiReasoning = patch.aiReasoning;
     if ('aiMaxSteps' in patch && patch.aiMaxSteps !== '' && Number.isFinite(Number(patch.aiMaxSteps))) d.aiMaxSteps = Math.min(500, Math.max(0, Math.round(Number(patch.aiMaxSteps))));

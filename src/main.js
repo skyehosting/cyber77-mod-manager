@@ -29,6 +29,7 @@ const { updateBeforeOpening } = require('./core/launchUpdate');
 const { PerfMonitor } = require('./core/perf');
 const { Assistant } = require('./core/ai');
 const { makeTools } = require('./core/aiTools');
+const { siteUrl } = require('./core/modio');
 const { WebReader } = require('./core/web');
 const { GameFiles } = require('./core/gameFiles');
 const { ModConfig } = require('./core/modConfig');
@@ -576,6 +577,8 @@ async function boot() {
       if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('The Group Mods port must be a number from 1024 to 65535.');
     }
     settings.update(patch);
+    // Another key or API path: nothing read with the old one is reused.
+    if (patch && ('modioKey' in patch || 'modioApiPath' in patch)) { manager.modio.cache.clear(); manager.modio.blockedUntil = 0; }
     if (settings.get('dataDir') !== before) logger.warn('Data folder changed. Restart the app to use it.');
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
     if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
@@ -812,6 +815,20 @@ async function boot() {
   // The Mods page's Category filter: quietly none when Nexus can't be reached (it keeps its own list then).
   handle('mods:categories', () => manager.nexus.modCategories().catch(() => []));
   handle('browse:open', url => { if (NEXUS_PAGE.test(String(url))) shell.openExternal(String(url)); });
+  // mod.io (the user's own key): browse, one mod's page, download (with what it needs), its page on mod.io.
+  const MIO_SORTS = ['trending', 'recent', 'updated', 'popular', 'subscribers', 'rated', 'name'];
+  const MIO_PERIODS = ['', 'day', 'week', 'month', 'quarter', 'year'];
+  const short = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  handle('modio:search', o => manager.modio.search({
+    query: short(o?.query, 100), tag: short(o?.tag, 100), lang: short(o?.lang, 100),
+    sort: MIO_SORTS.includes(o?.sort) ? o.sort : 'trending', period: MIO_PERIODS.includes(o?.period) ? o.period : '',
+    page: Math.max(1, Math.min(1000, parseInt(o?.page, 10) || 1)), perPage: parseInt(o?.perPage, 10) || 20,
+  }));
+  handle('modio:tags', () => manager.modio.tags());
+  handle('modio:mod', id => manager.modio.mod(Number(id)));
+  handle('modio:download', (id, withDeps) => manager.queueModio(Number(id), { withDeps: withDeps !== false }));
+  handle('modio:test', async () => { manager.modio.cache.delete('game'); manager.modio.blockedUntil = 0; return (await manager.modio.tags()).length; });
+  handle('modio:open', url => { shell.openExternal(siteUrl(url)); }); // a page on mod.io only (else the game's page)
   handle('export:json', async () => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     const r = await dialog.showSaveDialog(win, {

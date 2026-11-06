@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const { pathToFileURL } = require('url');
 const { JsonStore } = require('./jsonStore');
 const { NexusClient, parseModUrl, parseNxm, requirementOnNexus } = require('./nexus');
+const { ModioClient } = require('./modio');
 const { redmodToolsInstalled } = require('./launcher');
 const { Downloader } = require('./downloader');
 const { Installer, isSafeRel } = require('./installer');
@@ -187,6 +188,9 @@ class ModManager extends EventEmitter {
     }
     this.nexus = new NexusClient(() => settings.apiKey, log);
     this.downloader = new Downloader(this.nexus, log, () => settings.get('concurrentDownloads'));
+    // mod.io: the user's own key and API path; each download asks for a fresh address.
+    this.modio = new ModioClient({ getKey: () => settings.modioKey, getBase: () => settings.get('modioApiPath'), log });
+    this.downloader.resolvers.modio = job => this.modio.downloadUrl(job.modio?.id, job.modio?.fileId);
     // Nexus refused a direct link: ask again whether the account is still Premium (true / false / null).
     // A fresh answer (refusals of a whole batch share one check); null when it can't be checked.
     this.downloader.checkPremium = () => this.recheckAccount(0).then(a => (a ? a.isPremium : null));
@@ -915,6 +919,61 @@ class ModManager extends EventEmitter {
     }
   }
 
+  // ---------------------------------------------------------------- mod.io
+
+  /** Is this mod.io mod here already (installed, or on its way)? */
+  modioHave(modioId) {
+    const id = Number(modioId);
+    return Object.values(this.data.mods).some(m => m.modio?.id === id)
+      || this.downloader.list().some(j => j.modio?.id === id && ['queued', 'downloading'].includes(j.status));
+  }
+
+  /**
+   * Download a mod from mod.io: its Windows file (or the file given, for an update) and, unless told
+   * not to, the mods it needs that are not here yet. Mods with no Windows file are named, not queued.
+   */
+  async queueModio(modioId, { withDeps = true, fileId = 0, replaces = '' } = {}) {
+    const m = await this.modio.mod(modioId);
+    const summary = { queued: 0, skipped: 0, noWindows: [], name: m.name };
+    const fid = Number(fileId) || m.fileId;
+    if (!fid) throw new Error(`${m.name} has no Windows file on mod.io (it is made for consoles only).`);
+    const file = m.file && m.file.id === fid ? m.file : await this.modio.file(m.id, fid);
+    if (file.virusPositive === 1) throw new Error(`mod.io's virus scan flagged ${m.name} as malicious; it was not downloaded.`);
+    this.queueModioFile(m, file, '', summary, replaces ? { replaces } : {});
+    if (withDeps) {
+      for (const d of m.dependencies || []) {
+        if (this.modioHave(d.id)) continue;
+        if (!d.fileId) { summary.noWindows.push(d.name || `mod ${d.id}`); continue; }
+        const dm = await this.modio.mod(d.id);
+        if (!dm.fileId) { summary.noWindows.push(dm.name); continue; }
+        const df = dm.file && dm.file.id === dm.fileId ? dm.file : await this.modio.file(dm.id, dm.fileId);
+        if (df.virusPositive === 1) { summary.noWindows.push(`${dm.name} (flagged by mod.io's virus scan)`); continue; }
+        this.queueModioFile(dm, df, m.name, summary);
+      }
+    }
+    if (summary.noWindows.length) this.log.warn(`${m.name} needs mods with no Windows file on mod.io: ${summary.noWindows.join(', ')}`);
+    this.emit('changed');
+    return summary;
+  }
+
+  queueModioFile(m, f, dependencyOf, summary, extra = {}) {
+    const key = `modio-${f.id}`; // never a bare number: Nexus files are keyed by theirs
+    const known = this.data.downloads[key];
+    if (known && fs.existsSync(known.path) && !extra.replaces) { summary.skipped++; return; }
+    let fileName = f.fileName ? sanitizeName(f.fileName) : '';
+    if (!fileName || /^\.+$/.test(fileName) || /[. ]$/.test(fileName) || /^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(fileName)) fileName = `${key}.zip`;
+    const dest = path.join(this.settings.downloadsDir, 'cyberpunk2077', 'mod.io', `${sanitizeName(m.name)} (${Number(m.id)})`, fileName);
+    if (!path.resolve(dest).startsWith(path.resolve(this.settings.downloadsDir) + path.sep)) throw new Error(`${m.name}: its file name cannot be used.`);
+    this.downloader.enqueue({
+      key, source: 'modio', modio: { id: m.id, fileId: f.id, nameId: m.nameId, url: m.url, logo: m.logo, mature: !!m.mature },
+      game: 'cyberpunk2077', modId: 0, modName: m.name, fileId: 0, name: m.name, fileName: f.fileName,
+      version: f.version || '', category: 'MAIN', size: f.size || 0, uploaded: Math.floor((f.added || 0) / 1000),
+      author: m.author || '', picture: m.logo || '', dest, dependencyOf: dependencyOf || '',
+      requestedBy: this.data.profiles?.active || '', ...extra,
+    });
+    summary.queued++;
+  }
+
   /** Is a required mod already taken care of? */
   dependencyStatus(req) {
     const modId = Number(req.modId);
@@ -938,6 +997,7 @@ class ModManager extends EventEmitter {
         name: job.name, fileName: job.fileName, version: job.version, category: job.category,
         size: job.total, uploaded: job.uploaded, author: job.author, picture: job.picture,
         path: job.dest, downloadedAt: Date.now(), dependencyOf: job.dependencyOf || '',
+        ...(job.source === 'modio' && job.modio ? { source: 'modio', modio: job.modio } : {}),
       };
       this.library.save();
     }).then(() => {
@@ -1080,6 +1140,7 @@ class ModManager extends EventEmitter {
       type: plan.type, files, skipped: plan.skipped.length, warnings: plan.warnings, notes: plan.notes || [],
       enabled: false, priority: old?.priority ?? this.data.nextPriority++, installedAt: Date.now(), enabledAt: Date.now(),
       fomod: !!selections, fomodChoices: selections || undefined, dependencyOf: rec.dependencyOf || old?.dependencyOf || '',
+      ...(rec.source === 'modio' && rec.modio ? { source: 'modio', modio: rec.modio } : {}),
     };
     this.data.mods[id] = mod;
     this.library.save();
@@ -1250,15 +1311,30 @@ class ModManager extends EventEmitter {
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
+    const fromModio = Object.values(this.data.mods).filter(m => m.source === 'modio' && m.modio?.id);
+    if (fromModio.length && this.modio.hasKey) {
+      try {
+        const now = await this.modio.current(fromModio.map(m => m.modio.id));
+        for (const m of fromModio) {
+          const c = now.get(m.modio.id);
+          if (!c?.fileId || !m.modio.fileId || c.fileId === m.modio.fileId || this.data.mods[`modio-${c.fileId}`]) continue;
+          const f = await this.modio.file(c.id, c.fileId);
+          found[m.id] = { source: 'modio', fileId: f.id, name: c.name, fileName: f.fileName, category: 'MAIN', version: f.version, size: f.size, uploaded: Math.floor(f.added / 1000), from: m.version };
+        }
+      } catch (err) {
+        errors.push(`mod.io: ${err.message}`);
+        this.log.warn('Could not check the mods from mod.io for updates', err.message);
+      }
+    }
     // Only mods still here: one updated, removed or moved from Vortex during the check is not listed.
     const vxNow = (this.vortex.read().mods || []).map(v => v.id);
     this.data.updates = Object.fromEntries(Object.entries(found).filter(([id]) => this.data.mods[id] || vxNow.includes(id)));
     this.data.lastUpdateCheck = Date.now();
     this.library.save();
     const n = Object.keys(found).length;
-    this.log[n ? 'success' : 'info'](n ? `${plural(n, 'update')} available` : `All ${plural(mods.length, 'mod')} are up to date`);
+    this.log[n ? 'success' : 'info'](n ? `${plural(n, 'update')} available` : `All ${plural(mods.length + fromModio.length, 'mod')} are up to date`);
     this.emit('changed');
-    return { checked: groups.size, available: n, errors };
+    return { checked: groups.size + fromModio.length, available: n, errors };
   }
 
   /** Download the newer files; each one replaces its old version once it is installed. */
@@ -1282,6 +1358,18 @@ class ModManager extends EventEmitter {
       const m = this.data.mods[ownId];
       const upd = this.data.updates?.[ownId] || u;
       if (!m || !upd) continue;
+      if (upd.source === 'modio') {
+        try {
+          const r = await this.queueModio(m.modio?.id, { withDeps: false, fileId: upd.fileId, replaces: m.id });
+          summary.queued += r.queued;
+          summary.skipped += r.skipped;
+          summary.mods++;
+        } catch (err) {
+          summary.errors.push(`${m.name}: ${err.message}`);
+          this.log.error(`Could not update ${m.name} from mod.io`, err.message);
+        }
+        continue;
+      }
       const file = { file_id: upd.fileId, name: upd.name, file_name: upd.fileName, category_name: upd.category, version: upd.version, size_in_bytes: upd.size, uploaded_timestamp: upd.uploaded };
       this.queueFiles({ game: m.game, modId: m.modId, name: m.modName, author: m.author }, [file], m.dependencyOf || '', summary, { replaces: m.id });
       summary.mods++;
@@ -1413,6 +1501,8 @@ class ModManager extends EventEmitter {
           type: v.type, files: rels, skipped: 0, warnings: [],
           enabled: !!v.enabled, priority: this.data.nextPriority++, installedAt: v.installedAt || Date.now(),
           fomod: false, dependencyOf: '', fromVortex: v.vortexId,
+          // Vortex got it from mod.io: its updates are looked for there.
+          ...(v.modio?.id ? { source: 'modio', modio: { id: v.modio.id, fileId: v.modio.fileId } } : {}),
         };
         // Its Vortex update, if one was found, now belongs to this mod.
         if (this.data.updates?.[v.id]) { this.data.updates[id] = this.data.updates[v.id]; delete this.data.updates[v.id]; }

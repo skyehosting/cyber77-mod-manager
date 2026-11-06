@@ -243,3 +243,16 @@ test('"Use here": a profile with exactly the MO2 profile\'s mods, in its order, 
   assert.strictEqual(Object.values(mgr.data.profiles.list).filter(p => p.fromMo2).length, 2);
   assert.strictEqual(mgr.mo2View().instances[0].profiles.find(p => p.name === 'Main').profile, 'Main (MO2)');
 });
+
+test('reading MO2: a mod from anywhere but Nexus ("repository") gets no Nexus ids', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cmm-mo2-'));
+  const { local, portable } = makeMo2(root);
+  const bridge = new Mo2Bridge({ log: quiet, localAppData: local, scan: false, extraFolders: () => [portable] });
+  const nc = bridge.read().instances.find(i => i.name === 'Night City');
+  write(path.join(nc.modsDir, 'Elsewhere', 'meta.ini'), '[General]\r\nmodid=55\r\nrepository=SomeSite\r\n[installedFiles]\r\n1\modid=55\r\n1\fileid=555\r\nsize=1\r\n');
+  write(path.join(nc.modsDir, 'Elsewhere', 'archive/pc/mod/e.archive'), 'E');
+  const m = bridge.readMod(nc, 'Elsewhere');
+  assert.strictEqual(m.modId, 0);
+  assert.strictEqual(m.fileId, 0);
+  assert.strictEqual(bridge.readMod(nc, 'Alpha').modId, 10, 'repository missing or Nexus: as before');
+});

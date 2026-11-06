@@ -372,3 +372,16 @@ test('toggling Vortex mods (all or nothing): a later batch failing three times p
   const undo = cli.slice(4).flat().filter(a => a !== '--set');
   assert.ok(undo.length > 0 && undo.every(a => a.endsWith('.enabled=true')), 'the first batch put back');
 });
+
+test('a Vortex mod from mod.io keeps its mod.io ids apart (never matched to a Nexus mod), and keeps them when moved here', async () => {
+  const { mgr, staging } = setup();
+  const file = path.join(path.dirname(path.dirname(staging)), 'temp', 'state_backups_full', 'hourly.json');
+  const st = JSON.parse(fs.readFileSync(file, 'utf8'));
+  st.persistent.mods.cyberpunk2077.gamma.attributes.source = 'modio';
+  fs.writeFileSync(file, JSON.stringify(st));
+  const g = mgr.vortex.read().mods.find(m => m.vortexId === 'gamma');
+  assert.strictEqual(g.modId, 0, 'not a Nexus id');
+  assert.deepStrictEqual(g.modio, { id: 30, fileId: 300 });
+  const a = mgr.vortex.read().mods.find(m => m.vortexId === 'alpha');
+  assert.strictEqual(a.modId, 10, 'no source recorded: Nexus, as before');
+});

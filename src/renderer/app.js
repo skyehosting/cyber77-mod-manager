@@ -652,6 +652,7 @@ function modContextMenu(m, x, y) {
     ...(sectionList().length > 1 ? [sep(), ...sectionList().filter(s => s.id !== sectionOf(m)).slice(0, 12).map(s => item('layers', `Move to ${s.name}`, () => moveToSection([m.id], s.id)))] : []),
     sep(),
     m.modId ? item('external', 'Open on Nexus', () => api.openNexus(m.game, m.modId)) : null,
+    m.modio?.url ? item('external', 'Open on mod.io', () => api.openModioPage(m.modio.url)) : null,
     item('file-code', 'Show files', () => openConfigFor(m.vortex ? `vx:${m.vortexId}` : `app:${m.id}`)),
     m.vortex ? null : sep(),
     m.vortex ? item('download', 'Move to this app', () => moveFromVortex([m.id])) : item('minus-circle', 'Uninstall', () => modAction('uninstall', [m.id]), { danger: true }));
@@ -1098,7 +1099,7 @@ function renderMods() {
     const when = SORT_TIME[state.modSort];
     const stamp = when && m[when[0]] ? `${when[1]} ${ago(m[when[0]])}` : when ? `not ${when[1]} since this was recorded` : '';
     const who = m.dependencyOf ? `Required by ${m.dependencyOf}` : [m.modName !== m.name ? m.modName : '', m.author].filter(Boolean).join(' · ');
-    const kind = [m.vortex ? 'Vortex' : '', modCatOf(m), m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
+    const kind = [m.vortex ? 'Vortex' : '', m.modio?.id ? 'mod.io' : '', modCatOf(m), m.type, !m.vortex && !m.dependencyOf && m.category && m.category !== 'MAIN' ? CAT_LABEL[m.category] || m.category : ''].filter(Boolean).join(' · ');
     const sub = [who, kind, stamp].filter(Boolean).join(' · ');
     const reqCount = reqsOf(m.id).length;
     const reqOpenNow = reqCount > 0 && reqIsOpen(m.id);
@@ -1512,12 +1513,13 @@ let drawerSeq = 0;
 const drawerImages = new Map();
 let drawerImageFor = '';
 function paintDrawerImage(m) {
-  const key = m.modId ? `${m.game || 'cyberpunk2077'}:${m.modId}:${m.version || ''}` : '';
+  const fromModio = !m.modId && m.modio?.logo;
+  const key = m.modId ? `${m.game || 'cyberpunk2077'}:${m.modId}:${m.version || ''}` : fromModio ? `modio:${m.modio.id}:${m.modio.fileId}` : '';
   if (key === drawerImageFor) return;
   drawerImageFor = key;
   const img = $('#drawer-img');
   const reveal = $('#drawer-reveal');
-  const adultKey = `${m.game || 'cyberpunk2077'}:${m.modId}`;
+  const adultKey = fromModio ? `modio:${m.modio.id}` : `${m.game || 'cyberpunk2077'}:${m.modId}`;
   const show = r => {
     if (drawerImageFor !== key) return; // another mod opened meanwhile
     const shown = new Set(store.get('adultShown', []));
@@ -1536,6 +1538,7 @@ function paintDrawerImage(m) {
   reveal.hidden = true;
   $('#drawer-hero').classList.remove('is-adult');
   if (!key) return;
+  if (fromModio) { show({ url: m.modio.logo, adult: !!m.modio.mature && !state.settings?.showMature }); return; }
   if (drawerImages.has(key)) { show(drawerImages.get(key)); return; }
   api.modImage(m.game || 'cyberpunk2077', m.modId, m.version || '').then(r => {
     const v = r?.ok || null;
@@ -1558,8 +1561,11 @@ function paintDrawerHead(m, cat, sub) {
   $('#drawer-title').title = m.name;
   $('#drawer-sub').textContent = sub;
   const nexus = $('#drawer-nexus');
-  nexus.hidden = !m.modId;
-  nexus.onclick = () => api.openNexus(m.game, m.modId);
+  const modio = !m.modId && m.modio?.url;
+  nexus.hidden = !m.modId && !modio;
+  nexus.lastElementChild.textContent = modio ? 'Open on mod.io' : 'Open on Nexus Mods';
+  nexus.title = modio ? 'Open the mod page on mod.io' : 'Open the mod page on Nexus Mods';
+  nexus.onclick = () => (modio ? api.openModioPage(m.modio.url) : api.openNexus(m.game, m.modId));
 }
 
 /** The actions as square buttons, two to a row (an odd last one takes the whole row). */
@@ -1721,6 +1727,7 @@ async function openDrawer(id, focusSection = '', takeFocus = true) {
             kv('Priority', `${m.priority}${hasConflicts ? ' — higher wins file conflicts' : ''}`),
             kv('Installed', new Date(m.installedAt).toLocaleString()),
             m.modId ? kv('Nexus mod', String(m.modId)) : null,
+            m.modio?.id ? kv('From', `mod.io (mod ${m.modio.id})`) : null,
             m.skipped ? kv('Not installed', `${plural(m.skipped, 'file')} (readmes, images, unknown files)`) : null),
           ...warningsSection(m),
           ...drawerSections.flatMap(fn => fn(m) || []),
@@ -2224,7 +2231,7 @@ $$('#dl-bulk [data-act]').forEach(b => b.addEventListener('click', async () => {
 
 const form = {
   gamePath: '#s-game', deployMethod: '#s-deploy', concurrentDownloads: '#s-conc', autoInstall: '#s-auto',
-  dataDir: '#s-data', sevenZipPath: '#s-7z', vortexExe: '#s-vx-exe',
+  dataDir: '#s-data', sevenZipPath: '#s-7z', vortexExe: '#s-vx-exe', modioApiPath: '#s-modio-path',
   updateEvery: '#s-upd-every', updateUnit: '#s-upd-unit',
   aiProvider: '#s-ai-provider', aiEndpoint: '#s-ai-endpoint', aiModel: '#s-ai-model', aiReasoning: '#s-ai-reasoning', aiMaxSteps: '#s-ai-steps', aiTimeout: '#s-ai-timeout', aiContext: '#s-ai-context', playsKeep: '#s-plays-keep', uiScale: '#s-ui-scale', reqView: '#s-req-view', saveCooldown: '#s-save-cooldown', saveMaxPerProfile: '#s-save-max', groupsPort: '#s-groups-port', launchMode: '#s-launch', vortexAutoMove: '#s-vx-auto', updateMode: '#s-upd-mode', perfInterval: '#s-perf-interval', perfHistory: '#s-perf-history',
 };
@@ -2561,7 +2568,7 @@ function updLaunchState() {
     : 'Only when new versions install automatically (above).';
 }
 $('#s-upd-mode').addEventListener('change', updLaunchState);
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs', groupsUpnp: '#s-groups-upnp' };
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs', groupsUpnp: '#s-groups-upnp', showMature: '#s-mature' };
 
 const AI_EXAMPLES = {
   openai: { endpoint: 'https://api.openai.com/v1 (or http://localhost:11434/v1 for Ollama)', model: 'e.g. gpt-5.1, or the model your endpoint serves' },
@@ -2608,6 +2615,8 @@ function readForm() {
   if (key) patch.apiKey = key;
   const aiKey = $('#s-ai-key').value.trim();
   if (aiKey) patch.aiKey = aiKey;
+  const modioKey = $('#s-modio-key').value.trim();
+  if (modioKey) patch.modioKey = modioKey;
   return patch;
 }
 
@@ -2615,7 +2624,7 @@ function isDirty() {
   const s = state.settings;
   if (!s) return false;
   const p = readForm();
-  if (p.apiKey || p.aiKey) return true;
+  if (p.apiKey || p.aiKey || p.modioKey) return true;
   for (const k of Object.keys(form)) if (String(p[k]) !== String(s[k] ?? '')) return true;
   for (const k of Object.keys(checks)) if (p[k] !== !!s[k]) return true;
   return [...p.categories].sort().join() !== [...s.categories].sort().join();
@@ -2636,6 +2645,8 @@ async function loadSettings() {
   state.settings = s;
   $('#s-apikey').value = '';
   $('#s-apikey').placeholder = s.hasApiKey ? `Saved key ${s.apiKeyHint} — paste a new one to replace it` : 'Paste your personal API key';
+  $('#s-modio-key').value = '';
+  $('#s-modio-key').placeholder = s.hasModioKey ? `Saved key ${s.modioKeyHint} — paste a new one to replace it` : 'Paste your mod.io API key';
   $('#s-ai-key').value = '';
   $('#s-ai-key').placeholder = s.hasAiKey ? `Saved key ${s.aiKeyHint} — paste a new one to replace it` : 'Paste your provider\'s API key (not needed for local models)';
   for (const [k, sel] of Object.entries(form)) { $(sel).value = s[k] ?? ''; $(sel).title = String(s[k] ?? ''); }
@@ -2664,6 +2675,22 @@ $('#settings-form').addEventListener('submit', async ev => {
   if (s) await loadSettings();
 });
 $('#s-revert').addEventListener('click', loadSettings);
+// mod.io: save what was typed (key and path), then ask mod.io for the game's categories with it.
+$('#s-modio-test').addEventListener('click', async () => {
+  const status = $('#s-modio-status');
+  const patch = {};
+  if ($('#s-modio-key').value.trim()) patch.modioKey = $('#s-modio-key').value.trim();
+  if ($('#s-modio-path').value.trim() !== (state.settings?.modioApiPath || '')) patch.modioApiPath = $('#s-modio-path').value.trim();
+  if (Object.keys(patch).length && !(await run(api.setSettings(patch)))) return;
+  status.className = 'hint';
+  status.textContent = 'Checking…';
+  const r = await api.modioTest();
+  status.className = r.error ? 'hint bad' : 'hint ok';
+  status.textContent = r.error || `Working: mod.io answered with ${r.ok} categories for Cyberpunk 2077.`;
+  $('#s-modio-key').value = '';
+  if (!isDirty()) await loadSettings(); else updateDirty();
+  window.modioPage?.keyChanged();
+});
 $('#s-validate').addEventListener('click', async () => {
   const status = $('#s-key-status');
   if ($('#s-apikey').value.trim()) await run(api.setSettings({ apiKey: $('#s-apikey').value.trim() }));

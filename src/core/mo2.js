@@ -169,9 +169,11 @@ class Mo2Bridge extends EventEmitter {
     const dir = path.join(inst.modsDir, folder);
     const meta = readIni(path.join(dir, 'meta.ini'));
     const g = k => (meta ? iniGet(meta, 'General', k) : '');
-    let modId = Number(g('modid')) > 0 ? Number(g('modid')) : 0;
+    // MO2 records where a mod came from ("repository"): ids from anywhere but Nexus are not Nexus ids.
+    const elsewhere = !!g('repository') && !/^nexus$/i.test(g('repository'));
+    let modId = !elsewhere && Number(g('modid')) > 0 ? Number(g('modid')) : 0;
     // The installed Nexus file: the newest (last) pair recorded for this mod.
-    const pairs = meta ? iniArray(meta, 'installedFiles').filter(p => Number(p.fileid) > 0) : [];
+    const pairs = meta && !elsewhere ? iniArray(meta, 'installedFiles').filter(p => Number(p.fileid) > 0) : [];
     const pair = [...pairs].reverse().find(p => !modId || Number(p.modid) === modId) || null;
     let fileId = pair ? Number(pair.fileid) : 0;
     if (!modId && pair) modId = Number(pair.modid) || 0;
@@ -182,7 +184,7 @@ class Mo2Bridge extends EventEmitter {
       const p = /^([a-z]:[\\/]|[\\/]{2})/i.test(inst_) ? inst_ : path.join(inst.downloadsDir, inst_);
       if (fs.existsSync(p)) archive = p;
     }
-    const dl = archive ? readIni(`${archive}.meta`) : null;
+    const dl = archive && !elsewhere ? readIni(`${archive}.meta`) : null;
     const d = k => (dl ? iniGet(dl, 'General', k) : '');
     if (!fileId && Number(d('fileID')) > 0 && (!modId || Number(d('modID')) === modId)) fileId = Number(d('fileID'));
     if (!modId && Number(d('modID')) > 0) modId = Number(d('modID'));

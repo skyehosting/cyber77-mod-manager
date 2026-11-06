@@ -28,11 +28,11 @@ Every mod's files, each copy in its own section; edit text files in the built-in
 
 [![Mod files](docs/assets/shots/config.webp)](docs/assets/shots/config.webp)
 
-### Browse Nexus
+### Browse Mods
 
-Search, filter and sort Nexus mods; Download picks the files and installs them.
+Search, filter and sort Nexus mods, or switch to mod.io (CD PROJEKT RED's official mod site); Download picks the files and installs them.
 
-[![Browse Nexus](docs/assets/shots/browse.webp)](docs/assets/shots/browse.webp)
+[![Browse Mods](docs/assets/shots/browse.webp)](docs/assets/shots/browse.webp)
 
 ### Downloads
 
@@ -90,7 +90,8 @@ The app keeps itself up to date: it checks for a new version each time it opens 
 
 ## What it does
 
-- **Browse Nexus.** Search Cyberpunk 2077's mods on Nexus without leaving the app. Results update as you type: names match word by word as typed (`archivex` finds ArchiveXL), and a number is also looked up as a mod ID, shown first. Filter by category (with each one's mod count), sort by most endorsed, most downloaded, recently updated, newest, best match or name, limit to a time (past 24 hours, week, month or year: updated in it when sorted by **Recently updated**, published in it otherwise), and show 20 to 80 mods per page. Adult mods are included; the **Adult (18+)** entry at the top of the category list shows only those. Mods you already have, here or in Vortex, are marked **Installed**. **Download** on a card opens the file picker below.
+- **Browse Mods: mod.io.** The switch beside the page title changes to Cyberpunk 2077's mods on mod.io. It uses your own free mod.io API key and API path (mod.io → your account → API Access; mod.io's terms keep each key to its own account, so the app never ships one), stored encrypted. Search, filter by category and language, sort (trending, recently added, last updated, most popular, most subscribers, highest rated, alphabetical) and limit to a release time. Only mods with a PC file are listed. A mod's page shows its pictures, description, file, changelog and the mods it needs; **Download** gets it and what it needs, checks each file against mod.io's checksum, and installs it like any other mod. Mods marked mature are blurred until shown. Mods from mod.io are checked for updates on mod.io, and mods moved from Vortex or read from MO2 keep their Nexus ids only when they came from Nexus.
+- **Browse Mods: Nexus Mods.** Search Cyberpunk 2077's mods on Nexus without leaving the app. Results update as you type: names match word by word as typed (`archivex` finds ArchiveXL), and a number is also looked up as a mod ID, shown first. Filter by category (with each one's mod count), sort by most endorsed, most downloaded, recently updated, newest, best match or name, limit to a time (past 24 hours, week, month or year: updated in it when sorted by **Recently updated**, published in it otherwise), and show 20 to 80 mods per page. Adult mods are included; the **Adult (18+)** entry at the top of the category list shows only those. Mods you already have, here or in Vortex, are marked **Installed**. **Download** on a card opens the file picker below.
   - Clicking a mod opens its Nexus page inside the app (with the site's own Description, Files, Posts and Bugs tabs). **Open in browser** opens the page you are on in your web browser. The pages run in their own sandboxed browser session that only shows nexusmods.com (other links open in your web browser), and they remember a Nexus login and the site's cookie choice. A "Manual download" or "Mod Manager Download" clicked there is downloaded by this app.
   - Ads and trackers on these pages are blocked (Settings → Downloads), with Ghostery's blocker and the usual filter lists (EasyList, EasyPrivacy, uBlock Origin's), the same kind Brave uses. The lists are downloaded once and refreshed weekly.
   - Logging in to the Nexus website is separate from the API key: the site has no way to sign in with an API key, and your browser's own login cannot be borrowed (browsers encrypt it for themselves). **Log in to Nexus** on the Browse page opens the sign-in page once; it is remembered, like a browser that restores its session: the login is kept for 30 days of not using it, across restarts and updates. Sign in with email and password there: Google, Discord and other sign-in buttons go to sites outside Nexus, which open in your browser instead. The app's own **Download** buttons only need the API key.

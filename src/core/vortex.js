@@ -28,6 +28,11 @@ const GAME = 'cyberpunk2077';
  * Vortex names a mod's folder after its archive: "Name 4198 1.28.3 2026-10-28T19-16Z KRvfRxo6q"
  * (newer) or "Name-4198-1-28-3-1712345678" (older). Used only until Vortex's snapshot has the mod.
  */
+/** Did Vortex get this mod from Nexus Mods (its usual source; no source recorded counts as Nexus)? */
+function fromNexus(a) {
+  return !a.source || String(a.source).toLowerCase() === 'nexus';
+}
+
 function parseFolderName(id) {
   let m = String(id).match(/^(.*?) (\d{2,6}) (\S+) \d{4}-\d{2}-\d{2}T\S+ \S+$/);
   if (m) return { name: m[1].trim(), modId: Number(m[2]), version: m[3] };
@@ -264,8 +269,11 @@ class VortexBridge extends EventEmitter {
         modName: a.modName || a.logicalFileName || a.name || guess.name || id,
         // Versions of one Nexus file share this name (Vortex's own "logical file name").
         fileName: a.logicalFileName || a.customFileName || a.name || guess.name || id,
-        modId: Number(a.modId) || guess.modId || 0,
-        fileId: Number(a.fileId) || 0,
+        // Where Vortex got it: only Nexus ids are Nexus ids (a mod from elsewhere keeps its ids apart,
+        // so updates are looked for where it came from, never matched to an unrelated Nexus mod).
+        modId: fromNexus(a) ? Number(a.modId) || guess.modId || 0 : 0,
+        fileId: fromNexus(a) ? Number(a.fileId) || 0 : 0,
+        ...(a.source === 'modio' && Number(a.modId) > 0 ? { modio: { id: Number(a.modId), fileId: Number(a.fileId) || 0 } } : {}),
         // The archive Vortex installed it from (in its downloads folder), when known.
         archiveName: a.fileName || '',
         version: a.version || guess.version || '',

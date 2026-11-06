@@ -120,8 +120,8 @@
         </div>
         <div class="nav-group" role="group" aria-labelledby="ng-get">
           <span class="nav-group-label" id="ng-get">Get mods</span>
-          <button class="nav-item" data-page="browse" title="Browse Nexus" data-short="Browse">
-            <svg class="i"><use href="#i-globe"/></svg><span class="nav-label">Browse Nexus</span>
+          <button class="nav-item" data-page="browse" title="Browse Mods (Nexus Mods and mod.io)" data-short="Browse">
+            <svg class="i"><use href="#i-globe"/></svg><span class="nav-label">Browse Mods</span>
           </button>
           <button class="nav-item" data-page="downloads" title="Downloads" data-short="Downloads">
             <svg class="i"><use href="#i-download"/></svg><span class="nav-label">Downloads</span><span class="nav-meta" id="nav-dl-count"></span>
@@ -278,7 +278,13 @@
         <div class="browse-list" id="browse-list">
           <header class="page-head">
             <div class="page-title">
-              <h1 id="h-browse">Browse Nexus</h1>
+              <div class="title-row">
+                <h1 id="h-browse">Browse Mods</h1>
+                <div class="seg browse-source" role="group" aria-label="Mods from">
+                <button class="seg-btn active" data-source="nexus" aria-pressed="true">Nexus Mods</button>
+                <button class="seg-btn" data-source="modio" aria-pressed="false">mod.io</button>
+              </div>
+              </div>
               <p class="page-sub" id="browse-sub">Cyberpunk 2077 mods on Nexus Mods</p>
             </div>
             <div class="head-meta browse-status" id="browse-status" role="status" aria-live="polite"></div>
@@ -340,6 +346,78 @@
             </div>
           </div>
           <div class="detail-view" id="bd-view"></div>
+        </div>
+        <!-- mod.io: the same page, the other source (renderer/modiopage.js). -->
+        <div class="modio-view" id="modio-view">
+          <div class="modio-list" id="modio-list">
+            <header class="page-head">
+              <div class="page-title">
+                <div class="title-row">
+                  <h1 id="h-modio">Browse Mods</h1>
+                  <div class="seg browse-source" role="group" aria-label="Mods from">
+                <button class="seg-btn active" data-source="nexus" aria-pressed="true">Nexus Mods</button>
+                <button class="seg-btn" data-source="modio" aria-pressed="false">mod.io</button>
+              </div>
+                </div>
+                <p class="page-sub">Cyberpunk 2077 mods on mod.io, the official CD PROJEKT RED mod site</p>
+              </div>
+              <div class="head-meta browse-status" id="modio-status" role="status" aria-live="polite"></div>
+            </header>
+            <div class="modio-key" id="modio-key" hidden></div>
+            <div class="browse-bar" id="modio-bar">
+              <label class="search browse-search">
+                <svg class="i"><use href="#i-search"/></svg>
+                <input id="modio-q" type="search" placeholder="Search mod.io mods by name" aria-label="Search mod.io mods" autocomplete="off" spellcheck="false">
+              </label>
+              <select id="modio-cat" aria-label="Category"><option value="">All categories</option></select>
+              <select id="modio-lang" aria-label="Language"><option value="">Any language</option></select>
+              <select id="modio-sort" aria-label="Sort by">
+                <option value="trending">Trending</option>
+                <option value="recent">Recently added</option>
+                <option value="updated">Last updated</option>
+                <option value="popular">Most popular</option>
+                <option value="subscribers">Most subscribers</option>
+                <option value="rated">Highest rated</option>
+                <option value="name">Alphabetical</option>
+              </select>
+              <select id="modio-period" aria-label="Released" title="Only mods released on mod.io in this time">
+                <option value="">Any time</option>
+                <option value="day">Today</option>
+                <option value="week">Last week</option>
+                <option value="month">Last month</option>
+                <option value="quarter">Last 3 months</option>
+                <option value="year">Last year</option>
+              </select>
+              <select id="modio-per" aria-label="Mods per page">
+                <option value="20">20 per page</option>
+                <option value="40">40 per page</option>
+                <option value="60">60 per page</option>
+                <option value="80">80 per page</option>
+              </select>
+              <button type="button" class="powered-modio" id="modio-brand" title="Mods, pictures and files on this page come from mod.io">Powered by <b>mod.io</b></button>
+            </div>
+            <div class="browse-grid" id="modio-grid"></div>
+            <div class="pager" id="modio-pager" hidden>
+              <button class="btn btn-sm" id="modio-prev"><svg class="i"><use href="#i-arrow-left"/></svg><span>Previous</span></button>
+              <span class="pager-text" id="modio-page"></span>
+              <button class="btn btn-sm" id="modio-next"><span>Next</span><svg class="i"><use href="#i-chevron-right"/></svg></button>
+            </div>
+          </div>
+          <div class="modio-detail" id="modio-detail" hidden>
+            <div class="detail-head">
+              <button class="btn btn-icon btn-ghost" id="md-back" title="Back to results" aria-label="Back to results"><svg class="i"><use href="#i-arrow-left"/></svg></button>
+              <img class="detail-thumb" id="md-thumb" alt="">
+              <div class="detail-title">
+                <h1 id="md-name"></h1>
+                <p class="page-sub" id="md-meta"></p>
+              </div>
+              <div class="head-actions">
+                <button class="btn btn-ghost collapsible" id="md-external" title="Open this mod on mod.io in your web browser" aria-label="Open on mod.io"><svg class="i"><use href="#i-external"/></svg><span>Open on mod.io</span></button>
+                <button class="btn btn-primary" id="md-download"><svg class="i"><use href="#i-download"/></svg><span>Download</span></button>
+              </div>
+            </div>
+            <div class="modio-body" id="md-body"></div>
+          </div>
         </div>
       </section>
 
@@ -725,6 +803,7 @@
           <nav class="set-nav" aria-label="Settings sections">
             <button type="button" class="set-nav-item" data-sec="game"><svg class="i"><use href="#i-monitor"/></svg><span>Game</span></button>
             <button type="button" class="set-nav-item" data-sec="nexus"><svg class="i"><use href="#i-globe"/></svg><span>Nexus Mods</span></button>
+            <button type="button" class="set-nav-item" data-sec="modio"><svg class="i"><use href="#i-globe"/></svg><span>mod.io</span></button>
             <button type="button" class="set-nav-item" data-sec="downloads"><svg class="i"><use href="#i-download"/></svg><span>Downloads</span></button>
             <button type="button" class="set-nav-item" data-sec="vortex" hidden><svg class="i"><use href="#i-vortex"/></svg><span>Vortex</span></button>
             <button type="button" class="set-nav-item" data-sec="saves"><svg class="i"><use href="#i-save"/></svg><span>Save manager</span></button>
@@ -797,6 +876,30 @@
                 <label class="set-row set-toggle">
                   <span class="set-label"><span class="set-name">Block ads and trackers on Nexus pages in Browse</span><span class="set-desc">The same kind of filter lists as Brave and uBlock Origin. Only the pages shown inside this app are affected.</span></span>
                   <input type="checkbox" class="toggle" id="s-adblock">
+                </label>
+              </div>
+            </section>
+
+            <section class="set-sec" data-sec="modio" id="sec-modio" aria-labelledby="sh-modio">
+              <h2 class="set-title" id="sh-modio"><svg class="i"><use href="#i-globe"/></svg>mod.io</h2>
+              <div class="set-card">
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-modio-key">Your API key</label><p class="set-desc">From <a href="https://mod.io/me/access" target="_blank">mod.io → your account → API Access</a> (free; read-only is enough). mod.io's terms keep each key to its own account, so this app uses yours. Stored encrypted and never shown again.</p></div>
+                  <div class="set-ctl">
+                    <div class="field-row">
+                      <input id="s-modio-key" type="password" spellcheck="false" autocomplete="off">
+                      <button type="button" class="btn" id="s-modio-test">Test</button>
+                    </div>
+                    <p class="hint" id="s-modio-status"></p>
+                  </div>
+                </div>
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-modio-path">Your API path</label><p class="set-desc">Shown next to the key on the same mod.io page, like https://u-12345678.modapi.io/v1. Empty: mod.io's main address.</p></div>
+                  <div class="set-ctl"><input id="s-modio-path" type="text" class="mono" spellcheck="false" placeholder="https://u-12345678.modapi.io/v1"></div>
+                </div>
+                <label class="set-row set-toggle">
+                  <span class="set-label"><span class="set-name">Show mature mods without blur</span><span class="set-desc">Mods their makers marked mature on mod.io (violence, explicit content…) are blurred in Browse until you show them.</span></span>
+                  <input type="checkbox" class="toggle" id="s-mature">
                 </label>
               </div>
             </section>
@@ -1268,6 +1371,7 @@
   <script src="gamelog.js"></script>
   <script src="features.js"></script>
   <script src="browse.js"></script>
+  <script src="modiopage.js"></script>
   <script src="loadorder.js"></script>
   <script src="modconfig.js"></script>
   <script src="editor.js"></script>

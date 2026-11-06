@@ -3393,3 +3393,52 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 /* An empty Mods list with the other-managers note: the block sizes the card, so nothing is cut off. */
 .table-card.is-empty .empty:has(.mgr-note) { position: relative; inset: auto; }
 .table-card.is-empty:has(.mgr-note) thead { display: none; }
+
+/* ================================================================== Browse Mods: Nexus Mods | mod.io */
+.browse-source { align-self: center; }
+.browse-source .seg-btn { padding-block: 0.25rem; font-size: var(--fs-sm); }
+#page-browse.modio-mode > .browse-list, #page-browse.modio-mode > .browse-detail { display: none !important; }
+#page-browse:not(.modio-mode) > .modio-view { display: none !important; }
+#page-browse > .modio-view { display: flex; flex-direction: column; min-height: 0; flex: 1 0 auto; }
+.modio-list[hidden], .modio-detail[hidden], .modio-key[hidden], #modio-bar[hidden], #modio-grid[hidden] { display: none !important; }
+/* mod.io's terms: its branding is always on screen while its mods are shown. */
+.powered-modio { margin-left: auto; display: inline-flex; align-items: baseline; gap: 0.3em; padding: 0.25rem 0.6rem; border: 1px solid var(--line); border-radius: var(--r-pill); background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.powered-modio b { color: var(--text); }
+.powered-modio:hover { border-color: var(--line-strong); color: var(--text); }
+/* No key yet. */
+.modio-key-card { max-width: 46rem; margin: var(--sp-5) auto; padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.modio-key-card h2 { margin: 0; font-size: 1.15rem; }
+.modio-key-card p { margin: 0; color: var(--text-2); }
+.modio-key-links { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.modio-key-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto; gap: var(--sp-2) var(--sp-3); align-items: end; }
+.modio-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.modio-field input { width: 100%; }
+.modio-key-note { font-size: var(--fs-sm); }
+@container (max-width: 640px) { .modio-key-form { grid-template-columns: 1fr; } }
+/* Mature mods: blurred until shown. */
+.mod-thumb.is-mature img, .md-gallery.is-mature img { filter: blur(18px) saturate(0.6); transform: scale(1.1); }
+/* One mod's page (native, not a web page). */
+.modio-detail { display: flex; flex-direction: column; min-height: 0; }
+.modio-body { display: flex; flex-direction: column; gap: var(--sp-4); padding-bottom: var(--sp-4); }
+.md-top { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 1fr); gap: var(--sp-4); align-items: start; }
+@container (max-width: 900px) { .md-top { grid-template-columns: 1fr; } }
+.md-gallery { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.md-pic-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--r-lg); border: 1px solid var(--line); background: var(--console-bg); }
+.md-pic { width: 100%; height: 100%; object-fit: contain; display: block; }
+.md-reveal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; }
+.md-thumbs { display: flex; gap: var(--sp-2); overflow-x: auto; padding-bottom: 2px; }
+.md-thumb-btn { flex: none; width: 6.5rem; aspect-ratio: 16 / 9; padding: 0; border: 2px solid transparent; border-radius: var(--r-sm); overflow: hidden; background: var(--console-bg); cursor: pointer; }
+.md-thumb-btn.on { border-color: var(--accent); }
+.md-thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.md-side { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.md-facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.35rem var(--sp-3); padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); font-size: var(--fs-sm); }
+.md-fact { display: contents; }
+.md-fact dt { color: var(--text-2); }
+.md-fact dd { margin: 0; overflow-wrap: anywhere; }
+.md-sec h2 { margin: 0 0 var(--sp-2); font-size: 1rem; }
+.md-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-body, var(--text)); line-height: 1.55; max-width: 80ch; }
+.md-deps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.md-deps li { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-sm); }
+.md-dep-name { flex: 1 1 10rem; min-width: 0; font-weight: var(--fw-bold, 600); }
+.md-brand { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.md-top.no-pics { grid-template-columns: minmax(0, 40rem); }
