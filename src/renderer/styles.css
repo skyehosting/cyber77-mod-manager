@@ -3442,3 +3442,9 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .md-dep-name { flex: 1 1 10rem; min-width: 0; font-weight: var(--fw-bold, 600); }
 .md-brand { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
 .md-top.no-pics { grid-template-columns: minmax(0, 40rem); }
+/* The game's own Mods menu (mod.io): its mods, listed from the Mods page. */
+.gm-list-wrap { display: flex; flex-direction: column; gap: var(--sp-3); }
+.gm-list-wrap > p { margin: 0; }
+.gm-game-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; max-height: 50vh; overflow: auto; }
+.gm-game-list li { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.gm-game-name { flex: 1 1 12rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }

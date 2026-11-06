@@ -28,9 +28,26 @@ const GAME = 'cyberpunk2077';
  * Vortex names a mod's folder after its archive: "Name 4198 1.28.3 2026-10-28T19-16Z KRvfRxo6q"
  * (newer) or "Name-4198-1-28-3-1712345678" (older). Used only until Vortex's snapshot has the mod.
  */
-/** Did Vortex get this mod from Nexus Mods (its usual source; no source recorded counts as Nexus)? */
+/*
+ * Vortex's own sources (nexus_integration, mod_management): 'nexus', 'website', 'user-generated',
+ * 'unsupported', 'unknown', or none (a local archive). Whatever the source, Vortex's modId / fileId
+ * attributes are Nexus ids (its Nexus extractor fills them, also from a checksum match), so they are
+ * kept. Only a source an extension registered (another site, e.g. 'gta5mods') may mean other ids.
+ */
+const VORTEX_CORE_SOURCES = new Set(['nexus', 'website', 'user-generated', 'unsupported', 'unknown']);
 function fromNexus(a) {
-  return !a.source || String(a.source).toLowerCase() === 'nexus';
+  return !a.source || VORTEX_CORE_SOURCES.has(String(a.source).toLowerCase());
+}
+
+/**
+ * A mod a Vortex extension got from mod.io: the one known mod.io browser for Vortex keeps the ids in
+ * attributes modioMod (a string) and modioFileId (ChemBoy1-Vortex-Games, resources/browsers/modio_browser.js).
+ */
+function modioOf(a) {
+  // (Also an extension that would name its source 'modio' and use the usual id attributes.)
+  if (String(a.source || '').toLowerCase() === 'modio' && Number(a.modId) > 0) return { id: Number(a.modId), fileId: Number(a.fileId) > 0 ? Number(a.fileId) : 0 };
+  const id = Number(a.modioMod);
+  return Number.isInteger(id) && id > 0 ? { id, fileId: Number(a.modioFileId) > 0 ? Number(a.modioFileId) : 0 } : null;
 }
 
 function parseFolderName(id) {
@@ -271,9 +288,9 @@ class VortexBridge extends EventEmitter {
         fileName: a.logicalFileName || a.customFileName || a.name || guess.name || id,
         // Where Vortex got it: only Nexus ids are Nexus ids (a mod from elsewhere keeps its ids apart,
         // so updates are looked for where it came from, never matched to an unrelated Nexus mod).
-        modId: fromNexus(a) ? Number(a.modId) || guess.modId || 0 : 0,
-        fileId: fromNexus(a) ? Number(a.fileId) || 0 : 0,
-        ...(a.source === 'modio' && Number(a.modId) > 0 ? { modio: { id: Number(a.modId), fileId: Number(a.fileId) || 0 } } : {}),
+        modId: fromNexus(a) && !modioOf(a) ? Number(a.modId) || guess.modId || 0 : 0,
+        fileId: fromNexus(a) && !modioOf(a) ? Number(a.fileId) || 0 : 0,
+        ...(modioOf(a) ? { modio: modioOf(a) } : {}),
         // The archive Vortex installed it from (in its downloads folder), when known.
         archiveName: a.fileName || '',
         version: a.version || guess.version || '',

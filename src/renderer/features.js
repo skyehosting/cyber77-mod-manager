@@ -571,7 +571,8 @@ function outsideEl() {
   const vxOn = vx?.installed ? (vx.mods || []).filter(m => m.enabled).length : 0;
   const hand = (cfg.list || []).filter(m => m.source === 'hand');
   const handFiles = hand.reduce((n, m) => n + m.fileCount, 0);
-  if (!vxOn && !hand.length) return null;
+  const inGame = (state.snap.gameModio?.mods || []).filter(g => g.installed);
+  if (!vxOn && !hand.length && !inGame.length) return null;
   const row = (ico, title, text, ...buttons) => h('div', { class: 'prof-out-row' },
     h('span', { class: 'prof-out-icon' }, icon(ico)),
     h('div', { class: 'prof-out-text' }, h('b', {}, title), h('span', {}, text)),
@@ -581,6 +582,9 @@ function outsideEl() {
       `They follow Vortex's own profile${vx.activeProfileName ? ` ("${vx.activeProfileName}")` : ''}, not these. Move them to this app to put them in profiles.`,
       h('button', { class: 'btn btn-sm', onclick: () => { goTo('mods'); setModFilter('vortex'); } }, h('span', {}, 'Show them')),
       h('button', { class: 'btn btn-sm', onclick: () => moveFromVortex() }, icon('download'), h('span', {}, 'Move to this app'))) : null,
+    inGame.length ? row('globe', `Also loaded: ${plural(inGame.length, 'mod')} from the game's Mods menu`,
+      'The game installed them from mod.io itself, in its own folder, and switches them in its Mods menu, whatever the profile here.',
+      h('button', { class: 'btn btn-sm', onclick: () => showGameModio() }, h('span', {}, 'See them'))) : null,
     hand.length ? row('folder', `Always loaded: ${plural(hand.length, 'folder')} not from a mod manager`,
       `${plural(handFiles, 'file')} installed by hand or by another tool load in every profile. No profile can turn them off.`,
       h('button', { class: 'btn btn-sm', onclick: () => { goTo('config'); cfg.filter = 'hand'; setSegActive('#cfg-filter', 'f', 'hand'); renderConfig(); } }, h('span', {}, 'See them'))) : null);
@@ -594,7 +598,7 @@ function renderProfilesPage(force = false) {
   if (!p.list.some(x => x.id === prof.selected)) prof.selected = p.active;
   const plays = typeof gl === 'undefined' ? [] : gl.plays.map(q => [q.id, q.profile?.id]);
   const mo = state.snap.mo2;
-  const next = JSON.stringify([p, prof.editing, prof.selected, vx?.profiles, vx?.mods?.length, vx?.installed, mo?.instances, mo?.programs?.length, (state.snap.mods || []).length, (cfg.list || []).length, plays]);
+  const next = JSON.stringify([p, prof.editing, prof.selected, vx?.profiles, vx?.mods?.length, vx?.installed, mo?.instances, mo?.programs?.length, (state.snap.gameModio?.mods || []).length, (state.snap.mods || []).length, (cfg.list || []).length, plays]);
   // Never throw away a rename in progress.
   if (!force && (next === prof.sig || prof.editing)) return;
   prof.sig = next;

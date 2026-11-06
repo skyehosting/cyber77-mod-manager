@@ -42,6 +42,8 @@ function prefixFolders(pfx) {
   const home = path.join(pfx, 'drive_c', 'users', user);
   return {
     prefix: pfx, user,
+    // The game's Windows folders for mod.io's in-game Mods menu (modioGame.js).
+    localAppData: path.join(home, 'AppData', 'Local'), publicDir: path.join(pfx, 'drive_c', 'users', 'Public'), driveC: path.join(pfx, 'drive_c'),
     saves: path.join(home, 'Saved Games', 'CD Projekt Red', 'Cyberpunk 2077'),
     crashDir: path.join(home, 'AppData', 'Local', 'REDEngine', 'ReportQueue'),
   };

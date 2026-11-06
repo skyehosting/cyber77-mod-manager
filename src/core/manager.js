@@ -7,6 +7,7 @@ const { pathToFileURL } = require('url');
 const { JsonStore } = require('./jsonStore');
 const { NexusClient, parseModUrl, parseNxm, requirementOnNexus } = require('./nexus');
 const { ModioClient } = require('./modio');
+const { GameModio } = require('./modioGame');
 const { redmodToolsInstalled } = require('./launcher');
 const { Downloader } = require('./downloader');
 const { Installer, isSafeRel } = require('./installer');
@@ -191,6 +192,17 @@ class ModManager extends EventEmitter {
     // mod.io: the user's own key and API path; each download asks for a fresh address.
     this.modio = new ModioClient({ getKey: () => settings.modioKey, getBase: () => settings.get('modioApiPath'), log });
     this.downloader.resolvers.modio = job => this.modio.downloadUrl(job.modio?.id, job.modio?.fileId);
+    // Mods the game's own Mods menu installed from mod.io (read only). CMM_MODIO_GAME_DIRS ("<local>|<public>") keeps tests off the real ones.
+    this.gameModio = new GameModio({
+      log,
+      dirsKey: () => this.gameDir(), // a new game folder: its Windows folders are worked out again at once
+      dirs: () => {
+        const t = process.env.CMM_MODIO_GAME_DIRS;
+        if (t !== undefined) { const [localAppData, publicDir] = t.split('|'); return t ? { localAppData, publicDir } : null; }
+        if (process.platform === 'win32') return { localAppData: process.env.LOCALAPPDATA, publicDir: process.env.PUBLIC || path.join(`${process.env.SystemDrive || 'C:'}${path.sep}`, 'Users', 'Public') };
+        try { return gameWindowsFolders(this.gameDir()); } catch { return null; }
+      },
+    });
     // Nexus refused a direct link: ask again whether the account is still Premium (true / false / null).
     // A fresh answer (refusals of a whole batch share one check); null when it can't be checked.
     this.downloader.checkPremium = () => this.recheckAccount(0).then(a => (a ? a.isPremium : null));
@@ -325,6 +337,7 @@ class ModManager extends EventEmitter {
       modCats: this.categoriesView(),
       ignored: this.data.ignored || {},
       sections: this.sectionsView(),
+      gameModio: this.gameModioView(),
     };
   }
 
@@ -920,6 +933,43 @@ class ModManager extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- mod.io
+
+  /**
+   * The mods the game's own Mods menu installed from mod.io (read only), and where they meet this
+   * app's: the same mod.io mod installed here too (it can load twice), or an archive / script file of
+   * the same name (the game cannot tell them apart). { found, mods: [...], twins: {ourId: name}, clashes: {ourId: [names]} }
+   */
+  gameModioView() {
+    let data;
+    try { data = this.gameModio.read(); } catch (err) {
+      this.log.debug('Could not read the game\'s Mods menu (mod.io)', err.message);
+      return { found: false, mods: [], twins: {}, clashes: {} };
+    }
+    const ours = Object.values(this.data.mods);
+    // Worked out again only when their mods or this app's (or which are on) changed.
+    const memoKey = `${data.found}|${this.gameModio.cache.key}|${data.mods.length}|${ours.map(m => `${m.id}${m.enabled ? '+' : '-'}${m.files?.length || 0}:${m.modio?.id || 0}:${m.installedAt || 0}`).join(',')}`;
+    if (this.gameModioMemo?.key === memoKey) return this.gameModioMemo.value;
+    const byModio = new Map(ours.filter(m => m.modio?.id).map(m => [m.modio.id, m]));
+    const loadName = f => (/\.(archive|xl)$/i.test(f) ? path.basename(f).toLowerCase() : '');
+    const theirNames = new Map(); // file name -> the game-installed mods that have it
+    for (const g of data.mods) for (const f of g.files) { const n = loadName(f); if (n) { if (!theirNames.has(n)) theirNames.set(n, new Set()); theirNames.get(n).add(g.name); } }
+    const twins = {};
+    const clashes = {};
+    for (const g of data.mods) { const m = byModio.get(g.id); if (m) twins[m.id] = g.name; }
+    for (const m of ours) {
+      if (!m.enabled || twins[m.id]) continue;
+      const hit = new Set();
+      for (const f of m.files || []) { const n = loadName(f); for (const name of theirNames.get(n) || []) hit.add(name); }
+      if (hit.size) clashes[m.id] = [...hit].slice(0, 10);
+    }
+    const value = {
+      found: data.found,
+      mods: data.mods.map(({ files, path: dir, ...g }) => ({ ...g, fileCount: files.length, alsoHere: byModio.get(g.id)?.id || '' })),
+      twins, clashes,
+    };
+    this.gameModioMemo = { key: memoKey, value };
+    return value;
+  }
 
   /** Is this mod.io mod here already (installed, or on its way)? */
   modioHave(modioId) {

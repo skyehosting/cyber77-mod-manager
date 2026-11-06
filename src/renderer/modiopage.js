@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, plural, fmtSize, fmtCount, fmtIsoDay, state, store, debounce, goTo, pageHooks, snapshotHooks, setSegActive, loadSettings, showSettingsSection */
+/* global api, $, $$, h, icon, run, toast, confirmBox, plural, fmtSize, fmtCount, fmtIsoDay, state, store, debounce, goTo, pageHooks, snapshotHooks, setSegActive, loadSettings, showSettingsSection */
 
 // ---------------------------------------------------------------- Browse Mods: mod.io
 // The Browse page's second source: Cyberpunk 2077 mods on mod.io (src/core/modio.js), with the
@@ -27,6 +27,7 @@ const ownedIds = () => {
   return ids;
 };
 const blurred = m => m.mature && !state.settings?.showMature && !mio.shown.has(m.id);
+const inGameIds = () => new Set((state.snap?.gameModio?.mods || []).filter(g => g.installed).map(g => g.id));
 
 // ---------------------------------------------------------------- the switch
 
@@ -162,7 +163,8 @@ function cardFor(m, have) {
     h('button', { class: 'mod-card-hit', 'aria-label': `${m.name} — open its page`, onclick: () => mioOpenMod(m) }),
     h('div', { class: `mod-thumb${blur ? ' is-mature' : ''}` },
       m.logo ? h('img', { src: m.logo, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' }) : icon('package'),
-      owned ? h('span', { class: `tag ${have.get(m.id) ? 'tag-ok' : ''} mod-owned` }, have.get(m.id) ? 'Installed' : 'Installed · off') : null,
+      owned ? h('span', { class: `tag ${have.get(m.id) ? 'tag-ok' : ''} mod-owned` }, have.get(m.id) ? 'Installed' : 'Installed · off')
+        : inGameIds().has(m.id) ? h('span', { class: 'tag tag-info mod-owned', title: 'Installed by the game\'s own Mods menu' }, 'In game menu') : null,
       m.mature ? h('span', { class: 'tag tag-warn mod-adult' }, 'Mature') : null),
     h('div', { class: 'mod-body' },
       h('div', { class: 'mod-name', title: m.name }, m.name),
@@ -192,6 +194,7 @@ function mioRender() {
 
 /** Download a mod and the mods it needs that are not here yet. */
 async function download(m) {
+  if (inGameIds().has(m.id) && !(await confirmBox(`${m.name} is in the game's Mods menu`, 'The game already installed it from mod.io. Installed here too, it can load twice. Download it here anyway (then remove it in the game\'s Mods menu)?', 'Download here'))) return;
   const r = await run(api.modioDownload(m.id, true));
   if (!r) return;
   if (r.queued) toast(`Downloading ${plural(r.queued, 'file')} from mod.io${r.queued > 1 ? ' (with what it needs)' : ''}`, 'success', { label: 'Show', fn: () => goTo('downloads') });

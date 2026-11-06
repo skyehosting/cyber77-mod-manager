@@ -373,15 +373,24 @@ test('toggling Vortex mods (all or nothing): a later batch failing three times p
   assert.ok(undo.length > 0 && undo.every(a => a.endsWith('.enabled=true')), 'the first batch put back');
 });
 
-test('a Vortex mod from mod.io keeps its mod.io ids apart (never matched to a Nexus mod), and keeps them when moved here', async () => {
+test('a Vortex mod from mod.io (modioMod) or another site keeps its ids apart (never matched to a Nexus mod), and keeps them when moved here', async () => {
   const { mgr, staging } = setup();
   const file = path.join(path.dirname(path.dirname(staging)), 'temp', 'state_backups_full', 'hourly.json');
   const st = JSON.parse(fs.readFileSync(file, 'utf8'));
-  st.persistent.mods.cyberpunk2077.gamma.attributes.source = 'modio';
+  // As the one known mod.io browser for Vortex records it: source 'website', the ids in modioMod / modioFileId.
+  Object.assign(st.persistent.mods.cyberpunk2077.gamma.attributes, { source: 'website', modioMod: '777', modioFileId: 7770 });
+  st.persistent.mods.cyberpunk2077.beta.attributes.source = 'gta5mods'; // another site's extension: its ids are its own
+  st.persistent.mods.cyberpunk2077.alpha.attributes.source = 'website'; // a website download Vortex matched on Nexus
   fs.writeFileSync(file, JSON.stringify(st));
-  const g = mgr.vortex.read().mods.find(m => m.vortexId === 'gamma');
+  const mods = mgr.vortex.read().mods;
+  const g = mods.find(m => m.vortexId === 'gamma');
   assert.strictEqual(g.modId, 0, 'not a Nexus id');
-  assert.deepStrictEqual(g.modio, { id: 30, fileId: 300 });
-  const a = mgr.vortex.read().mods.find(m => m.vortexId === 'alpha');
-  assert.strictEqual(a.modId, 10, 'no source recorded: Nexus, as before');
+  assert.deepStrictEqual(g.modio, { id: 777, fileId: 7770 });
+  assert.strictEqual(mods.find(m => m.vortexId === 'beta').modId, 0);
+  // An extension naming its source 'modio' with the usual id attributes: those are mod.io ids.
+  st.persistent.mods.cyberpunk2077.beta.attributes.source = 'modio';
+  fs.writeFileSync(file, JSON.stringify(st));
+  const b2 = mgr.vortex.read().mods.find(m => m.vortexId === 'beta');
+  assert.deepStrictEqual([b2.modId, b2.modio], [0, { id: 20, fileId: 200 }]);
+  assert.strictEqual(mods.find(m => m.vortexId === 'alpha').modId, 10, 'the modId Vortex keeps is a Nexus id whatever its own source says');
 });

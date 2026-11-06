@@ -830,6 +830,10 @@ function modStatusItems(m, neededBy, byId = {}) {
   const needers = neededBy.get(m.id) || [];
   if (needers.length) items.push({ sev: 'info', text: `Needed by ${needers.length}`, section: 'needed', detail: needers.join(', ') });
   if (c?.wins) items.push({ sev: 'ok', text: `Wins ${plural(c.wins, 'file')}`, section: 'conflicts', detail: `over ${names(c.with)}` });
+  const inGame = state.snap.gameModio?.twins?.[m.id];
+  if (inGame) items.push({ sev: 'warn', text: 'Also in the game\'s Mods menu', section: '', detail: 'the game installed this mod from mod.io too, so it can load twice: keep one (uninstall it here, or remove it in the game\'s Mods menu)' });
+  const gameClash = state.snap.gameModio?.clashes?.[m.id];
+  if (gameClash?.length && m.enabled) items.push({ sev: 'warn', text: 'Same files as a game menu mod', section: '', detail: `files of the same name as ${gameClash.join(', ')} (installed by the game's Mods menu): the game cannot tell them apart` });
   const twin = state.snap.vortex?.twins?.[m.id];
   if (twin) items.push({ sev: 'info', text: 'Also in Vortex', section: '', detail: `while it is enabled here, Vortex's copy is switched off${twin.enabled && m.enabled ? ' (as soon as Vortex is closed)' : ''}` });
   return items;
@@ -1194,6 +1198,13 @@ function renderMods() {
     }, `${vxCount} in Vortex (${vxOn} on${prof ? `, its profile "${prof}"` : ''})`));
   }
   $('#mods-open-vortex').hidden = !state.snap.vortex?.installed;
+  const gm = (state.snap.gameModio?.mods || []).filter(g => g.installed);
+  if (gm.length) {
+    sub.append(' · ', h('button', {
+      class: 'link-btn quiet', onclick: showGameModio,
+      title: 'Installed by the game\'s own Mods menu (mod.io): the game loads, updates and switches them; this app leaves them alone',
+    }, `${plural(gm.length, 'mod')} in the game's Mods menu`));
+  }
   const link = (text, f, cls = '') => h('button', { class: `link-btn quiet ${cls}`, onclick: () => setModFilter(f) }, text);
   if (broken) sub.append(' · ', link(`${plural(broken, 'mod')} need${broken === 1 ? 's' : ''} repair`, 'repair', 'warn'));
   if (conflicts) sub.append(' · ', link(`${plural(conflicts, 'mod')} with file conflicts`, 'conflicts'));
@@ -1226,6 +1237,23 @@ function renderMods() {
   nav.title = all.length ? `${allOn} of ${all.length} mods enabled${vxCount ? ` (${enabled} here, ${allOn - enabled} in Vortex)` : ''}${broken ? ` · ${broken} need repair` : ''}` : '';
   paintModSelection();
 }
+/** The mods the game's own Mods menu installed from mod.io: what they are, and which are also here. */
+function showGameModio() {
+  const list = (state.snap.gameModio?.mods || []);
+  const here = id => state.snap.mods.find(m => m.id === id);
+  modal({
+    title: 'In the game\'s Mods menu',
+    sub: `${plural(list.length, 'mod')} the game installed from mod.io itself`,
+    body: h('div', { class: 'gm-list-wrap' },
+      h('p', { class: 'muted' }, 'Cyberpunk 2077\'s own Mods menu (mod.io) installs, updates and switches these, in its own folder. This app only shows them: change them in the game\'s Mods menu. Whether the game has one switched on is not written anywhere this app can read.'),
+      h('ul', { class: 'gm-game-list' }, ...list.map(g => h('li', {},
+        h('div', { class: 'gm-game-name' }, h('b', {}, g.name), h('span', { class: 'muted' }, [g.version ? `v${g.version}` : '', g.state !== 'installed' ? g.state : '', plural(g.fileCount, 'file')].filter(Boolean).join(' · '))),
+        g.alsoHere ? h('span', { class: 'tag tag-warn', title: 'Installed here too: it can load twice. Keep one.' }, `Also here: ${here(g.alsoHere)?.name || 'installed'}`) : null,
+        h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: () => api.openModioPage(g.url) }, icon('external'), h('span', {}, 'mod.io')))))),
+    buttons: [{ label: 'Close', primary: true }],
+  });
+}
+
 function setModFilter(f) {
   state.modFilter = MOD_FILTERS.some(x => x[0] === f) ? f : 'all';
   renderMods();
@@ -2434,8 +2462,10 @@ async function askVortexAutoMove(vx) {
 function otherManagers(snap = state.snap) {
   const vortex = !!snap?.vortex?.installed;
   const mo2 = !!(snap?.mo2?.instances?.length || snap?.mo2?.programs?.length);
-  const names = [vortex ? 'Vortex' : '', mo2 ? 'Mod Organizer 2' : ''].filter(Boolean).join(' and ');
-  return { vortex, mo2, names };
+  const game = (snap?.gameModio?.mods || []).some(g => g.installed);
+  const list = [vortex ? 'Vortex' : '', mo2 ? 'Mod Organizer 2' : '', game ? 'mods from the game\'s own Mods menu' : ''].filter(Boolean);
+  const names = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0] || '';
+  return { vortex, mo2, game, names };
 }
 
 /**
@@ -2445,11 +2475,12 @@ function otherManagers(snap = state.snap) {
  */
 function managersNote(snap = state.snap, { compact = false } = {}) {
   const o = otherManagers(snap);
-  if (!o.vortex && !o.mo2) return null;
+  if (!o.vortex && !o.mo2 && !o.game) return null;
   const parts = ['Mod managers that each have mods switched on usually don\u2019t work well together: both add files to the game, and the game ends up with a mix.'];
   if (o.vortex) parts.push('So when a mod is switched on here that Vortex also has on, this app switches Vortex\u2019s copy off, and mods moved from Vortex are switched off there. Vortex\u2019s mods and profiles are never deleted, only switched off: Vortex can switch them on again.');
   if (o.mo2) parts.push('Mod Organizer 2 is only read, never changed: its mods reach the game only when the game is started from MO2.');
-  parts.push(`Using a profile from ${o.vortex && o.mo2 ? 'either' : o.vortex ? 'Vortex' : 'MO2'} here (Profiles page) brings its mods over, with the same ones switched on.`);
+  if (o.game) parts.push('Mods from the game\'s own Mods menu (mod.io) are only shown: the game installs and switches them, and a mod installed both there and here can load twice.');
+  if (o.vortex || o.mo2) parts.push(`Using a profile from ${o.vortex && o.mo2 ? 'either' : o.vortex ? 'Vortex' : 'MO2'} here (Profiles page) brings its mods over, with the same ones switched on.`);
   return h('div', { class: `mgr-note${compact ? ' compact' : ''}`, role: 'note' },
     h('span', { class: 'mgr-note-icon', 'aria-hidden': 'true' }, icon('info')),
     h('div', { class: 'mgr-note-text' }, h('b', {}, `You also have ${o.names}`), h('span', {}, parts.join(' '))));
