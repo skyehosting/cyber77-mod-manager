@@ -67,6 +67,27 @@ function list(sevenZipPath, archivePath) {
   });
 }
 
+/** How many bytes an archive's files take once extracted (7-Zip's listing: the sum of "Size = …"). */
+function unpackedSize(sevenZipPath, archivePath) {
+  return new Promise((resolve, reject) => {
+    if (!sevenZipPath || !fs.existsSync(sevenZipPath)) { reject(new Error(`7-Zip not found at "${sevenZipPath}".`)); return; }
+    const child = spawn(sevenZipPath, ['l', '-ba', '-slt', '--', archivePath], { windowsHide: true });
+    let total = 0;
+    let rest = '';
+    child.stdout.on('data', d => {
+      const lines = (rest + d).split(/\r?\n/);
+      rest = lines.pop();
+      for (const line of lines) if (line.startsWith('Size = ')) total += Number(line.slice(7)) || 0;
+    });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (rest.startsWith('Size = ')) total += Number(rest.slice(7)) || 0;
+      if (code !== 0 && code !== 1) reject(new Error(`7-Zip could not list ${archivePath} (exit ${code})`));
+      else resolve(total);
+    });
+  });
+}
+
 /** Extract only these files (by their path inside the archive) into `outDir`; missing ones are skipped. */
 async function extractSome(sevenZipPath, archivePath, outDir, names) {
   fs.mkdirSync(outDir, { recursive: true });
@@ -87,4 +108,4 @@ function listFiles(dir) {
   return out;
 }
 
-module.exports = { extract, listFiles, pack, extractSome, list };
+module.exports = { extract, listFiles, pack, extractSome, list, unpackedSize };
