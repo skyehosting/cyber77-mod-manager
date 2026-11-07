@@ -82,6 +82,22 @@ picks.forEach((b, i) => {
   });
 });
 
+// On Linux, the Linux download is the main button (the top bar's Download too).
+const onLinux = /Linux/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+if (onLinux) {
+  const linux = document.querySelector('.dl-link[data-os="linux"]');
+  const top = document.querySelector('.top .dl-link');
+  if (top && linux) top.href = linux.href;
+  for (const box of document.querySelectorAll('.cta, .dl-buttons')) {
+    const win = box.querySelector('.dl-link[data-os="windows"]');
+    const lin = box.querySelector('.dl-link[data-os="linux"]');
+    if (!win || !lin) continue;
+    win.classList.replace('btn-primary', 'btn-ghost');
+    lin.classList.replace('btn-ghost', 'btn-primary');
+    box.insertBefore(lin, win);
+  }
+}
+
 // The newest release, to show its version and date by the Download buttons.
 fetch('https://api.github.com/repos/skyehosting/edgerunners-mod-manager/releases/latest')
   .then(r => (r.ok ? r.json() : null))

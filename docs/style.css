@@ -169,3 +169,6 @@ pre code { padding: 0; background: none; white-space: pre; }
   html { scroll-behavior: auto; }
   .panel, .btn, .feat, .thumb img { animation: none; transition: none; }
 }
+
+/* The Download tab: Windows and Linux side by side. */
+.dl-buttons { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; margin-bottom: 0.6rem; }

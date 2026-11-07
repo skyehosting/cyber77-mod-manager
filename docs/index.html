@@ -29,12 +29,14 @@
 
   <section class="hero">
     <div class="hero-inner">
-      <p class="kicker"><span class="dot"></span> Free · Windows 10 &amp; 11 · <span class="version" data-version>Latest release</span></p>
+      <p class="kicker"><span class="dot"></span> Free · Windows 10 &amp; 11 · Linux · <span class="version" data-version>Latest release</span></p>
       <h1>Every Cyberpunk 2077 mod, profile and log. <em>One app.</em></h1>
       <p class="lede">Download from Nexus, keep separate setups for every playthrough, sort the load order, read your game's logs and find what crashed it. Edgerunners Mod Manager does the busywork so you can get back to Night City.</p>
       <div class="cta">
-        <a class="btn btn-primary btn-lg dl-link" data-goatcounter-click="download-hero" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">
+        <a class="btn btn-primary btn-lg dl-link" data-os="windows" data-goatcounter-click="download-hero" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Windows</a>
+        <a class="btn btn-ghost btn-lg dl-link" data-os="linux" data-goatcounter-click="download-hero-linux" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager.AppImage">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Linux</a>
         <a class="btn btn-ghost btn-lg" href="#features" data-tab-link="features">See what it does</a>
       </div>
       <p class="fine">Formerly Cyber Mod Manager. Updates itself. Your data stays on your PC.</p>
@@ -128,19 +130,24 @@
       <h2>Get it running in a minute</h2>
       <div class="split">
         <ol class="steps">
-          <li><b>Download</b> the installer, <span class="version" data-version>the latest release</span>.</li>
-          <li><b>Run it.</b> It installs for your Windows account; no admin needed. Windows may ask once before running a new app.</li>
+          <li><b>Download</b> it for your system, <span class="version" data-version>the latest release</span>.</li>
+          <li><b>Run it.</b> Windows: the installer sets it up for your account, no admin needed (Windows may ask once before running a new app). Linux: make the AppImage runnable (<code>chmod +x Edgerunners-Mod-Manager.AppImage</code>, or tick "Allow executing" in its properties) and open it, or install the <code>.deb</code> on Debian, Ubuntu or Mint.</li>
           <li><b>Follow the welcome.</b> It finds your game and connects your Nexus account with your personal API key.</li>
         </ol>
         <div class="dl-box">
-          <a class="btn btn-primary btn-lg dl-link" data-goatcounter-click="download-tab" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Windows</a>
+          <div class="dl-buttons">
+            <a class="btn btn-primary btn-lg dl-link" data-os="windows" data-goatcounter-click="download-tab" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager-Setup.exe">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Windows</a>
+            <a class="btn btn-ghost btn-lg dl-link" data-os="linux" data-goatcounter-click="download-tab-linux" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager.AppImage">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>Download for Linux</a>
+          </div>
+          <p class="fine">Linux: the AppImage runs on any distribution; or get the <a data-goatcounter-click="download-tab-deb" href="https://github.com/skyehosting/edgerunners-mod-manager/releases/latest/download/Edgerunners-Mod-Manager.deb">.deb</a> for Debian, Ubuntu and Mint.</p>
           <p class="fine"><span data-date>Always the newest build.</span> <a href="https://github.com/skyehosting/edgerunners-mod-manager/releases">All releases</a></p>
         </div>
       </div>
       <div class="grid three notes">
-        <div class="note"><h3>You'll need</h3><p>Windows 10 or 11, Cyberpunk 2077 (Steam, GOG or Epic), and a free Nexus Mods account. Premium makes downloads direct.</p></div>
-        <div class="note"><h3>Updates</h3><p>The app updates itself in the background and installs the new version when you restart it.</p></div>
+        <div class="note"><h3>You'll need</h3><p>Windows 10 or 11 with Cyberpunk 2077 (Steam, GOG or Epic), or Linux with the game on Steam (Proton). And a free Nexus Mods account: Premium makes downloads direct.</p></div>
+        <div class="note"><h3>Updates</h3><p>The app updates itself in the background and installs the new version when you restart it (Windows and the AppImage). The <code>.deb</code> does not: download the newest one to update.</p></div>
         <div class="note"><h3>Your keys stay yours</h3><p>Your Nexus and AI keys are encrypted on your PC and never leave it except to talk to those services.</p></div>
       </div>
     </section>
