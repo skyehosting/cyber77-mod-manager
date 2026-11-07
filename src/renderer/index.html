@@ -1205,6 +1205,16 @@
                   <div class="set-label"><span class="set-name">Router</span><p class="set-desc" id="s-groups-router">Checked when groups are on.</p></div>
                   <div class="set-ctl" id="s-groups-router-ctl"></div>
                 </div>
+                <div class="set-row set-row-wide">
+                  <div class="set-label"><label for="s-groups-ip">Internet address</label><p class="set-desc" id="s-groups-ip-desc">Needed when you forwarded the port by hand: the address friends outside your home reach you on. Invites carry it. Find it gives the address your internet traffic leaves from: not the right one while a VPN carries all your traffic.</p></div>
+                  <div class="set-ctl">
+                    <div class="field-row">
+                      <input id="s-groups-ip" type="text" spellcheck="false" autocomplete="off" inputmode="decimal" maxlength="15" placeholder="e.g. 81.2.69.160">
+                      <button type="button" class="btn" id="s-groups-ip-find" title="Asks api.ipify.org for this network's internet address">Find it</button>
+                    </div>
+                    <p class="hint" id="s-groups-ip-status"></p>
+                  </div>
+                </div>
               </div>
             </section>
 

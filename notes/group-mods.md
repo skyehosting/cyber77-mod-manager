@@ -100,3 +100,16 @@ list entry holds one file per mod; replacing a version applies in every profile 
 Main plus a separate Update file of one mod are left side by side (two candidates, nothing replaced).
 Not done yet: running in the background (tray) while in a group; installer (FOMOD) choices, conflict
 order, version picker (phase 2).
+
+## The internet address for a port forwarded by hand (2026-11-07)
+
+Found in use: a member forwarded 47077 by hand (UPnP gave nothing), the port was open from outside
+(canyouseeme), yet friends timed out ("did not answer within 10 seconds"). The invite, and the
+member's announced `addr`, held only LAN IPv4s (10.x and the Hyper-V switch's 172.x): the internet
+address came only from UPnP. Fixed by `publicIp.js`:
+- Settings → Group Mods → **Internet address**: typed, or **Find it** (one GET to https://api.ipify.org,
+  only after that click; then again when groups start and every 6 h while on, unless UPnP says it).
+- Precedence: the router's UPnP answer (when public), else the saved address. Private, CGNAT
+  (100.64/10), loopback, link-local, documentation and reserved ranges are never used.
+- The invite dialog warns when no address in it works from outside; the joining side's timeout
+  message says "only home-network addresses" instead of blaming the router and firewall.

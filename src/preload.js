@@ -195,6 +195,8 @@ contextBridge.exposeInMainWorld('api', {
   groupsFirewallRemove: () => call('groups:firewallRemove'),
   groupsEnable: on => call('groups:enable', on),
   groupsRouter: () => call('groups:router'),
+  groupsPublicIp: ip => call('groups:publicIp', ip),
+  groupsFindIp: () => call('groups:findIp'),
   groupsCreate: o => call('groups:create', o),
   groupsInvite: g => call('groups:invite', g),
   groupsRevoke: g => call('groups:revoke', g),

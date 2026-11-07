@@ -2247,7 +2247,7 @@ input.toggle:disabled { cursor: default; }
 .risk-files code { font-size: var(--fs-xs); }
 
 .scale-now { margin-top: var(--sp-2); color: var(--text-2); }
-.scale-now.warn-text { color: var(--warn-text); }
+.scale-now.warn-text, .hint.warn-text { color: var(--warn-text); }
 
 /* Very wide screens (ultrawide, 32:9): the page's content stays at a readable width, centred,
    instead of stretching rows across the whole screen. */

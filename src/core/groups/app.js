@@ -5,6 +5,7 @@ const { GroupService, DEFAULT_PORT, localAddresses } = require('./service');
 const { GROUP_ID, LIST_ID } = require('./log');
 const firewall = require('./firewall');
 const upnp = require('./upnp');
+const publicIp = require('./publicIp');
 const { scanSaves } = require('../saves');
 
 /*
@@ -20,6 +21,7 @@ const { scanSaves } = require('../saves');
 
 const GAME = 'cyberpunk2077';
 const RENEW_UPNP = 30 * 60e3;
+const FIND_IP_EVERY = 6 * 3600e3; // an internet address rarely changes; checked again this often while groups are on
 const posInt = v => (Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : 0);
 // A list entry's id: a Nexus mod's (positive) or a mod.io mod's (negative), as the group log keeps them.
 const modKey = v => (Number.isSafeInteger(Number(v)) && Number(v) !== 0 ? Number(v) : 0);
@@ -66,6 +68,11 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
   const router = { state: 'off', external: '', cgnat: false, detail: '', gw: null, timer: null, port: 0, gen: 0 };
   let starting = null;
   let lastError = ''; // why the last start failed (a busy port), for the page
+  // This PC's internet address when the router doesn't tell it (a port forwarded by hand): saved in
+  // Settings, typed or found with "Find it" (publicIp.js). found.timer looks it up again while groups are on.
+  const found = { timer: null, busy: null, error: '', gen: 0 };
+  const applyExternal = () => service.setExternal(loopback ? '' : publicIp.pick({ router: router.state === 'open' ? router.external : '', saved: settings.get('groupsPublicIp') }));
+  const routerSaysIt = () => router.state === 'open' && publicIp.isPublicV4(router.external);
 
   let viewTimer = null;
   const pushView = () => {
@@ -84,6 +91,8 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
       ...v,
       enabled: !!settings.get('groupsEnabled'), port: settings.get('groupsPort'), upnp: !!settings.get('groupsUpnp'),
       router: { state: router.state, external: router.external, cgnat: router.cgnat, detail: router.detail },
+      // The internet address invites give out ('' = none: invites work on the home network only).
+      internet: { address: service.external || '', saved: settings.get('groupsPublicIp') || '', find: !!settings.get('groupsFindIp'), fromRouter: routerSaysIt(), shared: router.state === 'cgnat', finding: !!found.busy, error: found.error },
       platform: process.platform,
       game: v.groups.length ? gameVersion() : '', // this PC's (its newest save's): members on another one are pointed out
     };
@@ -94,7 +103,7 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
   async function openRouter() {
     clearInterval(router.timer);
     const gen = ++router.gen;
-    if (!settings.get('groupsUpnp') || loopback || !service.server) { router.state = 'off'; pushView(); return; }
+    if (!settings.get('groupsUpnp') || loopback || !service.server) { router.state = 'off'; applyExternal(); pushView(); return; }
     if (router.gw && router.port) await upnp.closePort(router.port, router.gw); // asked again: the old one first
     router.gw = null;
     router.state = 'trying';
@@ -110,11 +119,12 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
     }
     if (r.ok) {
       Object.assign(router, { state: r.cgnat ? 'cgnat' : 'open', external: r.external, cgnat: r.cgnat, detail: '', gw: r.gw, port });
-      if (!r.cgnat && r.external) service.setExternal(r.external);
+      applyExternal();
       router.timer = setInterval(() => { if (gen === router.gen) upnp.openPort(port).catch(() => {}); }, RENEW_UPNP);
       router.timer.unref?.();
     } else {
       Object.assign(router, { state: r.reason, external: '', cgnat: false, detail: r.detail || '', gw: null, port: 0 });
+      applyExternal();
     }
     pushView();
   }
@@ -123,8 +133,48 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
     clearInterval(router.timer);
     const { gw, port } = router;
     Object.assign(router, { state: 'off', external: '', cgnat: false, gw: null, port: 0 });
-    service.setExternal('');
+    applyExternal();
     if (gw && port) await upnp.closePort(port, gw);
+  }
+
+  // ---- the internet address, when the router doesn't say it
+
+  /** Ask api.ipify.org (only after the user's "Find it", then while groups are on). asked: the user's click (errors go back to them). */
+  // One lookup at a time, shared. It fails for every caller alike; the user's click gets the error, a
+  // background check logs it. found.gen moves on when an address is typed or groups go off: an answer
+  // that arrives after that is thrown away (resolves '').
+  function findIp({ asked = false } = {}) {
+    if (!found.busy) {
+      const gen = found.gen;
+      found.busy = (async () => {
+        try {
+          const ip = await publicIp.lookup();
+          if (gen !== found.gen) return '';
+          found.error = '';
+          if (ip !== settings.get('groupsPublicIp')) { settings.update({ groupsPublicIp: ip }); log.info(`Group Mods: internet address ${ip} (from api.ipify.org)`); }
+          applyExternal();
+          return ip;
+        } catch (err) {
+          if (gen === found.gen) found.error = err.message;
+          throw err;
+        } finally {
+          found.busy = null;
+          pushView();
+        }
+      })();
+      pushView();
+    }
+    return asked ? found.busy : found.busy.catch(err => { log.warn(`Group Mods: ${err.message}`); return ''; });
+  }
+  /** While groups are on and "Find it" was chosen: look again now (unless just done) and every so often, unless the router says it. */
+  function keepFinding({ now = true } = {}) {
+    clearInterval(found.timer);
+    found.timer = null;
+    if (!settings.get('groupsFindIp') || loopback || !service.server) return;
+    const check = () => { if (!routerSaysIt()) findIp(); };
+    if (now) check();
+    found.timer = setInterval(check, FIND_IP_EVERY);
+    found.timer.unref?.();
   }
 
   // ---- on and off
@@ -137,7 +187,8 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
         await service.start({ port: settings.get('groupsPort') || DEFAULT_PORT, host: loopback ? '127.0.0.1' : '0.0.0.0' });
         lastError = '';
         log.info(`Group Mods: listening on port ${settings.get('groupsPort')}`);
-        openRouter();
+        applyExternal(); // a saved internet address counts at once; the router's answer replaces it
+        openRouter().catch(() => {}).then(() => keepFinding());
         applyRemovals();
       } catch (err) {
         lastError = err.code === 'EADDRINUSE' ? `port ${settings.get('groupsPort')} is in use by another program` : err.message;
@@ -151,6 +202,9 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
     return starting;
   }
   async function stop() {
+    clearInterval(found.timer);
+    found.timer = null;
+    found.gen++; // a lookup still on its way is not used
     await closeRouter().catch(() => {});
     await service.stop();
     pushView();
@@ -320,6 +374,31 @@ function setupGroups({ manager, settings, userData, cipher, log, send, handle, g
     return view();
   });
   handle('groups:router', () => openRouter().then(view));
+  // Typed by the user ('' clears it): a typed address is kept as it is (not looked up again).
+  handle('groups:publicIp', ip => {
+    const v = String(ip ?? '').trim().slice(0, 64);
+    if (v && !publicIp.isPublicV4(v)) {
+      throw new Error(require('net').isIPv4(v)
+        ? `${v} is a home-network (or reserved) address, which friends elsewhere can't reach. Type the internet address your router shows (WAN or Internet IP), or use Find it.`
+        : 'Type an internet IPv4 address such as 81.2.69.160, or use Find it.');
+    }
+    settings.update({ groupsPublicIp: v, groupsFindIp: false });
+    found.gen++; // a lookup still on its way does not replace what was typed
+    found.error = '';
+    keepFinding();
+    applyExternal();
+    return view();
+  });
+  // "Find it": one lookup now, then again each time groups start and every few hours while they are on.
+  handle('groups:findIp', async () => {
+    if (loopback) throw new Error('Not in the demo: it only listens on this PC.');
+    const ip = await findIp({ asked: true }); // a failure goes back to the user as an error
+    if (ip) { // '' : an address was typed (or groups went off) meanwhile, and that stands
+      settings.update({ groupsFindIp: true });
+      keepFinding({ now: false });
+    }
+    return view();
+  });
   handle('groups:create', o => service.create({ name: String(o?.name || '').trim(), myName: String(o?.myName || '').trim(), listName: String(o?.listName || '').trim() }));
   handle('groups:invite', g => service.invite(gid(g)));
   handle('groups:revoke', g => service.revokeInvites(gid(g)));

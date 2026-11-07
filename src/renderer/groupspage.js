@@ -410,6 +410,7 @@ async function openInvite(g) {
     body: h('div', { class: 'gm-dialog' },
       field('Invite code', h('div', { class: 'gm-code' }, h('code', { class: 'gm-invite' }, inv.code), copyBtn(inv.code))),
       field('Passcode', h('div', { class: 'gm-code' }, h('code', { class: 'gm-pass' }, inv.passcode), copyBtn(inv.passcode)), 'Everyone in the group has the same passcode. It changes by itself when someone leaves or is removed.'),
+      inv.outside === false ? h('div', { class: 'notice notice-warn', role: 'note' }, icon('alert'), h('span', { class: 'notice-text' }, 'This invite only has home-network addresses: it works for friends on your network (or a VPN you share), not from their home. If you forwarded the port on your router, set your internet address in Settings → Group Mods → Internet address ("Find it"), then make a new invite.')) : null,
       h('p', { class: 'muted' }, `The code works once, until ${until}. It holds this PC's address (${inv.addrs.join(', ')}): send it only to the friend you mean. Your app must be open with groups on when they join.`)),
     buttons: [{ label: 'Revoke my open invites', value: 'revoke' }, { label: 'Done', value: true, kind: 'btn-primary' }],
   }).then(v => { if (v === 'revoke') run(api.groupsRevoke(g.id)).then(() => toast('Your open invites for this group no longer work')); });
@@ -701,12 +702,47 @@ function paintGroupSettings() {
     : 'Share a mod list with the friends you play co-op with. Off: nothing on this PC listens for connections.';
   const r = v.router || {};
   const routerText = !v.enabled ? 'Checked when groups are on.'
-    : !v.upnp ? 'Not asked (turned off above). Friends on another network need the port forwarded by hand, or a VPN.'
+    : !v.upnp ? 'Not asked (turned off above). Friends on another network need the port forwarded by hand (with your internet address below), or a VPN.'
       : { trying: 'Asking your router…', open: `Port ${v.port} is open on your router (internet address ${r.external || 'unknown'}).`, cgnat: `Your router got the port, but your internet provider shares one address between customers (${r.external}): friends outside your network can't reach you directly. Use a VPN such as Tailscale, ZeroTier or Radmin.`,
-        none: 'No router answered (UPnP is off or not supported). Forward the port by hand in your router\'s settings, or use a VPN such as Tailscale, ZeroTier or Radmin.', refused: `Your router said no${r.detail ? ` (${r.detail})` : ''}. Forward the port by hand, or use a VPN.`, conflict: `Another PC on your network already uses port ${v.port} on the router. Choose another port.`, off: 'Not asked yet.' }[r.state] || '';
+        none: 'No router answered (UPnP is off or not supported). Forward the port by hand in your router\'s settings and fill in your internet address below, or use a VPN such as Tailscale, ZeroTier or Radmin.', refused: `Your router said no${r.detail ? ` (${r.detail})` : ''}. Forward the port by hand and fill in your internet address below, or use a VPN.`, conflict: `Another PC on your network already uses port ${v.port} on the router. Choose another port.`, off: 'Not asked yet.' }[r.state] || '';
   $('#s-groups-router').textContent = routerText;
   $('#s-groups-router-ctl').replaceChildren(...(v.enabled && v.upnp && r.state !== 'trying' ? [h('button', { type: 'button', class: 'btn btn-sm', onclick: () => run(api.groupsRouter()).then(x => { if (x) { gm.view = x; paintGroups(); } }) }, 'Ask again')] : []));
+  paintInternetSetting();
 }
+
+// Settings → Group Mods → Internet address: what invites give friends outside the home network.
+function paintInternetSetting() {
+  const v = gm.view;
+  const input = $('#s-groups-ip');
+  if (!v || !input) return;
+  const n = v.internet || {};
+  if (document.activeElement !== input) input.value = n.saved || '';
+  const find = $('#s-groups-ip-find');
+  find.disabled = !!n.finding;
+  find.textContent = n.finding ? 'Finding…' : 'Find it';
+  const status = !v.enabled ? 'Used when groups are on.'
+    : n.fromRouter ? `Invites give ${n.address}: your router said it (UPnP), so nothing is needed here.`
+      : n.address ? `Invites give ${n.address}, port ${v.port}.${n.find ? ' Checked again with api.ipify.org while groups are on, in case it changes.' : ' If your internet address changes, update it here.'}`
+        : 'None yet: invites only work on your home network (or a VPN you share).';
+  // The router said the provider shares one address between customers: a found or typed address won't take friends in.
+  const shared = v.enabled && n.shared && n.address && !n.fromRouter ? ' Your router reports an address your internet provider shares between customers, so friends may still not get through: use a VPN such as Tailscale, ZeroTier or Radmin.' : '';
+  $('#s-groups-ip-status').textContent = `${status}${shared}${n.error ? ` ${n.error}` : ''}`;
+  $('#s-groups-ip-status').classList.toggle('warn-text', !!v.enabled && (!n.address || !!n.error || !!shared));
+}
+async function setInternet(promise) {
+  const x = await run(promise);
+  if (x) { gm.view = x; paintGroups(); }
+  return x;
+}
+// Refused: the box goes back to the saved address (not left showing what was refused).
+$('#s-groups-ip').addEventListener('change', ev => { setInternet(api.groupsPublicIp(ev.target.value)).then(x => { if (!x) ev.target.value = gm.view?.internet?.saved || ''; }); });
+$('#s-groups-ip').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.target.blur(); } });
+$('#s-groups-ip-find').addEventListener('click', async () => {
+  $('#s-groups-ip-find').disabled = true;
+  const x = await setInternet(api.groupsFindIp());
+  if (x?.internet?.saved) toast(`Your internet address is ${x.internet.saved}. New invites carry it.`, 'success');
+  paintInternetSetting();
+});
 
 async function paintFirewallSetting() {
   if (!$('#s-groups-fw')) return;

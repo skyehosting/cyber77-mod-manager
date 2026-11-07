@@ -4,6 +4,7 @@ const path = require('path');
 const { JsonStore } = require('./jsonStore');
 const { backupDirProblem } = require('./saves');
 const { cleanApiPath } = require('./modio');
+const { isPublicV4 } = require('./groups/publicIp');
 
 const DEFAULT_SEVEN_ZIP = 'C:\\Program Files\\7-Zip\\7z.exe';
 /** The AI's reasoning effort: '' leaves it to the model. */
@@ -32,6 +33,8 @@ class Settings {
       groupsEnabled: false, // Group Mods: listen for friends' apps (off until turned on, with the firewall step)
       groupsPort: 47077, // the TCP port friends connect to
       groupsUpnp: true, // try to open that port on the router (UPnP) while groups are on
+      groupsPublicIp: '', // this PC's internet address for invites, when the router doesn't say it (a port forwarded by hand)
+      groupsFindIp: false, // "Find it" was used: look it up again (api.ipify.org) while groups are on
       updateEvery: 1, // how often the app looks for a new version of itself (also each time it opens)…
       updateUnit: 'days', // …in 'minutes' | 'hours' | 'days'
       updateMode: 'auto', // 'auto' install with a restart | 'ask' before restarting | 'off' no checks by itself
@@ -330,6 +333,8 @@ class Settings {
     if ('perfGraphs' in patch) d.perfGraphs = !!patch.perfGraphs;
     if ('groupsEnabled' in patch) d.groupsEnabled = !!patch.groupsEnabled;
     if ('groupsUpnp' in patch) d.groupsUpnp = !!patch.groupsUpnp;
+    if ('groupsPublicIp' in patch) d.groupsPublicIp = isPublicV4(patch.groupsPublicIp) ? String(patch.groupsPublicIp).trim() : '';
+    if ('groupsFindIp' in patch) d.groupsFindIp = !!patch.groupsFindIp;
     if ('groupsPort' in patch) { const p = parseInt(patch.groupsPort, 10); if (p >= 1024 && p <= 65535) d.groupsPort = p; }
     if ('playsKeep' in patch) d.playsKeep = Math.min(500, Math.max(1, parseInt(patch.playsKeep, 10) || 25));
     if ('concurrentDownloads' in patch) {

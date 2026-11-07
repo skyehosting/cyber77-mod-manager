@@ -8,6 +8,7 @@ const { EventEmitter } = require('events');
 const { loadIdentity, verify, FP } = require('./identity');
 const { makeEvent, makeCreate, fold, wellFormed, newPasscode, newListId, samePasscode, cleanMod, cleanName, GROUP_ID, LIST_ID, MAX_EVENTS } = require('./log');
 const net = require('./net');
+const { reachableFromOutside } = require('./publicIp');
 
 /*
  * Group Mods: groups of friends who keep a shared mod list. This is the network and bookkeeping side;
@@ -96,9 +97,9 @@ function localAddresses() {
 
 /**
  * Why a join did not go through, in words a player can act on (the invite maker's PC is "your friend's").
- * reached: some address answered (so the PC is there); err: the last error, if any.
+ * reached: some address answered (so the PC is there); err: the last error, if any; addrs: the invite's.
  */
-function joinFailure(reached, err) {
+function joinFailure(reached, err, addrs = []) {
   const msg = String(err?.message || '');
   if (reached) {
     return `Your friend's PC answered, but joining did not finish${msg ? ` (${msg.replace(/\.$/, '')})` : ''}. Try again; if it keeps happening, ask them for a new invite.`;
@@ -108,6 +109,11 @@ function joinFailure(reached, err) {
   const why = code === 'ECONNREFUSED' ? 'Their PC is there, but nothing is listening on the group port: the app may be closed, or Group Mods off.'
     : code === 'EHOSTUNREACH' || code === 'ENETUNREACH' ? 'There is no route to their PC from this network.'
       : 'Their PC did not answer within 10 seconds.';
+  // Only home-network (or VPN) addresses in the invite: from another network nothing can answer, whatever
+  // their router and firewall allow. Their app has to know its internet address.
+  if (addrs.length && !reachableFromOutside(addrs)) {
+    return `Could not reach your friend's PC. ${why} The invite only has home-network addresses of their PC (${addrs.map(a => String(a).replace(/:\d+$/, '')).join(', ')}), which work only on their network or over a VPN you share. If you are somewhere else, they set their internet address in Settings → Group Mods → Internet address ("Find it"), then send you a new invite.`;
+  }
   return `Could not reach your friend's PC. ${why} Check that they have the app open with Group Mods on. If you are not on the same home network, their router has to let friends in on the group port (Settings → Group Mods on their PC shows it), and their firewall has to allow the app.`;
 }
 
@@ -355,7 +361,8 @@ class GroupService extends EventEmitter {
     for (const [k, v] of Object.entries(this.local.invites)) if (v.exp < Date.now() || v.used) delete this.local.invites[k];
     this.local.invites[tokenKey(token)] = { g, exp, used: false }; // only its hash is kept
     this.saveLocalNow();
-    return { code: encodeInvite({ g, name: rec.st.name, addrs, fp: this.me.fp, token, exp }), passcode: rec.st.passcode, expires: exp, addrs };
+    // outside: false when friends on another network could reach none of these (no internet address known).
+    return { code: encodeInvite({ g, name: rec.st.name, addrs, fp: this.me.fp, token, exp }), passcode: rec.st.passcode, expires: exp, addrs, outside: reachableFromOutside(addrs) };
   }
 
   revokeInvites(g) {
@@ -414,7 +421,7 @@ class GroupService extends EventEmitter {
         lastErr = err;
       }
     }
-    throw new Error(joinFailure(reached, lastErr));
+    throw new Error(joinFailure(reached, lastErr, inv.addrs));
   }
 
   /**
@@ -735,4 +742,4 @@ class GroupService extends EventEmitter {
   }
 }
 
-module.exports = { GroupService, encodeInvite, decodeInvite, localAddresses, dialable, DEFAULT_PORT };
+module.exports = { GroupService, encodeInvite, decodeInvite, joinFailure, localAddresses, dialable, DEFAULT_PORT };

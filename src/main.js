@@ -573,6 +573,9 @@ async function boot() {
   handle('settings:set', patch => {
     // Per-profile saves are turned on and off through saves:perProfile only (it records whose saves are where).
     if (patch && typeof patch === 'object') delete patch.perProfileSaves;
+    // The internet address for Group Mods only through groups:publicIp / groups:findIp (the user's click
+    // is what allows asking api.ipify.org, and those apply it at once).
+    if (patch && typeof patch === 'object') { delete patch.groupsPublicIp; delete patch.groupsFindIp; }
     if (patch && typeof patch.saveBackupDir === 'string' && patch.saveBackupDir !== '') {
       const problem = backupDirProblem(patch.saveBackupDir, manager.gameSavesDir());
       if (problem) throw new Error(problem);
