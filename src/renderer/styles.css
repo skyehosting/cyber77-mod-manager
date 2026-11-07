@@ -3287,7 +3287,7 @@ body.aip { height: 100vh; display: flex; flex-direction: column; overflow: hidde
 .gm-head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .gm-title { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex: 1; }
 .gm-title h2, .gm-empty h2 { margin: 0; font-size: 1.35rem; font-weight: var(--fw-bold); letter-spacing: normal; text-transform: none; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gm-table th:nth-child(2), .gm-table td.num { text-align: right; }
+.gm-table th:nth-child(3), .gm-table td.num { text-align: right; }
 .gm-in { color: var(--muted); }
 .gm-acts { display: flex; gap: var(--sp-2); align-items: center; }
 .gm-acts .menu { right: 0; left: auto; }
@@ -3542,3 +3542,66 @@ iframe.fx-anim { color-scheme: normal; }
    (the general button lift is a transform, which would move them off their centring). */
 .drawer-reveal, .drawer-reveal:hover:not(:disabled), .drawer-reveal:active:not(:disabled),
 .md-reveal, .md-reveal:hover:not(:disabled), .md-reveal:active:not(:disabled) { transform: none; box-shadow: none; }
+
+/* Group Mods: the list's name and buttons beside "Mods"; each mod's switch, requirements and who has it */
+#page-mods .page-title { flex: 1 1 auto; min-width: 0; }
+.gm-head-slot { flex: 1 1 26rem; min-width: 0; }
+.gm-head-slot[hidden] { display: none; }
+.gm-head-slot .gm-head { margin-left: var(--sp-2); }
+.gm-head-slot .gm-title h2 { font-size: 1.15rem; }
+#page-mods.group-mode .page-head { margin-bottom: var(--sp-3); }
+.gm-main { container: gmmain / inline-size; }
+.gm-table col.gm-c-on { width: 4.8rem; }
+.gm-table col.gm-c-ver { width: 5.2rem; }
+.gm-table col.gm-c-by { width: 8.5rem; }
+.gm-table col.gm-c-who { width: 6.6rem; }
+.gm-table col.gm-c-st { width: 8.8rem; }
+.gm-table col.gm-c-acts { width: 7.4rem; }
+.gm-table .gm-row-acts { text-overflow: clip; }
+.gm-table .req-cell .tag { flex: none; }
+.gm-sub-ver { display: none; }
+/* Narrower: "Added by" goes first, then the version moves under the name; the name keeps its room. */
+@container gmmain (max-width: 64rem) {
+  .gm-table col.gm-c-by, .gm-table tr > :nth-child(4) { display: none; }
+}
+@container gmmain (max-width: 50rem) {
+  .gm-table col.gm-c-ver, .gm-table tr > :nth-child(3) { display: none; }
+  .gm-sub-ver { display: inline; }
+  .gm-table col.gm-c-st { width: 7.4rem; }
+}
+.gm-table .gm-mod-name, .gm-table .gm-mod-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-table .gm-by { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-on-cell { display: flex; align-items: center; gap: 0.35rem; }
+.gm-noswitch { display: inline-block; width: 2.5rem; height: 1.2rem; border: 1px dashed var(--line-strong); border-radius: 99px; opacity: .6; }
+.gm-who { display: inline-flex; flex-wrap: wrap; gap: 3px; vertical-align: middle; }
+.gm-av.gm-who-av { width: 1.45rem; height: 1.45rem; font-size: 0.6rem; border-width: 1.5px; }
+.gm-av.w-on { background: var(--ok-soft); color: var(--ok-text); border-color: var(--ok-line); }
+.gm-av.w-diff { background: var(--warn-soft); color: var(--warn-text); border-color: var(--warn-line); }
+.gm-av.w-off { opacity: .38; }
+.gm-av.w-unknown { background: transparent; border-style: dashed; border-color: var(--line-strong); color: var(--muted); }
+.gm-req-name { cursor: default; }
+.gm-req-name:hover { text-decoration: none; color: var(--text-2); }
+.gm-req-for { font-size: var(--fs-xs); }
+.gm-table tr.req-row .chips-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+/* Who has what: every list mod against every member */
+.modal:has(.gm-who-dialog) { width: min(72rem, calc(100vw - 2rem)); }
+.gm-who-scroll { max-height: min(62vh, 44rem); overflow: auto; border: 1px solid var(--line); border-radius: var(--r-lg); }
+.gm-who-table { width: 100%; table-layout: auto; }
+.gm-who-table thead th { height: auto; padding-block: 0.55rem; vertical-align: bottom; }
+.gm-who-table th.gm-who-c, .gm-who-table td.gm-who-c { text-align: center; width: 7rem; }
+.gm-who-table tbody th { text-transform: none; letter-spacing: normal; font-size: var(--fs-md); color: var(--text); font-weight: var(--fw-medium); }
+.gm-who-head .gm-av { width: 1.8rem; height: 1.8rem; }
+.gm-who-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); }
+.gm-who-table tbody th { text-align: left; font-weight: var(--fw-medium); white-space: nowrap; max-width: 26rem; overflow: hidden; text-overflow: ellipsis; }
+.gm-who-c { text-align: center; }
+.gm-who-head { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; font-weight: var(--fw-medium); text-transform: none; letter-spacing: normal; }
+.gm-who-n { font-size: var(--fs-xs); font-weight: 400; }
+.gm-cell { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 6px; font-weight: var(--fw-bold); }
+.gm-cell .i { width: 0.9rem; }
+.gm-cell.c-on { background: var(--ok-soft); color: var(--ok-text); }
+.gm-cell.c-diff { background: var(--warn-soft); color: var(--warn-text); }
+.gm-cell.c-off { color: var(--faint); }
+.gm-cell.c-unknown { color: var(--muted); border: 1px dashed var(--line-strong); }
+.gm-who-none { text-align: center; padding: var(--sp-4); }
+.gm-who-legend { display: flex; flex-wrap: wrap; gap: var(--sp-4); font-size: var(--fs-sm); }
+.gm-who-legend > span { display: inline-flex; align-items: center; gap: var(--sp-2); }

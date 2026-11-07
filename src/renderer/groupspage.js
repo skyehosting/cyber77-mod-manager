@@ -1,5 +1,5 @@
 'use strict';
-/* global api, $, $$, h, icon, run, toast, newsToast, modal, confirmBox, plural, fmtSize, ago, state, store, goTo, pageHooks, snapshotHooks, keepFocus, showSettingsSection, downloadLinks */
+/* global api, $, $$, h, icon, run, toast, newsToast, modal, confirmBox, plural, fmtSize, ago, state, store, goTo, pageHooks, snapshotHooks, keepFocus, showSettingsSection, downloadLinks, reqsOf, reqDefaultOpen, setModsEnabled */
 
 // ---------------------------------------------------------------- Group Mods (the Mods page's second view)
 // Friends who play co-op keep a shared list of Nexus mods (src/core/groups). This page shows your
@@ -84,6 +84,7 @@ function paintMode() {
   $('#groups-view').hidden = !on;
   $('#mods-sub').hidden = on;
   $('#groups-sub').hidden = !on;
+  if (!on && $('#groups-head')) { $('#groups-head').hidden = true; $('#groups-head').replaceChildren(); }
   paintGroups();
 }
 
@@ -101,13 +102,20 @@ function paintGroups() {
   const root = $('#groups-view');
   // Off, or on with no group yet: what is shown sits in the middle of the free space.
   root.classList.toggle('gm-centered', !!v && (!v.enabled || !v.groups.length));
-  if (!v) { root.replaceChildren(h('div', { class: 'gm-loading' }, 'Loading your groups…')); return; }
+  if (!v) { root.replaceChildren(h('div', { class: 'gm-loading' }, 'Loading your groups…')); if ($('#groups-head')) $('#groups-head').hidden = true; return; }
   const lists = v.groups.reduce((k, g) => k + g.lists.length, 0);
   $('#groups-sub').textContent = v.groups.length ? [plural(v.groups.length, 'group'), plural(lists, 'list'), n ? `${plural(n, 'change')} to review` : ''].filter(Boolean).join(' · ') : 'Share a mod list with the friends you play co-op with';
   // The list's search box is drawn again with everything else: its caret stays where it was.
   const a = document.activeElement;
   const caret = a && root.contains(a) && a.dataset?.key === 'gm:q' ? [a.selectionStart, a.selectionEnd] : null;
-  keepFocus(root, () => root.replaceChildren(...groupsBody(v).filter(Boolean)));
+  gm.head = null;
+  // The list's name and its buttons sit in the page header, on the row of "Mods" (cleared even if drawing fails).
+  const slot = $('#groups-head');
+  try {
+    keepFocus(root, () => root.replaceChildren(...groupsBody(v).filter(Boolean)));
+  } finally {
+    if (slot) { slot.hidden = !gm.head; keepFocus(slot, () => slot.replaceChildren(...(gm.head ? [gm.head] : []))); }
+  }
   if (caret) { const q = root.querySelector('[data-key="gm:q"]'); q?.setSelectionRange(caret[0], caret[1]); }
 }
 
@@ -172,9 +180,9 @@ function pick(g, l) {
 }
 
 function noLists(g) {
-  return [h('div', { class: 'gm-head' }, h('div', { class: 'gm-title' }, h('h2', {}, g.name)),
-    h('div', { class: 'gm-acts' }, h('button', { class: 'btn', onclick: () => openInvite(g) }, icon('user-plus'), h('span', {}, 'Invite')), groupMenu(g, null))),
-  h('div', { class: 'gm-empty' }, h('h2', {}, `${g.name} has no lists`), h('p', {}, 'A list is a set of mods everyone in the group keeps the same.'),
+  gm.head = h('div', { class: 'gm-head' }, h('div', { class: 'gm-title' }, h('h2', {}, g.name)),
+    h('div', { class: 'gm-acts' }, h('button', { class: 'btn', onclick: () => openInvite(g) }, icon('user-plus'), h('span', {}, 'Invite')), groupMenu(g, null)));
+  return [h('div', { class: 'gm-empty' }, h('h2', {}, `${g.name} has no lists`), h('p', {}, 'A list is a set of mods everyone in the group keeps the same.'),
     h('button', { class: 'btn btn-primary', onclick: () => newList(g) }, icon('plus'), h('span', {}, 'New list')))];
 }
 
@@ -198,7 +206,8 @@ function listMain(v, g, list) {
         : [online.length ? `${online.map(m => m.name).join(', ')} online` : 'Nobody else online', ...away.slice(0, 3).map(m => `${m.name} ${m.lastSeen ? ago(m.lastSeen) : 'not seen yet'}`)].join(' · ')),
     h('button', { class: 'link-btn', onclick: () => openMembers(g, list) }, 'Members'),
     ...odd.map(m => h('span', { class: 'tag tag-warn', title: `Your newest save is from game version ${myGame}` }, icon('alert'), `${m.name} is on game ${m.game}`)));
-  const blocks = [head, people];
+  gm.head = head; // drawn in the page header, beside "Mods" (paintGroups)
+  const blocks = [people];
   if (others.length && !online.length && v.on) {
     blocks.push(h('p', { class: 'gm-note' }, icon('info'), h('span', {}, 'Nobody else in the group is connected right now. What you change reaches them the next time any of you are online together.')));
   }
@@ -232,6 +241,132 @@ function changesCard(g, list, news) {
       h('span', { class: 'gm-when' }, ago(c.at))))));
 }
 
+// ---- the list's mods on this PC: its switch, its requirements, who has it
+
+/** The mod on this PC that stands for a list entry: { mod, exact } (exact: the list's own file), or null. */
+const realId = v => Number.isSafeInteger(v) && v !== 0;
+const ownFirst = (a, b) => (String(a.id).startsWith('vx:') ? 1 : 0) - (String(b.id).startsWith('vx:') ? 1 : 0);
+function localOf(e) {
+  if (!realId(e.modId)) return null;
+  const mods = state.snap?.mods || [];
+  const exact = e.fileId ? mods.find(m => listIds(m)[1] === e.fileId) : null;
+  if (exact) return { mod: exact, exact: true };
+  const link = state.snap?.crossLinks?.[String(e.modId)];
+  const linked = link && mods.find(m => listIds(m)[0] === link.target);
+  if (linked) return { mod: linked, exact: Number(link.file) === e.fileId };
+  const same = mods.filter(m => listIds(m)[0] === e.modId).sort(ownFirst);
+  const mod = same.find(m => m.enabled) || same[0];
+  return mod ? { mod, exact: false } : null;
+}
+
+/**
+ * Who in the group has a mod on: [{ m, st }], st on | diff (another version) | off | unknown (not
+ * heard from yet). fileId 0 (a requirement): any version counts.
+ */
+const memberSets = new WeakMap(); // m.mods → { files, ids } (a new array each time the view comes)
+function setsOf(m) {
+  let s = memberSets.get(m.mods);
+  if (!s) { s = { files: new Set(m.mods.map(x => x[1])), ids: new Set(m.mods.map(x => x[0])) }; memberSets.set(m.mods, s); }
+  return s;
+}
+function whoHas(g, modId, fileId, e = null) {
+  return g.members.map(m => {
+    if (m.me) {
+      if (e) { const s = myStatus(e); return { m, st: s === 'installed' ? 'on' : s === 'different' ? 'diff' : 'off' }; }
+      const on = (state.snap?.mods || []).some(x => x.enabled && listIds(x)[0] === modId);
+      return { m, st: on ? 'on' : 'off' };
+    }
+    if (!m.mods) return { m, st: 'unknown' };
+    const { files, ids } = setsOf(m);
+    if (fileId && files.has(fileId)) return { m, st: 'on' };
+    if (ids.has(modId)) return { m, st: fileId ? 'diff' : 'on' };
+    return { m, st: 'off' };
+  });
+}
+const WHO_WORD = { on: 'has it on', diff: 'has another version on', off: "doesn't have it on", unknown: 'not heard from yet' };
+function whoCell(g, modId, fileId, e) {
+  const who = whoHas(g, modId, fileId, e);
+  const n = who.filter(w => w.st === 'on').length;
+  const words = who.map(w => `${w.m.name}${w.m.me ? ' (you)' : ''}: ${WHO_WORD[w.st]}`);
+  return h('span', { class: 'gm-who', role: 'img', title: words.join('\n'), 'aria-label': `${n} of ${who.length} have it on. ${words.join('. ')}` },
+    ...who.map(w => h('span', { class: `gm-av gm-who-av w-${w.st}` }, initials(w.m.name))));
+}
+
+// Requirements under a list mod: open or closed per mod (kept), as the Mods page's setting says for the rest.
+gm.reqOpen = store.get('gm.reqOpen', {}) || {};
+const reqKey = e => `m${e.modId}`; // not a bare number: those would sort, and the oldest would not go first
+const gmReqOpen = e => (Object.hasOwn(gm.reqOpen, reqKey(e)) ? !!gm.reqOpen[reqKey(e)] : reqDefaultOpen());
+function setGmReqOpen(e, open) {
+  delete gm.reqOpen[reqKey(e)];
+  gm.reqOpen[reqKey(e)] = !!open;
+  const keys = Object.keys(gm.reqOpen);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 1000))) delete gm.reqOpen[k];
+  store.set('gm.reqOpen', gm.reqOpen);
+  paintGroups();
+}
+/** A list mod's requirements: this PC's view of them when it has the mod, else what the list says (with this PC's state). */
+function gmReqs(e, local) {
+  const own = local ? reqsOf(local.mod.id) : [];
+  if (own.length) return own;
+  const mods = state.snap?.mods || [];
+  return (e.reqs || []).filter(r => realId(r.modId)).map(r => {
+    const same = mods.filter(m => listIds(m)[0] === r.modId).sort(ownFirst);
+    const hit = same.find(m => m.enabled) || same[0];
+    return hit ? { id: hit.id, modId: r.modId, name: hit.name, state: hit.enabled ? 'on' : 'off', version: hit.version || '' } : { modId: r.modId, name: r.name, state: 'missing' };
+  });
+}
+/** Get a mod that is missing here: its Download window (Nexus or mod.io). */
+function getMissing(modId, name) {
+  if (modId < 0) window.modioPage?.downloadWindow?.(-modId, { name });
+  else if (modId > 0) downloadLinks(`https://www.nexusmods.com/cyberpunk2077/mods/${modId}`);
+}
+/** On or off on this PC (the Mods page's switch: it asks first when mods need it, offers what it needs). */
+function modSwitch(mod, label, { small = false, title = '', where = '' } = {}) {
+  const btn = h('button', {
+    class: `switch${small ? ' sm' : ''}${mod.enabled ? ' on' : ''}`, role: 'switch', 'aria-checked': String(!!mod.enabled), 'aria-label': label,
+    title: title || (mod.enabled ? 'On for you: click to switch it off on this PC' : 'Off for you: click to switch it on on this PC'),
+    dataset: { key: `gm:sw:${where}:${mod.id}` },
+    onclick: async ev => {
+      ev.stopPropagation();
+      if (btn.getAttribute('aria-disabled') === 'true') return;
+      btn.setAttribute('aria-disabled', 'true');
+      const ok = await setModsEnabled([mod.id], !mod.enabled);
+      if (ok === null && document.contains(btn)) btn.removeAttribute('aria-disabled');
+    },
+  });
+  return btn;
+}
+const REQ_TAG = {
+  on: () => [h('span', { class: 'tag tag-ok' }, 'On')],
+  off: () => [h('span', { class: 'tag tag-warn' }, 'Off')],
+  outside: () => [h('span', { class: 'tag tag-off', title: 'Installed by hand or by another tool' }, 'In the game folder')],
+  builtin: () => [h('span', { class: 'tag tag-ok' }, 'Part of the game')],
+  official: q => [h('span', { class: 'tag tag-warn', title: "CD PROJEKT RED's free REDmod DLC" }, 'Not installed'), q.url ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => api.openLink(q.url) }, 'Open page') : null],
+  external: q => [h('span', { class: 'tag tag-off' }, 'Not on Nexus'), q.url ? h('button', { class: 'btn btn-sm btn-ghost', onclick: () => api.openLink(q.url) }, 'Open page') : null],
+};
+function gmReqRows(g, list, e, reqs) {
+  const onList = new Set(list.mods.map(x => x.modId));
+  return reqs.map((q, i) => {
+    const mod = q.id ? (state.snap?.mods || []).find(m => m.id === q.id) : null;
+    const tags = q.state === 'missing'
+      ? [h('span', { class: 'tag tag-err' }, 'Missing'), q.modId ? h('button', { class: 'btn btn-sm', onclick: () => getMissing(q.modId, q.name) }, icon('download'), h('span', {}, 'Download')) : null]
+      : (REQ_TAG[q.state] || (() => []))(q);
+    return h('tr', { class: `req-row req-${q.state}${i === reqs.length - 1 ? ' last' : ''}` },
+      h('td'),
+      h('td', {}, h('div', { class: 'req-cell' },
+        h('span', { class: 'req-line', 'aria-hidden': 'true' }),
+        mod ? modSwitch(mod, `${q.name}, needed by ${e.name}`, { small: true, where: `req${e.modId}` }) : h('span', { class: 'req-noswitch', 'aria-hidden': 'true' }),
+        h('span', { class: 'req-name gm-req-name', title: q.name }, q.name, q.version ? h('span', { class: 'gm-sub-ver muted' }, ` v${q.version}`) : null),
+        q.modId && onList.has(q.modId) ? h('span', { class: 'tag tag-info', title: 'This requirement is on the list too' }, 'On the list') : null,
+        q.inferred ? h('span', { class: 'req-note' }, 'found from its files') : null)),
+      h('td', { class: 'num' }, h('span', { class: 'req-ver' }, q.version || '')),
+      h('td', {}, h('span', { class: 'muted gm-req-for' }, 'Needed by it')),
+      h('td', {}, q.modId ? whoCell(g, q.modId, 0) : null),
+      h('td', {}, h('div', { class: 'chips-row' }, ...tags.filter(Boolean))),
+      h('td'));
+  });
+}
+
 function listTable(g, list, me) {
   const q = gm.q.trim().toLowerCase();
   const mods = [...list.mods].sort((a, b) => a.name.localeCompare(b.name)).filter(e => !q || e.name.toLowerCase().includes(q));
@@ -241,33 +376,85 @@ function listTable(g, list, me) {
   search.addEventListener('input', () => { gm.q = search.value; paintGroups(); });
   const bar = h('div', { class: 'gm-bar' },
     h('label', { class: 'search' }, icon('search'), search),
+    list.mods.length ? h('button', { class: 'btn', dataset: { key: 'gm:who' }, onclick: () => openWhoHas(g, list), title: 'A table of every mod in the list and who has it on' }, icon('users'), h('span', {}, 'Who has what')) : null,
     counts.missing ? h('button', { class: 'btn btn-primary', onclick: () => openGet(g, list) }, icon('download'), h('span', {}, `Get the ${plural(counts.missing, 'mod')} you're missing`)) : null,
     h('span', { class: 'gm-count muted' }, `${plural(list.mods.length, 'mod')} in the list`));
   if (!list.mods.length) {
     return h('div', {}, bar, h('div', { class: 'gm-empty small' }, h('p', {}, 'This list is empty. Add mods you have installed: everyone in the group is asked before anything downloads.'),
       h('button', { class: 'btn btn-primary', onclick: () => openAddMods(g, list) }, icon('plus'), h('span', {}, 'Add mod'))));
   }
+  const rows = [];
+  for (const e of mods) {
+    const s = myStatus(e);
+    const [label, cls] = GM_STATUS[s];
+    const local = localOf(e);
+    const reqs = gmReqs(e, local);
+    const open = reqs.length > 0 && gmReqOpen(e);
+    const sub = [e.category, e.size ? fmtSize(e.size) : ''].filter(Boolean).join(' · ');
+    rows.push(h('tr', { class: `gm-row st-${s}${reqs.length ? ' has-reqs' : ''}` },
+      h('td', { class: 'gm-on' }, h('div', { class: 'gm-on-cell' },
+        reqs.length ? h('button', {
+          type: 'button', class: `row-chev${open ? ' open' : ''}`, 'aria-expanded': String(open), dataset: { key: `gm:chev:${e.modId}` },
+          'aria-label': `${open ? 'Hide' : 'Show'} the ${plural(reqs.length, 'requirement')} of ${e.name}`, title: `${open ? 'Hide' : 'Show'} its ${plural(reqs.length, 'requirement')}`,
+          onclick: () => setGmReqOpen(e, !open),
+        }, icon('chevron-right')) : h('span', { class: 'row-chev-space', 'aria-hidden': 'true' }),
+        local ? modSwitch(local.mod, e.name, { where: `e${e.modId}`, title: local.exact ? '' : `You have another version (${local.mod.version || '?'}): click to switch it ${local.mod.enabled ? 'off' : 'on'}` })
+          : h('span', { class: 'gm-noswitch', title: 'Not on this PC yet' }))),
+      h('td', {}, h('div', { class: 'gm-mod' }, h('span', { class: 'gm-mod-name' }, e.name, e.adult ? h('span', { class: 'tag tag-off' }, 'Adult') : null),
+        h('span', { class: 'gm-mod-sub' }, e.version ? h('span', { class: 'gm-sub-ver' }, `v${e.version} · `) : null, sub || (e.modId < 0 ? 'mod.io' : 'Nexus Mods'), reqs.length ? h('span', {}, ` · ${plural(reqs.length, 'requirement')}`) : null,
+          state.snap?.crossLinks?.[String(e.modId)] ? h('span', { class: 'tag tag-info gm-link-tag', title: 'You matched it to the same mod on the other site' }, e.modId < 0 ? 'Yours from Nexus' : 'Yours from mod.io',
+            h('button', { type: 'button', class: 'gm-unlink', 'aria-label': `Forget the match for ${e.name}`, title: 'Not the same mod: forget the match', onclick: async () => { if (await confirmBox(`Forget the match for ${e.name}?`, 'The mod you matched it to stays installed; it no longer counts as this list\'s mod.', 'Forget')) { await run(api.crossUnlink(e.modId)); loadGroups(); } } }, '×')) : null))),
+      h('td', { class: 'num' }, e.version || '–'),
+      h('td', {}, h('span', { class: 'gm-by' }, e.addedByName, h('span', { class: 'muted' }, ` · ${ago(e.changedAt || e.addedAt)}`))),
+      h('td', {}, whoCell(g, e.modId, e.fileId, e)),
+      h('td', {}, h('span', { class: `tag ${cls}` }, label), e.keep ? h('span', { class: 'tag tag-off', title: 'Kept for you even if it leaves the list' }, 'Kept for you') : null),
+      h('td', { class: 'gm-row-acts' },
+        e.modId < 0
+          ? h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Open on mod.io', 'aria-label': `Open ${e.name} on mod.io`, onclick: async () => { const r = await api.modioMod(-e.modId); api.openModioPage(r.ok?.url || 'https://mod.io/g/cyberpunk-2077'); } }, icon('external'))
+          : h('a', { class: 'btn btn-sm btn-ghost btn-icon', href: `https://www.nexusmods.com/cyberpunk2077/mods/${e.modId}`, target: '_blank', rel: 'noopener', title: 'Open on Nexus Mods', 'aria-label': `Open ${e.name} on Nexus Mods` }, icon('external')),
+        h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: e.keep ? 'Stop keeping it for you' : 'Keep it for me, even if someone removes it from the list', 'aria-label': `${e.keep ? 'Stop keeping' : 'Keep'} ${e.name} for me`, 'aria-pressed': String(!!e.keep), onclick: () => run(api.groupsKeep(g.id, e.modId, !e.keep)).then(loadGroups) }, icon('pin')),
+        h('button', { class: 'btn btn-sm btn-ghost-danger btn-icon', title: 'Remove from the list (disabled for members who got it through the group)', 'aria-label': `Remove ${e.name} from the list`, onclick: () => removeFromList(g, list, e) }, icon('x')))));
+    if (open) rows.push(...gmReqRows(g, list, e, reqs));
+  }
   return h('div', {}, bar, h('div', { class: 'table-card gm-table' },
     h('table', { class: 'grid', 'aria-label': `Mods in ${list.name}` },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Mod'), h('th', {}, 'Version'), h('th', {}, 'Added by'), h('th', {}, 'Status for you'), h('th', { 'aria-label': 'Actions' }))),
-      h('tbody', {}, ...mods.map(e => {
-        const s = myStatus(e);
-        const [label, cls] = GM_STATUS[s];
-        const sub = [e.category, e.reqs.length ? plural(e.reqs.length, 'requirement') : '', e.size ? fmtSize(e.size) : ''].filter(Boolean).join(' · ');
-        return h('tr', { class: `gm-row st-${s}` },
-          h('td', {}, h('div', { class: 'gm-mod' }, h('span', { class: 'gm-mod-name' }, e.name, e.adult ? h('span', { class: 'tag tag-off' }, 'Adult') : null), h('span', { class: 'gm-mod-sub' }, sub || (e.modId < 0 ? 'mod.io' : 'Nexus Mods'),
-            state.snap?.crossLinks?.[String(e.modId)] ? h('span', { class: 'tag tag-info gm-link-tag', title: 'You matched it to the same mod on the other site' }, e.modId < 0 ? 'Yours from Nexus' : 'Yours from mod.io',
-              h('button', { type: 'button', class: 'gm-unlink', 'aria-label': `Forget the match for ${e.name}`, title: 'Not the same mod: forget the match', onclick: async () => { if (await confirmBox(`Forget the match for ${e.name}?`, 'The mod you matched it to stays installed; it no longer counts as this list\'s mod.', 'Forget')) { await run(api.crossUnlink(e.modId)); loadGroups(); } } }, '×')) : null))),
-          h('td', { class: 'num' }, e.version || '–'),
-          h('td', {}, h('span', { class: 'gm-by' }, e.addedByName, h('span', { class: 'muted' }, ` · ${ago(e.changedAt || e.addedAt)}`))),
-          h('td', {}, h('span', { class: `tag ${cls}` }, label), e.keep ? h('span', { class: 'tag tag-off', title: 'Kept for you even if it leaves the list' }, 'Kept for you') : null),
-          h('td', { class: 'gm-row-acts' },
-            e.modId < 0
-              ? h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: 'Open on mod.io', 'aria-label': `Open ${e.name} on mod.io`, onclick: async () => { const r = await api.modioMod(-e.modId); api.openModioPage(r.ok?.url || 'https://mod.io/g/cyberpunk-2077'); } }, icon('external'))
-              : h('a', { class: 'btn btn-sm btn-ghost btn-icon', href: `https://www.nexusmods.com/cyberpunk2077/mods/${e.modId}`, target: '_blank', rel: 'noopener', title: 'Open on Nexus Mods', 'aria-label': `Open ${e.name} on Nexus Mods` }, icon('external')),
-            h('button', { class: 'btn btn-sm btn-ghost btn-icon', title: e.keep ? 'Stop keeping it for you' : 'Keep it for me, even if someone removes it from the list', 'aria-label': `${e.keep ? 'Stop keeping' : 'Keep'} ${e.name} for me`, 'aria-pressed': String(!!e.keep), onclick: () => run(api.groupsKeep(g.id, e.modId, !e.keep)).then(loadGroups) }, icon('pin')),
-            h('button', { class: 'btn btn-sm btn-ghost-danger btn-icon', title: 'Remove from the list (disabled for members who got it through the group)', 'aria-label': `Remove ${e.name} from the list`, onclick: () => removeFromList(g, list, e) }, icon('x'))));
-      })))));
+      h('colgroup', {}, h('col', { class: 'gm-c-on' }), h('col'), h('col', { class: 'gm-c-ver' }), h('col', { class: 'gm-c-by' }), h('col', { class: 'gm-c-who' }), h('col', { class: 'gm-c-st' }), h('col', { class: 'gm-c-acts' })),
+      h('thead', {}, h('tr', {}, h('th', { class: 'gm-on', 'aria-label': 'On for you' }, 'On'), h('th', {}, 'Mod'), h('th', {}, 'Version'), h('th', {}, 'Added by'), h('th', {}, 'Who has it'), h('th', {}, 'Status for you'), h('th', { 'aria-label': 'Actions' }))),
+      h('tbody', {}, ...rows))));
+}
+
+/** Every mod in the list against every member: who has it on, another version, or not. */
+async function openWhoHas(g, list) {
+  const members = [...g.members].sort((a, b) => (b.me - a.me) || a.name.localeCompare(b.name));
+  const mods = [...list.mods].sort((a, b) => a.name.localeCompare(b.name));
+  const MARK = { on: ['check', 'Has it on'], diff: ['alert', 'Another version on'], off: [null, "Doesn't have it on"], unknown: [null, 'Not heard from yet'] };
+  const grid = mods.map(e => ({ e, who: whoHas({ ...g, members }, e.modId, e.fileId, e) }));
+  const only = h('input', { type: 'checkbox' });
+  const tbody = h('tbody');
+  const paint = () => {
+    const rows = only.checked ? grid.filter(r => r.who.some(w => w.st !== 'on')) : grid;
+    tbody.replaceChildren(...(rows.length ? rows.map(({ e, who }) => h('tr', {},
+      h('th', { scope: 'row' }, h('span', { class: 'gm-who-mod' }, e.name), h('span', { class: 'muted gm-who-ver' }, e.version ? ` ${e.version}` : '')),
+      ...who.map(w => h('td', { class: 'gm-who-c' }, h('span', { class: `gm-cell c-${w.st}`, role: 'img', 'aria-label': `${w.m.name}: ${MARK[w.st][1]}`, title: `${w.m.name}: ${MARK[w.st][1]}` }, MARK[w.st][0] ? icon(MARK[w.st][0]) : w.st === 'unknown' ? '?' : '–')))))
+      : [h('tr', {}, h('td', { colspan: String(members.length + 1), class: 'muted gm-who-none' }, 'Everyone has every mod on.'))]));
+  };
+  only.addEventListener('change', paint);
+  paint();
+  const totals = members.map((m, i) => grid.filter(r => r.who[i].st === 'on').length);
+  await modal({
+    title: `Who has what: ${list.name}`,
+    sub: `${plural(mods.length, 'mod')} · ${plural(members.length, 'member')} · each app reports the mods it has on`,
+    body: h('div', { class: 'gm-dialog gm-who-dialog' },
+      h('label', { class: 'check' }, only, h('span', {}, 'Only mods someone doesn\'t have on')),
+      h('div', { class: 'gm-who-scroll' }, h('table', { class: 'grid gm-who-table' },
+        h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Mod'), ...members.map((m, i) => h('th', { class: 'gm-who-c', scope: 'col' },
+          h('span', { class: 'gm-who-head' }, avatar(m), h('span', {}, m.me ? 'You' : m.name), h('span', { class: 'muted gm-who-n' }, `${totals[i]}/${mods.length}`)))))),
+        tbody)),
+      h('div', { class: 'gm-who-legend muted' },
+        h('span', {}, h('span', { class: 'gm-cell c-on' }, icon('check')), 'Has it on'), h('span', {}, h('span', { class: 'gm-cell c-diff' }, icon('alert')), 'Another version on'),
+        h('span', {}, h('span', { class: 'gm-cell c-off' }, '–'), "Doesn't have it on"), h('span', {}, h('span', { class: 'gm-cell c-unknown' }, '?'), 'Not heard from yet'))),
+    buttons: [{ label: 'Close', value: true, kind: 'btn-primary' }],
+  });
 }
 
 // ---- a small menu (more actions for the group)
