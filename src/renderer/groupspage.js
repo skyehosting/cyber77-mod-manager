@@ -294,11 +294,11 @@ function whoCell(g, modId, fileId, e) {
 
 // Requirements under a list mod: open or closed per mod (kept), as the Mods page's setting says for the rest.
 gm.reqOpen = store.get('gm.reqOpen', {}) || {};
-const reqKey = e => `m${e.modId}`; // not a bare number: those would sort, and the oldest would not go first
-const gmReqOpen = e => (Object.hasOwn(gm.reqOpen, reqKey(e)) ? !!gm.reqOpen[reqKey(e)] : reqDefaultOpen());
+const gmReqKey = e => `m${e.modId}`; // not a bare number: those would sort, and the oldest would not go first
+const gmReqOpen = e => (Object.hasOwn(gm.reqOpen, gmReqKey(e)) ? !!gm.reqOpen[gmReqKey(e)] : reqDefaultOpen());
 function setGmReqOpen(e, open) {
-  delete gm.reqOpen[reqKey(e)];
-  gm.reqOpen[reqKey(e)] = !!open;
+  delete gm.reqOpen[gmReqKey(e)];
+  gm.reqOpen[gmReqKey(e)] = !!open;
   const keys = Object.keys(gm.reqOpen);
   for (const k of keys.slice(0, Math.max(0, keys.length - 1000))) delete gm.reqOpen[k];
   store.set('gm.reqOpen', gm.reqOpen);
