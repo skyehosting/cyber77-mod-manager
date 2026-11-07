@@ -27,6 +27,9 @@ class Settings {
       categoriesV2: false, // the old default (every category but old and archived) was moved to Main only
       autoInstall: 'all', // 'off' | 'main' | 'all': what installs by itself when its download finishes (then enabled, unless autoEnable is off)
       autoEnable: true,
+      closeToTray: true, // the window's close button hides the app to the tray; Quit in the tray's menu ends it
+      trayHintShown: false, // the one-time "still running here" note was shown
+      resumeInTray: false, // an update installed while the app was in the tray: start there again (once)
       installDependencies: true,
       handleNxm: false, // take over Nexus "Mod Manager Download" (nxm://) links
       blockAds: true, // ads and trackers on the Nexus pages shown in Browse
@@ -333,6 +336,9 @@ class Settings {
     if ('perfGraphs' in patch) d.perfGraphs = !!patch.perfGraphs;
     if ('groupsEnabled' in patch) d.groupsEnabled = !!patch.groupsEnabled;
     if ('groupsUpnp' in patch) d.groupsUpnp = !!patch.groupsUpnp;
+    if ('closeToTray' in patch) d.closeToTray = !!patch.closeToTray;
+    if ('trayHintShown' in patch) d.trayHintShown = !!patch.trayHintShown;
+    if ('resumeInTray' in patch) d.resumeInTray = !!patch.resumeInTray;
     if ('groupsPublicIp' in patch) d.groupsPublicIp = isPublicV4(patch.groupsPublicIp) ? String(patch.groupsPublicIp).trim() : '';
     if ('groupsFindIp' in patch) d.groupsFindIp = !!patch.groupsFindIp;
     if ('groupsPort' in patch) { const p = parseInt(patch.groupsPort, 10); if (p >= 1024 && p <= 65535) d.groupsPort = p; }

@@ -36,8 +36,10 @@ const { GameFiles } = require('./core/gameFiles');
 const { ModConfig } = require('./core/modConfig');
 const { CrashReports } = require('./core/crashes');
 const panelPlace = require('./core/panelPlace');
+const { setupTray } = require('./tray');
 
 let win = null;
+let tray = null; // close to the tray (tray.js)
 let settings = null;
 let manager = null;
 let gameLogs = null;
@@ -314,7 +316,11 @@ function createWindow() {
   const saved = savedBounds(boundsFile);
   // Screenshot runs (tools/capture.js) render off-screen so nothing pops up on the desktop.
   const capture = !!process.env.CMM_CAPTURE;
+  // Back from installing an update that came while the app sat in the tray: it goes back there.
+  const inTray = !capture && !!settings?.get('resumeInTray') && !!settings?.get('closeToTray');
+  if (settings?.get('resumeInTray')) settings.update({ resumeInTray: false });
   win = new BrowserWindow({
+    show: !inTray,
     width: saved?.width || width,
     height: saved?.height || height,
     x: capture ? -32000 : saved?.x,
@@ -336,8 +342,14 @@ function createWindow() {
       webviewTag: true,
     },
   });
-  if (saved?.maximized) win.maximize();
+  // (Maximizing shows a window: one that starts in the tray is maximized when it is first shown.)
+  if (saved?.maximized) { if (inTray) win.once('show', () => win.maximize()); else win.maximize(); }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Closing hides to the tray (Settings → Interface); not for screenshot runs.
+  if (!capture && settings) {
+    tray ||= setupTray({ app, settings, title: 'Edgerunners Mod Manager', log: logger, onHide: closeAiPanel });
+    tray.attach(win, { inTray });
+  }
 
   const saveBounds = () => {
     if (win.isDestroyed() || win.isMinimized()) return;
@@ -437,10 +449,12 @@ async function boot() {
     aiBusy: () => !!(assistant?.busy || assistant?.waiting),
     // No checks and no restarts while the game runs; a restart only while the window can be seen.
     gameRunning: () => !!gameLogs?.status().running || !!plays?.current, // and while a play is still saving its logs
-    inView: () => !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
+    // In the tray counts too: nobody is looking, and the app comes back there after installing (resumeInTray).
+    inView: () => !!win && !win.isDestroyed() && ((win.isVisible() && !win.isMinimized()) || !!tray?.inTray()),
     log: logger,
   });
   updater.on('state', st => send('update', { ...st, current: app.getVersion() }));
+  updater.on('before-install', () => { if (tray?.inTray()) settings.update({ resumeInTray: true }); });
   launchLate?.(); // the app's updater listens from here on
   if (launchUpdate) updater.afterLaunchCheck(launchUpdate);
   updater.start();
@@ -590,10 +604,11 @@ async function boot() {
     settings.update(patch);
     // Another key or API path: nothing read with the old one is reused.
     if (patch && ('modioKey' in patch || 'modioApiPath' in patch)) { manager.modio.cache.clear(); manager.modio.blockedUntil = 0; }
-    if (settings.get('dataDir') !== before) logger.warn('Data folder changed. Restart the app to use it.');
+    if (settings.get('dataDir') !== before) logger.warn(`Data folder changed. Quit the app${settings.get('closeToTray') ? ' (its tray icon → Quit: closing the window only hides it)' : ''} and open it again to use it.`);
     if (settings.get('gamePath') !== gameBefore) gameLogs.reset();
     if ('handleNxm' in patch) applyNxmSetting().catch(err => logger.error('Could not change the Nexus link handler', err.message));
     if ('blockAds' in patch) applyAdBlock();
+    if ('closeToTray' in patch) tray?.sync();
     if ('playsKeep' in patch) plays?.prune();
     if ('uiScale' in patch) applyScale();
     if ('perfInterval' in patch && perf?.running) perf.start(settings.get('perfInterval'));
@@ -1552,12 +1567,26 @@ function handleNxmArgs(argv) {
     manager.handleNxm(a)
       .then(r => send('toast', { text: r.resumed ? `Downloading ${r.file}` : r.queued ? `Downloading ${r.file}` : `${r.file} is already downloaded`, kind: 'success' }))
       .catch(err => logger.error('Could not start that Nexus download', err.message));
-    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+    // In view (or minimized): brought forward, as before. In the tray: it downloads there, without popping up.
+    if (!tray?.inTray()) showWindow();
   }
 }
 
+/** Bring the window back: from the tray, minimized or behind others. */
+function showWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
 function start() {
-  app.on('second-instance', (_e, argv) => handleNxmArgs(argv));
+  // Opened again (its shortcut): the running app's window comes back, from the tray too. A Nexus link
+  // only downloads (handleNxmArgs).
+  app.on('second-instance', (_e, argv) => {
+    handleNxmArgs(argv);
+    if (!argv.some(a => /^nxm:\/\//i.test(a))) showWindow();
+  });
   app.whenReady().then(guardWebviews).then(boot)
     .then(() => { handleNxmArgs(process.argv); pendingNxm.splice(0).forEach(u => handleNxmArgs([u])); })
     .catch(err => logger.error('The app could not start', err?.stack || String(err)))

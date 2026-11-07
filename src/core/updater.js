@@ -163,11 +163,11 @@ class AppUpdater extends EventEmitter {
     }, RESTART_DELAY_MS);
   }
 
-  /** "Later": the update installs when the app is closed instead. */
+  /** "Later": the update installs when the app quits instead (not when it only hides to the tray). */
   postpone() {
     clearTimeout(this.restartTimer);
     this.set({ postponed: true, restartAt: 0 });
-    this.log.info('The update installs when the app is closed');
+    this.log.info('The update installs when the app quits (the tray icon → Quit, or Windows shutting down)');
   }
 
   installNow() {

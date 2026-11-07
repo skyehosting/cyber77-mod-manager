@@ -2305,7 +2305,7 @@ function renderUpdate(st) {
   const text = () => {
     const left = upd.restartAt ? Math.max(0, Math.ceil((upd.restartAt - Date.now()) / 1000)) : 0;
     $('#update-text').textContent = upd.status === 'downloading' ? `Version ${upd.available} found · downloading ${upd.progress || 0}%`
-      : upd.postponed ? `Version ${upd.available} installs when you close the app.`
+      : upd.postponed ? `Version ${upd.available} installs when the app quits (right-click its tray icon → Quit).`
         : upd.mode === 'ask' ? `Version ${upd.available} is ready to install.`
           : upd.waiting ? `Version ${upd.available} is ready. ${WAIT[upd.waitingFor] || WAIT.busy}`
             : `Version ${upd.available} is ready. Restarting to install it in ${left} s.`;
@@ -2599,7 +2599,7 @@ function updLaunchState() {
     : 'Only when new versions install automatically (above).';
 }
 $('#s-upd-mode').addEventListener('change', updLaunchState);
-const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs', groupsUpnp: '#s-groups-upnp', showMature: '#s-mature' };
+const checks = { autoEnable: '#s-autoenable', installDependencies: '#s-deps', blockAds: '#s-adblock', saveAutoBackup: '#s-save-auto', savePauseUnchanged: '#s-save-pause', updateOnLaunch: '#s-upd-launch', perfGraphs: '#s-perf-graphs', groupsUpnp: '#s-groups-upnp', showMature: '#s-mature', closeToTray: '#s-close-tray' };
 
 const AI_EXAMPLES = {
   openai: { endpoint: 'https://api.openai.com/v1 (or http://localhost:11434/v1 for Ollama)', model: 'e.g. gpt-5.1, or the model your endpoint serves' },
